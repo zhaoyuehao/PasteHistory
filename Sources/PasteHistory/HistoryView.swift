@@ -24,7 +24,9 @@ private enum Spec {
 
     static let imageDetail: CGFloat = 240
     static let textDetail: CGFloat = 200
-    static let ocrLine: CGFloat = 26
+    /// 一块「文字块」的高度上限：标签 + 最多三行 + 间距
+    static let noteBlock: CGFloat = 88
+    static let noteScroll: CGFloat = 72
     static let fileLine: CGFloat = 32
     static let maxFileLines: Int = 4
 
@@ -440,13 +442,17 @@ struct RowView: View {
     private var detailHeight: CGFloat {
         switch item.kind {
         case .text: return Spec.textDetail
-        case .image: return Spec.imageDetail + (hasOCR ? Spec.ocrLine : 0)
+        case .image:
+            return Spec.imageDetail
+                + (hasText ? Spec.noteBlock : 0)
+                + (hasOCR ? Spec.noteBlock : 0)
         case .files: return CGFloat(min(paths.count, Spec.maxFileLines)) * Spec.fileLine + 6
         }
     }
 
     private var paths: [String] { item.filePaths ?? [] }
     private var hasOCR: Bool { !(item.ocrText ?? "").isEmpty }
+    private var hasText: Bool { !(item.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     @ViewBuilder
     private var detail: some View {
@@ -485,17 +491,13 @@ struct RowView: View {
             .clipShape(RoundedRectangle(cornerRadius: Spec.imageCorner))
             .padding(.top, 10)
 
+            // 图片自带的文字、OCR 出来的文字，都是内容——内容必须能选中、能复制。
+            // 乔布斯删的是「解释软件的 UI」，不是用户要拿走的东西
+            if hasText {
+                NoteBlock(label: "附带文字", content: item.text ?? "")
+            }
             if hasOCR {
-                HStack(alignment: .firstTextBaseline, spacing: 7) {
-                    Text("图内文字")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-                    Text(item.ocrText ?? "")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                .padding(.top, 9)
+                NoteBlock(label: "图内文字", content: item.ocrText ?? "")
             }
         }
     }
@@ -527,6 +529,31 @@ struct RowView: View {
             if searchRange.isEmpty { break }
         }
         return attr
+    }
+}
+
+// MARK: - 文字块
+
+/// 图片附带的文字 / OCR 出来的文字：可选中即复制，不额外给按钮
+private struct NoteBlock: View {
+    let label: String
+    let content: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+            ScrollView {
+                Text(content)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: Spec.noteScroll)
+        }
+        .padding(.top, 9)
     }
 }
 
