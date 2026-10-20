@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppTracker.start()
         monitor.start()
         iCloudSync.shared.start()
+        WebSyncServer.shared.start()
         if Settings.shared.hotKeyEnabled {
             hotKey.register { [weak self] in
                 Task { @MainActor in self?.togglePanel() }
@@ -135,6 +136,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let capture = NSMenuItem(title: "记录当前剪贴板", action: #selector(captureCurrent), keyEquivalent: "")
         menu.addItem(capture)
 
+        let phone = NSMenuItem(title: "手机同步（二维码）…", action: #selector(showQR), keyEquivalent: "")
+        menu.addItem(phone)
+
         menu.addItem(NSMenuItem.separator())
 
         let recent = NSMenuItem(title: "最近记录", action: nil, keyEquivalent: "")
@@ -192,6 +196,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func captureCurrent() {
         monitor.captureCurrent()
+    }
+
+    @objc private func showQR() {
+        QRPairPanel.shared.show()
     }
 
     @objc private func clearHistory() {
