@@ -12,11 +12,22 @@ final class OCRIndexer {
     private var inFlight = Set<UUID>()
 
     /// clip.ocrText == nil 时执行；完成后回调更新后的记录
+    /// .image 识别 images 目录里的图；.files 里首个图片文件（如微信复制的 jpg）直接读原路径
     func indexIfNeeded(_ clip: ClipItem, completion: @escaping (ClipItem) -> Void) {
-        guard clip.kind == .image, clip.ocrText == nil, !inFlight.contains(clip.id) else { return }
+        guard clip.ocrText == nil, !inFlight.contains(clip.id) else { return }
+        let imageURL: URL
+        switch clip.kind {
+        case .image:
+            guard let name = clip.imageFile, !name.isEmpty else { return }
+            imageURL = ClipStore.shared.imagesDirectory.appendingPathComponent(name)
+        case .files:
+            guard let path = clip.firstImageFilePath,
+                  FileManager.default.fileExists(atPath: path) else { return }
+            imageURL = URL(fileURLWithPath: path)
+        case .text:
+            return
+        }
         inFlight.insert(clip.id)
-        let imageURL = ClipStore.shared.imagesDirectory
-            .appendingPathComponent(clip.imageFile ?? "")
 
         queue.async { [weak self] in
             let result = Self.analyze(imageURL: imageURL)
