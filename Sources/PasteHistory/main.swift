@@ -263,7 +263,7 @@ extension AppDelegate: NSMenuDelegate {
             }
         }
         if let countItem = menu.item(withTag: Self.statsMenuItemTag) {
-            countItem.title = "已保存 \(store.count) 条 · 最多保留 \(Settings.shared.maxItems) 条"
+            countItem.title = "已保存 \(store.count) 条记录"
         }
     }
 

@@ -41,7 +41,6 @@ final class ClipStore: ObservableObject {
         imageCache.countLimit = 80
         imageCache.totalCostLimit = 120 * 1024 * 1024
         refresh()
-        dedupeExistingTextItems()
         backfillFileImageMetadata()
     }
 
@@ -203,26 +202,6 @@ final class ClipStore: ObservableObject {
         return img
     }
 
-    /// 老数据清理：旧版本文本指纹未去首尾空白，同一段文字可能被反复存成多条。
-    /// 启动时按新指纹分组，每组保留一条（置顶优先，其次最新），其余连同 iCloud 一起删。
-    private func dedupeExistingTextItems() {
-        let texts = syncDatabase.all().filter { $0.kind == .text }
-        var keeper: [String: ClipItem] = [:]
-        var dupes: [UUID] = []
-        for item in texts {
-            let hash = ClipItem.textContentHash(item.text ?? "")
-            if let prev = keeper[hash] {
-                // 置顶优先保留；都没置顶则留最新的一条
-                let keepNew = item.pinned != prev.pinned ? item.pinned : item.createdAt >= prev.createdAt
-                dupes.append(keepNew ? prev.id : item.id)
-                if keepNew { keeper[hash] = item }
-            } else {
-                keeper[hash] = item
-            }
-        }
-        for id in dupes { remove(id: id) }
-    }
-
     /// 老数据回填：图片文件类条目（kind == .files）补缩略图和 OCR，新版本才支持
     private func backfillFileImageMetadata() {
         let targets = syncDatabase.all().filter {
@@ -287,7 +266,6 @@ final class Settings {
     private let defaults = UserDefaults.standard
 
     private enum Key {
-        static let maxItems = "maxItems"
         static let paused = "paused"
         static let pasteAsPlainText = "pasteAsPlainText"
         static let hotKeyEnabled = "hotKeyEnabled"
@@ -297,11 +275,6 @@ final class Settings {
         static let iCloudSync = "iCloudSyncEnabled"
         static let iCloudInitialExport = "iCloudInitialExportDone"
         static let machineId = "syncMachineId"
-    }
-
-    var maxItems: Int {
-        get { let v = defaults.integer(forKey: Key.maxItems); return v <= 0 ? 500 : v }
-        set { defaults.set(newValue, forKey: Key.maxItems) }
     }
 
     var paused: Bool {
