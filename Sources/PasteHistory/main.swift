@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import SwiftUI
 
 @MainActor
@@ -16,8 +17,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         iCloudSync.shared.start()
         WebSyncServer.shared.start()
         if Settings.shared.hotKeyEnabled {
-            hotKey.register { [weak self] in
+            hotKey.register(id: 1, keyCode: kVK_ANSI_C, carbonModifiers: cmdKey | shiftKey) { [weak self] in
                 Task { @MainActor in self?.togglePanel() }
+            }
+            // ⇧⌘V：不开面板，直接在历史里来回擦
+            hotKey.register(id: 2, keyCode: kVK_ANSI_V, carbonModifiers: cmdKey | shiftKey) {
+                Task { @MainActor in PasteCycler.shared.advance() }
             }
         }
 
@@ -102,10 +107,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 PasteService.paste(latest, to: target, focusElement: element)
             }
         }
+
+        // 冒烟：--smoke-panel-paste 复现真实路径（开面板 → 选一条 → 回车粘贴），验证焦点切换
+        if args.contains("--smoke-panel-paste") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                PanelController.shared.show()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    if let latest = self.store.recent(1).first {
+                        PanelController.shared.pasteItem(latest)
+                    }
+                }
+            }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        hotKey.unregister()
+        hotKey.unregisterAll()
         monitor.stop()
     }
 
@@ -119,6 +136,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func togglePanel() {
+        // 打开面板视为「我要找东西」，⇧⌘V 的循环会话到此为止
+        PasteCycler.shared.end()
         PanelController.shared.toggle()
     }
 
