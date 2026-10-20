@@ -22,6 +22,8 @@ final class PanelController: NSObject, NSWindowDelegate {
     /// 唤起面板前系统里聚焦的那个输入框，粘贴后要把焦点还回去
     private var previousFocusElement: AXUIElement?
     private let store = ClipStore.shared
+    /// 每次 show/hide 递增：作废仍在排队的"延迟切回原应用"，防止它把刚打开的面板再次打掉
+    private var showGeneration = 0
 
     var isVisible: Bool { panel?.isVisible ?? false }
 
@@ -32,6 +34,9 @@ final class PanelController: NSObject, NSWindowDelegate {
     func show() {
         if panel == nil { buildPanel() }
         guard let panel else { return }
+        // 作废上一次 hide() 排队的 previousApp.activate()：
+        // 否则快速收起后再按 ⇧⌘C，那个延迟激活会把面板顶掉 → resignKey → 面板立刻又消失
+        showGeneration += 1
 
         // 打开面板时顺手对账一次 iCloud 远端变化
         iCloudSync.shared.importAll()
@@ -49,10 +54,16 @@ final class PanelController: NSObject, NSWindowDelegate {
     }
 
     func hide() {
+        guard let panel, panel.isVisible else { return }
+        showGeneration += 1
+        let generation = showGeneration
         removeKeyMonitor()
-        panel?.orderOut(nil)
+        panel.orderOut(nil)
         if let app = previousApp {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                // 期间又 show() 过（面板可见）就不抢焦点
+                guard let self, self.showGeneration == generation,
+                      !(self.panel?.isVisible ?? false) else { return }
                 app.activate()
             }
         }
@@ -171,8 +182,10 @@ final class PanelController: NSObject, NSWindowDelegate {
     // MARK: - NSWindowDelegate
 
     func windowDidResignKey(_ notification: Notification) {
-        // 点击别处 / 切换到其他应用时收起面板
-        hide()
+        // 我们自己 orderOut 也会触发 resignKey；只在面板确实还可见（焦点被别的应用抢走）时收起
+        if panel?.isVisible == true {
+            hide()
+        }
     }
 
     func windowWillClose(_ notification: Notification) {

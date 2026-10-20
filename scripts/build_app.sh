@@ -25,7 +25,7 @@ fi
 
 if [ -n "$SIGN_IDENTITY" ]; then
     codesign --force --deep --sign "$SIGN_IDENTITY" "$APP_DIR"
-    echo "==> 已用稳定身份签名: ${SIGN_IDENTITY%%(*}"
+    echo "==> 已用稳定身份签名: $SIGN_IDENTITY"
 else
     codesign --force --deep --sign - "$APP_DIR" 2>/dev/null || echo "(!) 签名失败，可忽略"
     echo "==> 警告：ad-hoc 签名，重建后辅助功能权限会失效"

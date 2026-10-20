@@ -7,6 +7,9 @@ final class QRPairPanel {
     static let shared = QRPairPanel()
 
     private var panel: NSPanel?
+    private var qrView: NSImageView?
+    private var urlField: NSTextField?
+    private var codeField: NSTextField?
 
     func show() {
         WebSyncServer.shared.start()
@@ -14,19 +17,11 @@ final class QRPairPanel {
         guard let panel else { return }
 
         // 刷新内容（IP 可能变化）
-        if let contentView = panel.contentView as? NSStackView {
-            for v in contentView.subviews {
-                if let box = v as? NSBox, let iv = box.contentView?.subviews.compactMap({ $0 as? NSImageView }).first {
-                    iv.image = Self.qrImage(WebSyncServer.shared.pairingURL ?? "")
-                }
-                if let field = v as? NSTextField, field.tag == 100 {
-                    field.stringValue = WebSyncServer.shared.pairingURL ?? "（未找到局域网地址，请确认 Wi-Fi）"
-                }
-                if let field = v as? NSTextField, field.tag == 101 {
-                    field.stringValue = "配对码：" + WebSyncServer.shared.pairCode
-                }
-            }
-        }
+        let url = WebSyncServer.shared.pairingURL ?? ""
+        qrView?.image = Self.qrImage(url)
+        urlField?.stringValue = url.isEmpty ? "（未找到局域网地址，请确认 Wi-Fi）" : url
+        codeField?.stringValue = "配对码：" + WebSyncServer.shared.pairCode
+
         panel.center()
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate()
@@ -42,24 +37,27 @@ final class QRPairPanel {
         let title = NSTextField(labelWithString: "手机扫码连接剪贴板")
         title.font = .systemFont(ofSize: 16, weight: .semibold)
 
-        let qrBox = NSBox()
-        qrBox.boxType = .custom
-        qrBox.fillColor = .white
-        qrBox.cornerRadius = 12
+        // 二维码：白底圆角卡片，显式约束尺寸（不能关掉 autoresizing 又不补约束，会塌成 0）
         let qrView = NSImageView()
         qrView.imageScaling = .scaleProportionallyUpOrDown
-        qrView.frame = NSRect(x: 0, y: 0, width: 220, height: 220)
-        qrBox.contentView = qrView
-        qrBox.snpLayout()
+        qrView.wantsLayer = true
+        qrView.layer?.backgroundColor = NSColor.white.cgColor
+        qrView.layer?.cornerRadius = 12
+        qrView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            qrView.widthAnchor.constraint(equalToConstant: 220),
+            qrView.heightAnchor.constraint(equalToConstant: 220),
+        ])
+        self.qrView = qrView
 
         let urlField = NSTextField(labelWithString: "")
-        urlField.tag = 100
         urlField.font = .systemFont(ofSize: 11)
         urlField.textColor = .secondaryLabelColor
+        self.urlField = urlField
 
         let codeField = NSTextField(labelWithString: "")
-        codeField.tag = 101
         codeField.font = .systemFont(ofSize: 13, weight: .medium)
+        self.codeField = codeField
 
         let hint = NSTextField(labelWithString: "同一 Wi-Fi 下扫码即可，连接加密（AES-256-GCM）\n添加到主屏幕可获得 App 般体验")
         hint.alignment = .center
@@ -69,12 +67,12 @@ final class QRPairPanel {
         hint.maximumNumberOfLines = 2
 
         stack.addArrangedSubview(title)
-        stack.addArrangedSubview(qrBox)
+        stack.addArrangedSubview(qrView)
         stack.addArrangedSubview(codeField)
         stack.addArrangedSubview(urlField)
         stack.addArrangedSubview(hint)
 
-        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 300, height: 420),
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 300, height: 430),
                             styleMask: [.titled, .closable],
                             backing: .buffered, defer: false)
         panel.title = "手机同步"
@@ -100,13 +98,5 @@ final class QRPairPanel {
         let image = NSImage(size: rep.size)
         image.addRepresentation(rep)
         return image
-    }
-}
-
-extension NSBox {
-    /// 简单设置内容尺寸
-    func snpLayout() {
-        self.contentView?.translatesAutoresizingMaskIntoConstraints = false
-        self.translatesAutoresizingMaskIntoConstraints = false
     }
 }
