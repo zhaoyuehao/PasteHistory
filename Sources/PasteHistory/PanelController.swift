@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 import SwiftUI
 
 extension Notification.Name {
@@ -21,11 +22,17 @@ final class PanelController: NSObject, NSWindowDelegate {
     private var previousApp: NSRunningApplication?
     /// 唤起面板前系统里聚焦的那个输入框，粘贴后要把焦点还回去
     private var previousFocusElement: AXUIElement?
+    private var onPasteHandler: ((ClipItem) -> Void)?
     private let store = ClipStore.shared
     /// 每次 show/hide 递增：作废仍在排队的"延迟切回原应用"，防止它把刚打开的面板再次打掉
     private var showGeneration = 0
 
     var isVisible: Bool { panel?.isVisible ?? false }
+
+    /// 冒烟用：不经过 UI，直接走「面板里选中并回车」的同一条粘贴路径
+    func pasteItem(_ item: ClipItem) {
+        onPasteHandler?(item)
+    }
 
     func toggle() {
         isVisible ? hide() : show()
@@ -72,15 +79,18 @@ final class PanelController: NSObject, NSWindowDelegate {
     // MARK: - 构建
 
     private func buildPanel() {
+        let pasteHandler: (ClipItem) -> Void = { [weak self] item in
+            guard let self else { return }
+            let target = previousApp
+            let element = previousFocusElement
+            hide()
+            PasteService.paste(item, to: target, focusElement: element)
+        }
+        onPasteHandler = pasteHandler
+
         let view = HistoryView(
             store: store,
-            onPaste: { [weak self] item in
-                guard let self else { return }
-                let target = previousApp
-                let element = previousFocusElement
-                hide()
-                PasteService.paste(item, to: target, focusElement: element)
-            },
+            onPaste: pasteHandler,
             onCopyOnly: { [weak self] item in
                 guard let self else { return }
                 hide()

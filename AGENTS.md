@@ -23,6 +23,7 @@ PasteHistory.app/Contents/MacOS/PasteHistory --show            # 启动即打开
 PasteHistory.app/Contents/MacOS/PasteHistory --show-pair       # 启动即打开手机同步配对面板（UI 冒烟）
 PasteHistory.app/Contents/MacOS/PasteHistory --print-ax         # 把辅助功能授权状态写到 ax_status.txt
 PasteHistory.app/Contents/MacOS/PasteHistory --paste-latest     # 对最新记录走完整粘贴流程
+PasteHistory.app/Contents/MacOS/PasteHistory --smoke-panel-paste # 复现真实路径：开面板 → 选一条 → 回车粘贴（需前台有聚焦输入框）
 PasteHistory.app/Contents/MacOS/PasteHistory --purge-ids a,b    # 清除指定记录（DB + iCloud + 墓碑）
 PasteHistory.app/Contents/MacOS/PasteHistory --restore-images   # 从 iCloud 恢复本地缺失的原图
 ```
@@ -59,6 +60,7 @@ PasteHistory.app/Contents/MacOS/PasteHistory --restore-images   # 从 iCloud 恢
 | `PanelController.swift` | ⇧⌘C 面板（NSHostingController 承载 SwiftUI） |
 | `HistoryView.swift` | 面板 UI（搜索 / 列表 / 键盘导航） |
 | `PasteService.swift` / `AXFocus.swift` | 回写剪贴板、AX 权限、捕获并还原聚焦输入框、模拟 ⌘V |
+| `PasteCycler.swift` | ⇧⌘V 循环粘贴：不开面板，⌘Z 撤回上一条再贴更早一条 |
 | `OCRIndexer.swift` | Vision 文字识别 + 场景分类 |
 | `iCloudSync.swift` | 一记录一文件导出/导入 + 墓碑 + 对账 |
 | `WebSyncServer.swift` | Network.framework 手写 HTTP 服务（局域网） |

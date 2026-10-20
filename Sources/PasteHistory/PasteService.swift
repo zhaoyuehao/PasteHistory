@@ -79,6 +79,20 @@ enum PasteService {
         up.post(tap: .cghidEventTap)
     }
 
+    /// 撤销上一步（⇧⌘V 循环粘贴时用它撤回刚贴进去的内容）。
+    /// 安全前提：栈顶一定是我们刚刚发出的那次 ⌘V——写剪贴板不进目标应用的 undo 栈。
+    static func sendCommandZ() {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        let keyCode = CGKeyCode(kVK_ANSI_Z)
+        guard let down = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false) else { return }
+        down.flags = .maskCommand
+        up.flags = .maskCommand
+        down.post(tap: .cghidEventTap)
+        usleep(20_000)
+        up.post(tap: .cghidEventTap)
+    }
+
     /// 完整粘贴流程：回写剪贴板 → 切回原应用 → 把焦点放回原输入框 → 发送 ⌘V
     @MainActor
     static func paste(_ item: ClipItem, to app: NSRunningApplication?, focusElement: AXUIElement? = nil) {
