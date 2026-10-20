@@ -1,0 +1,64 @@
+import AppKit
+import CoreGraphics
+
+/// 用 Accessibility API 定位/恢复"当前选中的输入框"
+enum AXFocus {
+    /// 指定进程里当前聚焦的 UI 元素（输入框、文本区域等）
+    static func focusedElement(pid: pid_t) -> AXUIElement? {
+        let app = AXUIElementCreateApplication(pid)
+        var value: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &value)
+        guard result == .success, let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        return (value as! AXUIElement)
+    }
+
+    /// 让某个元素重新拿到键盘焦点（切回应用后把光标放回原来的输入框）
+    @discardableResult
+    static func focus(_ element: AXUIElement) -> Bool {
+        AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success
+    }
+
+    /// 兜底：直接改写元素当前选区（⌘V 被目标应用吞掉时使用）
+    @discardableResult
+    static func setSelectedText(_ element: AXUIElement, _ text: String) -> Bool {
+        AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, text as CFTypeRef) == .success
+    }
+
+    /// 元素当前的值，用于校验是否真的贴进去了
+    static func value(of element: AXUIElement) -> String? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &value) == .success,
+              let value else { return nil }
+        return value as? String
+    }
+}
+
+/// 记录"上一个非本应用的前台应用"，避免从菜单栏打开时把焦点还给错误的对象
+enum AppTracker {
+    static var lastExternalApp: NSRunningApplication?
+
+    static func start() {
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  app.bundleIdentifier != Bundle.main.bundleIdentifier else { return }
+            lastExternalApp = app
+        }
+        if let front = NSWorkspace.shared.frontmostApplication,
+           front.bundleIdentifier != Bundle.main.bundleIdentifier {
+            lastExternalApp = front
+        }
+    }
+
+    /// 唤起面板时的目标应用：优先当前前台，其次是最近一次的外部应用
+    static func targetApp() -> NSRunningApplication? {
+        if let front = NSWorkspace.shared.frontmostApplication,
+           front.bundleIdentifier != Bundle.main.bundleIdentifier {
+            return front
+        }
+        return lastExternalApp
+    }
+}

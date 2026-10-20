@@ -1,0 +1,16 @@
+# 构建产物
+.build/
+dist/
+
+# 打包出的 app（由 scripts/build_app.sh 重新生成）
+PasteHistory.app/
+
+# 签名私钥与证书——绝不入库
+codesign/*.pem
+codesign/*.p12
+codesign/*.key
+codesign/*.csr
+
+# macOS
+.DS_Store
+*.swp
