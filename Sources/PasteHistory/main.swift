@@ -133,47 +133,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
 
-        let open = NSMenuItem(title: "打开历史面板", action: #selector(togglePanel), keyEquivalent: "C")
+        let open = NSMenuItem(title: "打开剪贴板历史", action: #selector(togglePanel), keyEquivalent: "C")
         open.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(open)
 
-        let capture = NSMenuItem(title: "记录当前剪贴板", action: #selector(captureCurrent), keyEquivalent: "")
-        menu.addItem(capture)
-
-        let phone = NSMenuItem(title: "手机同步（二维码）…", action: #selector(showQR), keyEquivalent: "")
+        let phone = NSMenuItem(title: "和手机同步剪贴板…", action: #selector(showQR), keyEquivalent: "")
         menu.addItem(phone)
 
         menu.addItem(NSMenuItem.separator())
 
-        let recent = NSMenuItem(title: "最近记录", action: nil, keyEquivalent: "")
+        let recent = NSMenuItem(title: "最近复制的内容", action: nil, keyEquivalent: "")
         let submenu = NSMenu()
         recent.submenu = submenu
         menu.addItem(recent)
         recentMenu = submenu
 
-        let clear = NSMenuItem(title: "清空全部历史…", action: #selector(clearHistory), keyEquivalent: "")
+        let clear = NSMenuItem(title: "清空全部记录…", action: #selector(clearHistory), keyEquivalent: "")
         menu.addItem(clear)
 
         menu.addItem(NSMenuItem.separator())
 
-        let pause = NSMenuItem(title: "暂停记录", action: #selector(togglePause(_:)), keyEquivalent: "")
+        let pause = NSMenuItem(title: "暂停自动记录", action: #selector(togglePause(_:)), keyEquivalent: "")
         pause.state = Settings.shared.paused ? .on : .off
         menu.addItem(pause)
 
-        let plain = NSMenuItem(title: "粘贴为纯文本", action: #selector(togglePlainText(_:)), keyEquivalent: "")
+        let plain = NSMenuItem(title: "粘贴时不带格式", action: #selector(togglePlainText(_:)), keyEquivalent: "")
         plain.state = Settings.shared.pasteAsPlainText ? .on : .off
         menu.addItem(plain)
 
-        let auto = NSMenuItem(title: "双击 / 回车自动粘贴到输入框", action: #selector(toggleAutoPaste(_:)), keyEquivalent: "")
+        let auto = NSMenuItem(title: "双击或回车直接粘贴", action: #selector(toggleAutoPaste(_:)), keyEquivalent: "")
         auto.state = Settings.shared.autoPaste ? .on : .off
         menu.addItem(auto)
 
         menu.addItem(NSMenuItem.separator())
 
-        // iCloud 同步状态
+        // 多台 Mac 同步状态
         let syncOn = Settings.shared.iCloudSync && iCloudSync.shared.isActive
         let syncItem = NSMenuItem(
-            title: syncOn ? "iCloud 同步：已开启" : (Settings.shared.iCloudSync ? "iCloud 同步：未登录 iCloud Drive" : "iCloud 同步：已关闭"),
+            title: syncOn ? "同步到其他 Mac：已开启" : (Settings.shared.iCloudSync ? "同步到其他 Mac：未登录 iCloud" : "同步到其他 Mac：已关闭"),
             action: #selector(toggleSync),
             keyEquivalent: ""
         )
@@ -181,14 +178,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let trusted = PasteService.isTrusted()
         let axItem = NSMenuItem(
-            title: trusted ? "辅助功能权限：已授权" : "请求辅助功能权限…",
+            title: trusted ? "自动粘贴权限：已开启" : "开启自动粘贴权限…",
             action: trusted ? nil : #selector(requestAX),
             keyEquivalent: ""
         )
         menu.addItem(axItem)
 
+        // 记录数统计。必须带 tag 定位：分隔线的 title 也是空字符串，
+        // menuWillOpen 里按空 title 反查会误命中分隔线，导致这一行永远空白
         let count = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         count.isEnabled = false
+        count.tag = Self.statsMenuItemTag
         menu.addItem(count)
 
         menu.addItem(NSMenuItem.separator())
@@ -198,9 +198,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return menu
     }
 
-    @objc private func captureCurrent() {
-        monitor.captureCurrent()
-    }
+    private static let statsMenuItemTag = 9001
 
     @objc private func showQR() {
         QRPairPanel.shared.show()
@@ -208,8 +206,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func clearHistory() {
         let alert = NSAlert()
-        alert.messageText = "清空全部剪贴板历史？"
-        alert.informativeText = "共 \(store.count) 条记录，此操作不可撤销。"
+        alert.messageText = "清空全部剪贴板记录？"
+        alert.informativeText = "共 \(store.count) 条，此操作不可撤销。"
         alert.addButton(withTitle: "清空")
         alert.addButton(withTitle: "取消")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
@@ -264,8 +262,8 @@ extension AppDelegate: NSMenuDelegate {
                 submenu.addItem(menuItem)
             }
         }
-        if let countItem = menu.items.last(where: { $0.title.isEmpty || $0.title.hasPrefix("共 ") }) {
-            countItem.title = "共 \(store.count) 条记录（上限 \(Settings.shared.maxItems)）"
+        if let countItem = menu.item(withTag: Self.statsMenuItemTag) {
+            countItem.title = "已保存 \(store.count) 条 · 最多保留 \(Settings.shared.maxItems) 条"
         }
     }
 

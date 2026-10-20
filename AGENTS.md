@@ -28,6 +28,9 @@ PasteHistory.app/Contents/MacOS/PasteHistory --restore-images   # 从 iCloud 恢
 
 ## 协作流程（硬性）
 
+- **每次从最新的 origin/main 开始写代码**：动手前先
+  `git -c credential.helper="!$HOME/Documents/PasteHistory/.git/credential-personal.sh" fetch https://github.com:443/zhaoyuehao/PasteHistory.git main`，
+  把本地 main 快进/对齐到 FETCH_HEAD，再从这个最新点拉新分支。**禁止基于过期的本地 main 开发**。
 - **所有改动走 PR**：开分支 → 提交 → 推分支 → `gh pr create` → review 后再合并。**禁止直接推 main**。
 - 推送用个人号凭据（本机全局 `insteadOf` 会把 `https://github.com/` 改写为 SSH 并走公司号）：
 

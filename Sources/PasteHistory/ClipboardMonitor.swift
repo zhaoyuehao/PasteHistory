@@ -8,6 +8,18 @@ final class ClipboardMonitor {
     private var lastChangeCount: Int
     private var timer: Timer?
 
+    /// 刚捕获的一条记录，用于合并「同一次复制被应用拆成多次写剪贴板」的图文
+    /// （比如先写文字、隔几百毫秒再补图片，轮询会抓到两条）。窗口内互补类型直接合并。
+    private struct PendingMerge {
+        let id: UUID
+        let kind: ClipKind
+        let source: String?
+        let at: Date
+    }
+    private var lastCapture: PendingMerge?
+    /// 合并窗口：应用拆写通常在 1 秒内完成，而人手连续两次复制很少这么快
+    private static let mergeWindow: TimeInterval = 1.2
+
     init(store: ClipStore = ClipStore.shared) {
         self.store = store
         self.lastChangeCount = MainActor.assumeIsolated {
@@ -74,6 +86,7 @@ final class ClipboardMonitor {
         if let urls = pb.readObjects(forClasses: [NSURL.self], options: nil) as? [URL],
            !urls.isEmpty,
            urls.allSatisfy({ $0.isFileURL }) {
+            lastCapture = nil
             let paths = urls.map { $0.path }
             var item = ClipItem(kind: .files, filePaths: paths, sourceApp: source)
             // 图片文件（如微信复制的 jpg）：生成列表缩略图，OCR 由 upsert 触发
@@ -85,11 +98,27 @@ final class ClipboardMonitor {
             return
         }
 
-        // 2) 图片
+        // 2) 图片（同一次复制附带的文字一起收进同一条，不再拆成两条）
         if let image = NSImage(pasteboard: pb) {
             if let saved = store.saveImage(image) {
-                store.upsert(ClipItem(kind: .image, imageFile: saved.name,
-                                      sourceApp: source, thumbnailData: saved.thumbnail))
+                let caption = pb.string(forType: .string)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let text = (caption != nil && !caption!.isEmpty && caption!.utf8.count <= 500_000) ? caption : nil
+
+                // 应用拆写：上一条是同来源的纯文本且刚入库 → 图片合并进上一条
+                if let pending = lastCapture, pending.kind == .text,
+                   pending.source == source,
+                   Date().timeIntervalSince(pending.at) < Self.mergeWindow,
+                   store.attachImage(id: pending.id, saved: saved, caption: text) {
+                    lastCapture = nil
+                    return
+                }
+
+                let item = ClipItem(kind: .image, text: text, imageFile: saved.name,
+                                    sourceApp: source, thumbnailData: saved.thumbnail)
+                if store.upsert(item) {
+                    lastCapture = PendingMerge(id: item.id, kind: .image, source: source, at: Date())
+                }
                 return
             }
         }
@@ -98,15 +127,21 @@ final class ClipboardMonitor {
         if let text = pb.string(forType: .string) {
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty, text.utf8.count <= 500_000 {
-                store.upsert(ClipItem(kind: .text, text: text, sourceApp: source))
+                // 应用拆写：上一条是同来源的图片且还没有文字 → 文字合并进上一条
+                if let pending = lastCapture, pending.kind == .image,
+                   pending.source == source,
+                   Date().timeIntervalSince(pending.at) < Self.mergeWindow,
+                   store.attachText(id: pending.id, text: trimmed) {
+                    lastCapture = nil
+                    return
+                }
+
+                let item = ClipItem(kind: .text, text: trimmed, sourceApp: source)
+                if store.upsert(item) {
+                    lastCapture = PendingMerge(id: item.id, kind: .text, source: source, at: Date())
+                }
             }
         }
-    }
-
-    /// 手动把当前剪贴板内容存一条（菜单里"记录当前剪贴板"用）
-    func captureCurrent() {
-        lastChangeCount = -1
-        tick()
     }
 
     /// 用 CGImageSource 直接从磁盘解码图片（比 NSImage 更适合非 UI 场景）

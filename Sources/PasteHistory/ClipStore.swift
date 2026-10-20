@@ -41,6 +41,7 @@ final class ClipStore: ObservableObject {
         imageCache.countLimit = 80
         imageCache.totalCostLimit = 120 * 1024 * 1024
         refresh()
+        dedupeExistingTextItems()
         backfillFileImageMetadata()
     }
 
@@ -72,7 +73,9 @@ final class ClipStore: ObservableObject {
 
     // MARK: - 增删（写库 + 触发同步）
 
-    func upsert(_ item: ClipItem) {
+    /// 返回是否为新插入（同内容去重命中时为 false）
+    @discardableResult
+    func upsert(_ item: ClipItem) -> Bool {
         let inserted = syncDatabase.upsert(item)
         refresh()
         if inserted {
@@ -85,6 +88,36 @@ final class ClipStore: ObservableObject {
                 iCloudSync.shared.exportClip(updated)
             }
         }
+        return inserted
+    }
+
+    /// 应用把一次复制拆成多次写剪贴板时用：把后到的图片合并进刚入库的纯文本记录
+    @discardableResult
+    func attachImage(id: UUID, saved: (name: String, thumbnail: Data?), caption: String?) -> Bool {
+        guard var item = syncDatabase.get(id: id), item.kind == .text, item.imageFile == nil else { return false }
+        item.kind = .image
+        item.imageFile = saved.name
+        item.thumbnailData = saved.thumbnail
+        if item.text == nil, let caption { item.text = caption }
+        syncDatabase.replace(item)
+        refresh()
+        iCloudSync.shared.exportClip(item)
+        OCRIndexer.shared.indexIfNeeded(item) { [weak self] updated in
+            self?.refresh()
+            iCloudSync.shared.exportClip(updated)
+        }
+        return true
+    }
+
+    /// 同上：把后到的文字合并进刚入库的图片记录
+    @discardableResult
+    func attachText(id: UUID, text: String) -> Bool {
+        guard var item = syncDatabase.get(id: id), item.kind == .image, item.text == nil else { return false }
+        item.text = text
+        syncDatabase.replace(item)
+        refresh()
+        iCloudSync.shared.exportClip(item)
+        return true
     }
 
     func remove(id: UUID) {
@@ -168,6 +201,26 @@ final class ClipStore: ObservableObject {
         imageCache.setObject(img, forKey: path as NSString,
                              cost: Int(img.size.width * img.size.height * 4))
         return img
+    }
+
+    /// 老数据清理：旧版本文本指纹未去首尾空白，同一段文字可能被反复存成多条。
+    /// 启动时按新指纹分组，每组保留一条（置顶优先，其次最新），其余连同 iCloud 一起删。
+    private func dedupeExistingTextItems() {
+        let texts = syncDatabase.all().filter { $0.kind == .text }
+        var keeper: [String: ClipItem] = [:]
+        var dupes: [UUID] = []
+        for item in texts {
+            let hash = ClipItem.textContentHash(item.text ?? "")
+            if let prev = keeper[hash] {
+                // 置顶优先保留；都没置顶则留最新的一条
+                let keepNew = item.pinned != prev.pinned ? item.pinned : item.createdAt >= prev.createdAt
+                dupes.append(keepNew ? prev.id : item.id)
+                if keepNew { keeper[hash] = item }
+            } else {
+                keeper[hash] = item
+            }
+        }
+        for id in dupes { remove(id: id) }
     }
 
     /// 老数据回填：图片文件类条目（kind == .files）补缩略图和 OCR，新版本才支持

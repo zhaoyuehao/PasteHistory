@@ -338,6 +338,21 @@ struct PreviewPane: View {
                             Text("\(Int(image.size.width)) × \(Int(image.size.height))")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.tertiary)
+                            // 图文记录：复制时附带的文字
+                            if let text = item.text, !text.isEmpty {
+                                ScrollView {
+                                    Text(text)
+                                        .font(.system(size: 11.5))
+                                        .textSelection(.enabled)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(10)
+                                        .background(Color(NSColor.controlBackgroundColor))
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                }
+                                .frame(maxHeight: 120)
+                                .padding(.horizontal, 12)
+                                .padding(.bottom, 10)
+                            }
                             if let ocr = item.ocrText, !ocr.isEmpty {
                                 ScrollView {
                                     Text(ocr)

@@ -49,19 +49,29 @@ struct ClipItem: Identifiable, Codable, Equatable {
         self.ocrText = ocrText
     }
 
-    /// 去重用内容指纹：文本按内容 hash，图片按文件 hash 名，文件按路径集合
+    /// 去重用内容指纹：文本按「去首尾空白后」的内容 hash，图片按文件 hash 名（附带文字参与指纹），文件按路径集合
     var contentHash: String {
         switch kind {
         case .text:
-            let digest = SHA256.hash(data: Data((text ?? "").utf8))
-            return "t:" + digest.map { String(format: "%02x", $0) }.joined().prefix(32)
+            return Self.textContentHash(text ?? "")
         case .image:
-            return "i:" + (imageFile ?? UUID().uuidString)
+            let base = "i:" + (imageFile ?? UUID().uuidString)
+            // 图文记录：同一张图配不同文字视为不同内容
+            guard let t = text?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { return base }
+            let digest = SHA256.hash(data: Data(t.utf8))
+            return base + "+t:" + digest.map { String(format: "%02x", $0) }.joined().prefix(32)
         case .files:
             let joined = (filePaths ?? []).joined(separator: "|")
             let digest = SHA256.hash(data: Data(joined.utf8))
             return "f:" + digest.map { String(format: "%02x", $0) }.joined().prefix(32)
         }
+    }
+
+    /// 文本指纹：先去掉首尾空白再 hash，"foo" 和 " foo\n" 视为同一内容
+    static func textContentHash(_ text: String) -> String {
+        let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let digest = SHA256.hash(data: Data(normalized.utf8))
+        return "t:" + digest.map { String(format: "%02x", $0) }.joined().prefix(32)
     }
 
     /// 建库时的全文检索列（小写），搜索走 SQLite LIKE
@@ -82,6 +92,10 @@ struct ClipItem: Identifiable, Codable, Equatable {
             let t = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             return t.replacingOccurrences(of: "\n", with: " ⏎ ")
         case .image:
+            // 图文记录：文字部分是用户复制的本意，优先展示
+            if let t = text?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty {
+                return t.replacingOccurrences(of: "\n", with: " ⏎ ")
+            }
             let ocr = ocrText?.trimmingCharacters(in: .whitespacesAndNewlines)
             if let ocr, !ocr.isEmpty, ocr.count < 60 {
                 return "图片 · \(ocr)"
