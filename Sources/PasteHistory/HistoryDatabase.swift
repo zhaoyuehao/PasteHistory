@@ -20,6 +20,7 @@ final class HistoryDatabase {
             _ = queue.sync { open(at: fallback) }
         }
         queue.sync { migrateIfNeeded() }
+        queue.sync { migrateTextHashes() }
     }
 
     deinit {
@@ -61,6 +62,23 @@ final class HistoryDatabase {
         exec("CREATE INDEX IF NOT EXISTS idx_clips_hash ON clips(content_hash)")
         exec("CREATE INDEX IF NOT EXISTS idx_clips_pinned ON clips(pinned, created_at DESC)")
         return true
+    }
+
+    /// 旧版文本指纹未去首尾空白，重算所有 text 行的 content_hash（幂等，每次启动跑一遍）
+    /// 注意：本方法已在队列内执行，只能调用无 dispatch 的私有方法
+    private func migrateTextHashes() {
+        guard let s = Stmt(db, "SELECT id, text FROM clips WHERE kind = 'text'") else { return }
+        var rows: [(id: String, text: String)] = []
+        while s.step() == SQLITE_ROW {
+            rows.append((s.colText(0) ?? "", s.colText(1) ?? ""))
+        }
+        for row in rows {
+            let hash = ClipItem.textContentHash(row.text)
+            guard let u = Stmt(db, "UPDATE clips SET content_hash = ?1 WHERE id = ?2 AND content_hash != ?1") else { continue }
+            u.text(1, hash)
+            u.text(2, row.id)
+            u.step()
+        }
     }
 
     private func migrateIfNeeded() {
@@ -179,8 +197,8 @@ final class HistoryDatabase {
     @discardableResult
     func upsert(_ item: ClipItem) -> Bool {
         queue.sync {
-            // 已存在同内容（且未置顶）→ 更新时间与应用来源即可
-            if let s = Stmt(db, "SELECT id FROM clips WHERE content_hash = ?1 LIMIT 1") {
+            // 已存在同内容（撞指纹多条时取最新一条）→ 更新时间与应用来源即可
+            if let s = Stmt(db, "SELECT id FROM clips WHERE content_hash = ?1 ORDER BY created_at DESC LIMIT 1") {
                 s.text(1, item.contentHash)
                 if s.step() == SQLITE_ROW, let existing = s.colText(0) {
                     if let u = Stmt(db, "UPDATE clips SET created_at = ?1, source_app = ?2 WHERE id = ?3") {

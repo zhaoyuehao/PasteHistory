@@ -26,6 +26,10 @@ enum PasteService {
             if let img = ClipStore.shared.image(named: item.imageFile) {
                 pb.writeObjects([img])
             }
+            // 图文记录：文字一并写回剪贴板，目标应用按需取图或取字
+            if let text = item.text, !text.isEmpty {
+                pb.setString(text, forType: .string)
+            }
         case .files:
             let urls = (item.filePaths ?? []).compactMap { URL(fileURLWithPath: $0) }
             if !urls.isEmpty {
@@ -82,7 +86,7 @@ enum PasteService {
 
         guard isTrusted() else {
             // 没权限就别静默失败，明确告诉用户内容已经在哪
-            Toast.show("已复制到剪贴板，按 ⌘V 粘贴。开启辅助功能权限后可自动填入输入框", duration: 3)
+            Toast.show("已复制到剪贴板，按 ⌘V 粘贴。开启自动粘贴权限后可免按 ⌘V", duration: 3)
             requestTrust()
             return
         }
