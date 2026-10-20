@@ -9,6 +9,27 @@ enum ClipKind: String, Codable, CaseIterable {
     case files
 }
 
+/// 类型筛选：与搜索词并列的独立过滤维度，不参与 search_text 匹配
+enum ClipFilter: String, CaseIterable, Identifiable {
+    case all
+    case text
+    case image
+    case files
+    case pinned
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .all: return "全部"
+        case .text: return "文本"
+        case .image: return "图片"
+        case .files: return "文件"
+        case .pinned: return "置顶"
+        }
+    }
+}
+
 struct ClipItem: Identifiable, Codable, Equatable {
     var id: UUID
     var kind: ClipKind

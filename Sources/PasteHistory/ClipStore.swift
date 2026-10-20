@@ -25,6 +25,15 @@ final class ClipStore: ObservableObject {
         }
     }
 
+    /// 类型筛选：与搜索词并列，切换后立刻重查（无需防抖）
+    @Published var filter: ClipFilter = .all {
+        didSet {
+            guard oldValue != filter else { return }
+            searchDebounce?.cancel()
+            refresh()
+        }
+    }
+
     let syncDatabase: HistoryDatabase
     private let fm = FileManager.default
     private let imagesDir: URL
@@ -41,7 +50,6 @@ final class ClipStore: ObservableObject {
         imageCache.countLimit = 80
         imageCache.totalCostLimit = 120 * 1024 * 1024
         refresh()
-        dedupeExistingTextItems()
         backfillFileImageMetadata()
     }
 
@@ -51,16 +59,16 @@ final class ClipStore: ObservableObject {
     // MARK: - 查询（分页）
 
     func refresh() {
-        let (matched, total) = syncDatabase.counts(query: query)
+        let (matched, total) = syncDatabase.counts(query: query, filter: filter)
         matchCount = matched
         totalCount = total
-        displayed = syncDatabase.list(query: query, limit: pageSize, offset: 0)
+        displayed = syncDatabase.list(query: query, filter: filter, limit: pageSize, offset: 0)
     }
 
     /// 滚动接近底部时加载下一页
     func loadMore() {
         guard displayed.count < matchCount else { return }
-        let next = syncDatabase.list(query: query, limit: pageSize, offset: displayed.count)
+        let next = syncDatabase.list(query: query, filter: filter, limit: pageSize, offset: displayed.count)
         guard !next.isEmpty else { return }
         // 去掉可能与当前页重叠的 id（同步导入期间的并发变化）
         let known = Set(displayed.map { $0.id })
