@@ -61,6 +61,15 @@ main { padding: 10px 14px; }
 #lock button { background: #0a84ff; color: #fff; border: none; border-radius: 10px; padding: 11px 0;
                width: 180px; font-size: 16px; font-weight: 600; }
 #lock p { color: #98989f; font-size: 13px; text-align: center; line-height: 1.6; }
+/* 非 Secure Context 下没有剪贴板 API：用粘贴框代替"读取剪贴板" */
+#pasteOverlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; z-index: 25;
+                padding: 20px; align-items: center; justify-content: center; }
+#pbSheet { background: #2c2c2e; border-radius: 16px; width: 100%; max-width: 500px; padding: 14px 16px; }
+#pbTitle { font-size: 12px; color: #98989f; line-height: 1.6; margin-bottom: 10px; }
+#pb { width: 100%; height: 130px; background: #1c1c1e; border: 1px solid #48484a; border-radius: 10px;
+      color: #f2f2f7; font-size: 16px; padding: 10px 12px; resize: none; outline: none; }
+#pbBtn { background: #0a84ff; color: #fff; border: none; border-radius: 10px; padding: 11px 0; width: 100%;
+         font-size: 16px; font-weight: 600; margin-top: 10px; }
 </style>
 </head>
 <body>
@@ -85,6 +94,13 @@ main { padding: 10px 14px; }
   <p>请输入 Mac 端显示的 6 位配对码<br>（重新扫码即可自动填入）</p>
   <input id="pairInput" inputmode="numeric" maxlength="6" placeholder="······">
   <button onclick="submitPair()">解锁</button>
+</div>
+<div id="pasteOverlay" onclick="if(event.target===this)closePasteBox()">
+  <div id="pbSheet">
+    <div id="pbTitle">当前页面不是 HTTPS，浏览器不允许网页读取剪贴板。<br>请在下面长按 → 粘贴，再同步到 Mac。</div>
+    <textarea id="pb" placeholder="长按此处 → 粘贴"></textarea>
+    <button id="pbBtn" onclick="submitPasted()">同步到 Mac</button>
+  </div>
 </div>
 
 <script>
@@ -314,6 +330,8 @@ function hexBytes(b) { return [...b].map(x => x.toString(16).padStart(2,'0')).jo
 const $ = id => document.getElementById(id);
 let key = null, keyBytes = null, token = null, clips = [], current = null;
 const hasSubtle = !!(window.crypto && window.crypto.subtle);
+// 非安全上下文（http://局域网IP）下 navigator.clipboard 为 undefined，读写剪贴板都要走回退
+const canClipboard = !!(navigator.clipboard && navigator.clipboard.readText && navigator.clipboard.writeText);
 
 // ---- 配对码：URL fragment 优先，其次 localStorage ----
 async function initPair() {
@@ -343,6 +361,7 @@ async function unlock(code) {
     if (!r.ok) { toast('配对码不正确'); key = null; keyBytes = null; return false; }
     const info = await r.json();
     $('status').textContent = '已连接 ' + info.name + ' · ' + info.count + ' 条 · 端到端加密' + (hasSubtle ? '' : '（JS）');
+    if (!canClipboard) $('syncBtn').textContent = '粘贴同步';
     return true;
   } catch (e) { toast('连接失败：' + e.message); return false; }
 }
@@ -454,40 +473,87 @@ async function loadImg(name) {
 }
 function closeSheet() { $('overlay').style.display = 'none'; }
 
+// ---- 复制：Clipboard API 仅在安全上下文可用，非 HTTPS 回退 execCommand ----
 async function copyCurrent() {
   if (!current) return;
-  try {
-    if (current.kind === 'text' || current.kind === 'files') {
-      await navigator.clipboard.writeText(current.kind === 'text' ? current.text : current.paths);
-      toast('已复制，去粘贴吧');
-    } else { toast('图片请长按保存后使用'); }
-    closeSheet();
-  } catch (e) { toast('复制失败：' + e.message); }
+  if (current.kind === 'image') { toast('图片请长按保存后使用'); closeSheet(); return; }
+  const text = current.kind === 'text' ? current.text : current.paths;
+  if (canClipboard) {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast('已复制，去粘贴吧'); closeSheet(); return;
+    } catch (e) { /* 落到下面的回退 */ }
+  }
+  if (legacyCopy(text)) { toast('已复制，去粘贴吧'); closeSheet(); return; }
+  toast('自动复制被浏览器阻止，请长按选中上方内容后点「拷贝」');
 }
 
-// ---- 手机 → Mac：读本机剪贴板 → 加密上传 ----
+function legacyCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', '');
+  ta.contentEditable = 'true';
+  ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;padding:0;border:none;opacity:0;';
+  document.body.appendChild(ta);
+  const sel = window.getSelection();
+  const saved = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
+  let ok = false;
+  try {
+    const range = document.createRange();
+    range.selectNodeContents(ta);
+    sel.removeAllRanges(); sel.addRange(range);
+    ta.setSelectionRange(0, text.length);
+    ok = document.execCommand('copy');
+  } catch (e) { ok = false; }
+  ta.remove();
+  if (saved) { sel.removeAllRanges(); sel.addRange(saved); }
+  return ok;
+}
+
+// ---- 手机 → Mac：优先直接读剪贴板，读不到就用粘贴框 ----
 async function syncClipboard() {
   if (!keyBytes) return;
+  if (!canClipboard) { openPasteBox(); return; }
   const btn = $('syncBtn');
   try {
     btn.disabled = true; btn.textContent = '读取中…';
     const t = await navigator.clipboard.readText();
     if (!t || !t.trim()) { toast('剪贴板是空的'); return; }
     btn.textContent = '同步中…';
-    const payload = JSON.stringify({ text: t, kind: 'text', app: '手机网页' });
-    const b64 = await encryptToB64(payload);
-    const r = await api('/api/clips', { method:'POST', headers: {
-      'Content-Type':'application/json', 'X-Pair-Token': token },
-      body: JSON.stringify({ payload: b64 }) });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    toast('✅ 已同步到 Mac');
+    await uploadText(t);
     btn.classList.add('on'); setTimeout(()=>btn.classList.remove('on'), 1200);
-    await load();
   } catch (e) {
     if (String(e.message||e).includes('denied') || String(e).includes('NotAllowed'))
       toast('请在系统弹窗中允许读取剪贴板');
     else toast('同步失败：' + (e.message || e));
   } finally { btn.disabled = false; btn.textContent = '同步剪贴板'; }
+}
+
+function openPasteBox() {
+  $('pb').value = '';
+  $('pasteOverlay').style.display = 'flex';
+  setTimeout(() => { try { $('pb').focus(); } catch (e) {} }, 60);
+}
+function closePasteBox() { $('pasteOverlay').style.display = 'none'; }
+async function submitPasted() {
+  const t = $('pb').value.trim();
+  if (!t) { toast('先粘贴点内容'); return; }
+  const btn = $('pbBtn');
+  btn.disabled = true; btn.textContent = '同步中…';
+  try { await uploadText(t); closePasteBox(); }
+  catch (e) { toast('同步失败：' + (e.message || e)); }
+  finally { btn.disabled = false; btn.textContent = '同步到 Mac'; }
+}
+
+async function uploadText(t) {
+  const payload = JSON.stringify({ text: t, kind: 'text', app: '手机网页' });
+  const b64 = await encryptToB64(payload);
+  const r = await api('/api/clips', { method:'POST', headers: {
+    'Content-Type':'application/json', 'X-Pair-Token': token },
+    body: JSON.stringify({ payload: b64 }) });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  toast('✅ 已同步到 Mac');
+  await load();
 }
 async function encryptToB64(text) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
