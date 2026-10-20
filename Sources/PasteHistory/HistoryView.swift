@@ -100,6 +100,8 @@ struct HistoryView: View {
             content
         }
         .frame(width: Spec.windowWidth, height: Spec.windowHeight)
+        // 内容顶到窗口上缘，别让标题栏白白占 28pt
+        .ignoresSafeArea()
         .background(Color(NSColor.windowBackgroundColor))
         .onAppear {
             DispatchQueue.main.async { searchFocused = true }
@@ -175,7 +177,8 @@ struct HistoryView: View {
             }
         }
         .padding(.horizontal, Spec.searchPadding)
-        .frame(height: Spec.searchHeight)
+        .padding(.top, 10)   // ignoresSafeArea 顶掉标题栏后，搜索区需要一点呼吸
+        .frame(height: Spec.searchHeight + 10)
     }
 
     /// 全界面唯一一条线
@@ -257,8 +260,9 @@ struct RowView: View {
             header
             detail
                 // 高度是连续量而不是结构变化：内容常驻，收起时高度归零并裁掉。
-                // 用 if 插入/移除会走 appear/disappear 路径，macOS 上表现为瞬变
-                .frame(height: selected ? detailHeight : 0)
+                // 用 if 插入/移除会走 appear/disappear 路径，macOS 上表现为瞬变。
+                // 用 maxHeight 而不是 height：短内容不撑出一片空白
+                .frame(maxHeight: selected ? detailHeight : 0)
                 .clipped()
                 .opacity(selected ? 1 : 0)
         }
@@ -383,7 +387,7 @@ struct RowView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.top, 10)
-        .frame(height: Spec.textDetail)
+        // 不固定高度：内容短则矮，上限 200 由外层 detailHeight 控制
     }
 
     private var imageDetail: some View {
