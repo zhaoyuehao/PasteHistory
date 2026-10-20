@@ -41,6 +41,7 @@ final class ClipStore: ObservableObject {
         imageCache.countLimit = 80
         imageCache.totalCostLimit = 120 * 1024 * 1024
         refresh()
+        backfillFileImageMetadata()
     }
 
     var databaseURL: URL { syncDatabase.url }
@@ -76,13 +77,12 @@ final class ClipStore: ObservableObject {
         refresh()
         if inserted {
             iCloudSync.shared.exportClip(item)
-            if item.kind == .image {
-                OCRIndexer.shared.indexIfNeeded(item) { [weak self] updated in
-                    guard let self else { return }
-                    self.refresh()
-                    // OCR 文本同步给其他设备，避免重复识别
-                    iCloudSync.shared.exportClip(updated)
-                }
+            // .image 和 .files 里的图片文件（如微信复制的 jpg）都做 OCR；其余类型内部直接跳过
+            OCRIndexer.shared.indexIfNeeded(item) { [weak self] updated in
+                guard let self else { return }
+                self.refresh()
+                // OCR 文本同步给其他设备，避免重复识别
+                iCloudSync.shared.exportClip(updated)
             }
         }
     }
@@ -136,7 +136,7 @@ final class ClipStore: ObservableObject {
         return (name, Self.makeThumbnail(cg: cg))
     }
 
-    static func makeThumbnail(cg: CGImage, maxPixel: CGFloat = 128) -> Data? {
+    nonisolated static func makeThumbnail(cg: CGImage, maxPixel: CGFloat = 128) -> Data? {
         let scale = min(1, maxPixel / max(CGFloat(cg.width), CGFloat(cg.height)))
         let w = max(1, Int(CGFloat(cg.width) * scale))
         let h = max(1, Int(CGFloat(cg.height) * scale))
@@ -158,6 +158,51 @@ final class ClipStore: ObservableObject {
         imageCache.setObject(img, forKey: name as NSString,
                              cost: Int(img.size.width * img.size.height * 4))
         return img
+    }
+
+    /// 文件类图片的预览图（按路径缓存；微信等来源的图片文件不拷进 images 目录）
+    func fileImage(path: String?) -> NSImage? {
+        guard let path, !path.isEmpty else { return nil }
+        if let cached = imageCache.object(forKey: path as NSString) { return cached }
+        guard let img = NSImage(contentsOfFile: path) else { return nil }
+        imageCache.setObject(img, forKey: path as NSString,
+                             cost: Int(img.size.width * img.size.height * 4))
+        return img
+    }
+
+    /// 老数据回填：图片文件类条目（kind == .files）补缩略图和 OCR，新版本才支持
+    private func backfillFileImageMetadata() {
+        let targets = syncDatabase.all().filter {
+            $0.firstImageFilePath != nil && ($0.thumbnailData == nil || $0.ocrText == nil)
+        }
+        guard !targets.isEmpty else { return }
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            // 缩略图解码放后台，避免启动时解码大图卡 UI
+            var thumbs: [UUID: Data] = [:]
+            for item in targets where item.thumbnailData == nil {
+                if let path = item.firstImageFilePath,
+                   let cg = ClipboardMonitor.loadCGImage(atPath: path),
+                   let data = ClipStore.makeThumbnail(cg: cg) {
+                    thumbs[item.id] = data
+                }
+            }
+            Task { @MainActor in
+                guard let self else { return }
+                for var item in targets {
+                    if let data = thumbs[item.id] {
+                        item.thumbnailData = data
+                        self.syncDatabase.replace(item)
+                    }
+                    if item.ocrText == nil {
+                        OCRIndexer.shared.indexIfNeeded(item) { [weak self] updated in
+                            self?.refresh()
+                            iCloudSync.shared.exportClip(updated)
+                        }
+                    }
+                }
+                self.refresh()
+            }
+        }
     }
 
     var imagesDirectory: URL { imagesDir }

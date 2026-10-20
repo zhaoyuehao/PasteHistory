@@ -75,7 +75,13 @@ final class ClipboardMonitor {
            !urls.isEmpty,
            urls.allSatisfy({ $0.isFileURL }) {
             let paths = urls.map { $0.path }
-            store.upsert(ClipItem(kind: .files, filePaths: paths, sourceApp: source))
+            var item = ClipItem(kind: .files, filePaths: paths, sourceApp: source)
+            // 图片文件（如微信复制的 jpg）：生成列表缩略图，OCR 由 upsert 触发
+            if let imgPath = item.firstImageFilePath,
+               let cg = Self.loadCGImage(atPath: imgPath) {
+                item.thumbnailData = ClipStore.makeThumbnail(cg: cg)
+            }
+            store.upsert(item)
             return
         }
 
@@ -101,5 +107,12 @@ final class ClipboardMonitor {
     func captureCurrent() {
         lastChangeCount = -1
         tick()
+    }
+
+    /// 用 CGImageSource 直接从磁盘解码图片（比 NSImage 更适合非 UI 场景）
+    nonisolated static func loadCGImage(atPath path: String) -> CGImage? {
+        let url = URL(fileURLWithPath: path) as CFURL
+        guard let source = CGImageSourceCreateWithURL(url, nil) else { return nil }
+        return CGImageSourceCreateImageAtIndex(source, 0, nil)
     }
 }

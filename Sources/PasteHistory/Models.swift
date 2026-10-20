@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import CryptoKit
+import UniformTypeIdentifiers
 
 enum ClipKind: String, Codable, CaseIterable {
     case text
@@ -101,6 +102,16 @@ struct ClipItem: Identifiable, Codable, Equatable {
     var thumbnail: NSImage? {
         guard let data = thumbnailData else { return nil }
         return NSImage(data: data)
+    }
+
+    /// 文件条目里首个图片文件的路径（用于缩略图 / OCR / 预览）
+    /// 微信等应用复制的 jpg 以文件形式进剪贴板，kind 是 .files 但内容其实是图
+    var firstImageFilePath: String? {
+        guard kind == .files else { return nil }
+        return (filePaths ?? []).first { path in
+            guard let ut = UTType(filenameExtension: (path as NSString).pathExtension.lowercased()) else { return false }
+            return ut.conforms(to: .image)
+        }
     }
 }
 

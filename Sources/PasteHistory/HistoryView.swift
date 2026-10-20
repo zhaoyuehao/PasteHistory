@@ -160,7 +160,9 @@ struct HistoryView: View {
     private var previewPane: some View {
         Group {
             if let item = current {
-                PreviewPane(item: item, image: store.image(named: item.imageFile))
+                // .image 读 images 目录；.files 里的图片文件（微信 jpg 等）读原路径
+                PreviewPane(item: item, image: store.image(named: item.imageFile)
+                            ?? store.fileImage(path: item.firstImageFilePath))
             } else {
                 VStack {
                     Spacer()
@@ -359,6 +361,25 @@ struct PreviewPane: View {
                 case .files:
                     ScrollView {
                         VStack(alignment: .leading, spacing: 6) {
+                            // 图片文件（微信 jpg 等）：显示预览图和 OCR 文本
+                            if let image {
+                                Image(nsImage: image)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(maxWidth: .infinity)
+                                    .frame(maxHeight: 220)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                if let ocr = item.ocrText, !ocr.isEmpty {
+                                    Text(ocr)
+                                        .font(.system(size: 11.5))
+                                        .foregroundStyle(.secondary)
+                                        .textSelection(.enabled)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(10)
+                                        .background(Color(NSColor.controlBackgroundColor))
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                }
+                            }
                             ForEach(item.filePaths ?? [], id: \.self) { path in
                                 HStack(spacing: 6) {
                                     Image(systemName: "doc")
