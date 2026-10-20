@@ -10,6 +10,7 @@ final class QRPairPanel {
     private var qrView: NSImageView?
     private var urlField: NSTextField?
     private var codeField: NSTextField?
+    private var warnField: NSTextField?
 
     func show() {
         WebSyncServer.shared.start()
@@ -21,6 +22,7 @@ final class QRPairPanel {
         qrView?.image = Self.qrImage(url)
         urlField?.stringValue = url.isEmpty ? "（未找到局域网地址，请确认 Wi-Fi）" : url
         codeField?.stringValue = "配对码：" + WebSyncServer.shared.pairCode
+        warnField?.stringValue = WebSyncServer.shared.lastError ?? ""
 
         panel.center()
         panel.makeKeyAndOrderFront(nil)
@@ -66,8 +68,16 @@ final class QRPairPanel {
         hint.lineBreakMode = .byWordWrapping
         hint.maximumNumberOfLines = 2
 
+        let warnField = NSTextField(wrappingLabelWithString: "")
+        warnField.font = .systemFont(ofSize: 11)
+        warnField.textColor = .systemOrange
+        warnField.alignment = .center
+        warnField.maximumNumberOfLines = 2
+        self.warnField = warnField
+
         stack.addArrangedSubview(title)
         stack.addArrangedSubview(qrView)
+        stack.addArrangedSubview(warnField)
         stack.addArrangedSubview(codeField)
         stack.addArrangedSubview(urlField)
         stack.addArrangedSubview(hint)

@@ -13,6 +13,8 @@ enum WebSyncPage {
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#1c1c1e">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.json">
 <title>剪贴板</title>
 <style>
 :root { color-scheme: dark; }
@@ -329,6 +331,7 @@ function hexBytes(b) { return [...b].map(x => x.toString(16).padStart(2,'0')).jo
 
 const $ = id => document.getElementById(id);
 let key = null, keyBytes = null, token = null, clips = [], current = null;
+const decCache = new Map();   // 密文 → 明文缓存（避免轮询重复解密）
 const hasSubtle = !!(window.crypto && window.crypto.subtle);
 // 非安全上下文（http://局域网IP）下 navigator.clipboard 为 undefined，读写剪贴板都要走回退
 const canClipboard = !!(navigator.clipboard && navigator.clipboard.readText && navigator.clipboard.writeText);
@@ -404,17 +407,28 @@ async function load() {
     const out = [];
     for (const c of data.clips) {
       const item = { id: c.id, kind: c.kind, ts: c.ts, pinned: c.pinned, img: c.img || null };
-      try {
-        const plain = JSON.parse(await decryptB64(c.payload) || '{}');
+      // 密文不变就复用上次解密结果，避免每次轮询把几百条重解一遍（纯 JS 回退下很吃 CPU）
+      const ck = c.id + ':' + c.payload.length + ':' + c.payload.slice(-24);
+      let plain = decCache.get(ck);
+      if (!plain) {
+        try {
+          plain = JSON.parse(await decryptB64(c.payload) || '{}');
+          decCache.set(ck, plain);
+        } catch (e) { plain = null; }
+      }
+      if (plain) {
         item.text = plain.text || ''; item.ocr = plain.ocr || '';
         item.app = plain.app || ''; item.paths = plain.paths || '';
         item.thumb = plain.thumb || null;
-      } catch (e) { item.text = '🔒 解密失败'; }
+      } else { item.text = '🔒 解密失败'; }
       out.push(item);
     }
+    if (decCache.size > 1000) decCache.clear();
     clips = out;
     render();
-  } catch (e) { $('status').textContent = '连接失败，下拉重试'; }
+  } catch (e) {
+    $('status').textContent = '连不上 Mac：确认同一 Wi-Fi（部分 Wi-Fi 有设备隔离）、已允许「本地网络」权限、Mac 未睡眠';
+  }
 }
 
 function fmtTime(ts) {
@@ -560,7 +574,15 @@ async function encryptToB64(text) {
   const data = await gcmEncrypt(iv, new TextEncoder().encode(text));
   const combined = new Uint8Array(12 + data.byteLength);
   combined.set(iv); combined.set(new Uint8Array(data), 12);
-  return btoa(String.fromCharCode(...combined));
+  return bytesToB64(combined);
+}
+// 分块转换：String.fromCharCode(...bigArray) 参数过多会 RangeError（长文同步会失败）
+function bytesToB64(bytes) {
+  let out = '';
+  const CH = 0x8000;
+  for (let i = 0; i < bytes.length; i += CH)
+    out += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+  return btoa(out);
 }
 
 function toast(msg) {

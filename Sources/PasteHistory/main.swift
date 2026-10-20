@@ -46,7 +46,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.monitor.start() }
+            Task { @MainActor in
+                self?.monitor.start()
+                // 睡醒后监听常失效，手机会连不上 → 重启一次
+                WebSyncServer.shared.restart()
+            }
         }
 
         if !Settings.shared.launchedBefore {

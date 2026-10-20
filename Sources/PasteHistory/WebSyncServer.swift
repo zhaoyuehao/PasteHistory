@@ -18,6 +18,11 @@ final class WebSyncServer {
     private let queue = DispatchQueue(label: "com.verdent.pastehistory.websync")
     private let db: HistoryDatabase   // 读连接（与主库同一文件，WAL 并发读安全）
     private let fm = FileManager.default
+    private let iconPNG: Data?        // 主屏图标（CoreGraphics 画一次缓存）
+    /// 启动失败原因（端口被占用等），二维码面板要提示给用户
+    private(set) var lastError: String?
+    /// 401 失败时间戳，用于限速（网络串行队列访问，无需加锁）
+    private var authFailures: [TimeInterval] = []
 
     // MARK: - 配对码与密钥（init 时确定，线程安全只读）
 
@@ -42,6 +47,7 @@ final class WebSyncServer {
         db = HistoryDatabase(url: appSupport
             .appendingPathComponent("PasteHistory", isDirectory: true)
             .appendingPathComponent("history.sqlite"))
+        iconPNG = Self.makeIconPNG()
     }
 
     // MARK: - 生命周期（从主线程调用）
@@ -68,7 +74,8 @@ final class WebSyncServer {
             listener.start(queue: queue)
             self.listener = listener
         } catch {
-            NSLog("[WebSync] 端口被占用: \(error.localizedDescription)")
+            lastError = "端口 \(Self.port) 被占用，手机连不上（换端口或退出占用程序后重启本应用）"
+            NSLog("[WebSync] 启动失败: \(error.localizedDescription)")
         }
     }
 
@@ -76,6 +83,14 @@ final class WebSyncServer {
         listener?.cancel()
         listener = nil
         isRunning = false
+    }
+
+    /// Mac 睡醒后监听可能失效，重启一次
+    func restart() {
+        stop()
+        lastError = nil
+        authFailures.removeAll()
+        start()
     }
 
     /// 本机局域网地址（主线程调用，给二维码面板用）
@@ -173,15 +188,43 @@ final class WebSyncServer {
         case "/favicon.ico":
             respond(conn, status: "204 No Content", contentType: "image/x-icon", body: Data())
             return
+        case "/apple-touch-icon.png", "/icon.png":
+            // 免鉴权：浏览器/主屏取图标时不带 token
+            if let iconPNG {
+                respond(conn, status: "200 OK", contentType: "image/png", body: iconPNG)
+            } else {
+                respond(conn, status: "404 Not Found", contentType: "application/json",
+                        body: Data(#"{"error":"not found"}"#.utf8))
+            }
+            return
+        case "/manifest.json":
+            let manifest = """
+            {"name":"剪贴板历史","short_name":"剪贴板","start_url":"/","display":"standalone",
+             "background_color":"#1c1c1e","theme_color":"#1c1c1e",
+             "icons":[{"src":"/apple-touch-icon.png","sizes":"180x180","type":"image/png"}]}
+            """
+            respond(conn, status: "200 OK", contentType: "application/manifest+json",
+                    body: Data(manifest.utf8))
+            return
         default:
             break
         }
 
+        // 暴力破解防护：60 秒内连续 10 次 401 就短暂拒绝（6 位码只有 100 万组合）
+        let now = Date().timeIntervalSince1970
+        authFailures = authFailures.filter { now - $0 < 60 }
+        guard authFailures.count < 10 else {
+            respond(conn, status: "429 Too Many Requests", contentType: "application/json",
+                    body: Data(#"{"error":"too many attempts"}"#.utf8))
+            return
+        }
         guard req.headers["x-pair-token"] == pairToken else {
+            authFailures.append(now)
             respond(conn, status: "401 Unauthorized", contentType: "application/json",
                     body: Data(#"{"error":"unauthorized"}"#.utf8))
             return
         }
+        authFailures.removeAll()
 
         switch (req.method, req.path) {
         case ("GET", "/api/info"):
@@ -312,6 +355,34 @@ final class WebSyncServer {
         conn.send(content: out, completion: .contentProcessed { _ in
             conn.cancel()
         })
+    }
+
+    // MARK: - 主屏图标（CoreGraphics 直接画，不依赖主线程/字体）
+
+    private static func makeIconPNG(size: Int = 180) -> Data? {
+        guard let ctx = CGContext(data: nil, width: size, height: size, bitsPerComponent: 8,
+                                  bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        let w = CGFloat(size), u = w / 180
+        let rect = CGRect(x: 0, y: 0, width: w, height: w)
+        ctx.addPath(CGPath(roundedRect: rect, cornerWidth: 40*u, cornerHeight: 40*u, transform: nil))
+        ctx.clip()
+        ctx.setFillColor(CGColor(red: 0.04, green: 0.52, blue: 1, alpha: 1))  // #0a84ff
+        ctx.fill(rect)
+        ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        ctx.addPath(CGPath(roundedRect: CGRect(x: 46*u, y: 38*u, width: 88*u, height: 104*u),
+                           cornerWidth: 10*u, cornerHeight: 10*u, transform: nil))
+        ctx.fillPath()
+        ctx.addPath(CGPath(roundedRect: CGRect(x: 72*u, y: 134*u, width: 36*u, height: 18*u),
+                           cornerWidth: 6*u, cornerHeight: 6*u, transform: nil))
+        ctx.fillPath()
+        ctx.setFillColor(CGColor(red: 0.04, green: 0.52, blue: 1, alpha: 1))
+        for i in 0..<3 { ctx.fill(CGRect(x: 58*u, y: (56 + CGFloat(i)*22)*u, width: 64*u, height: 8*u)) }
+        guard let image = ctx.makeImage() else { return nil }
+        let out = NSMutableData()
+        guard let dest = CGImageDestinationCreateWithData(out, "public.png" as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(dest, image, nil)
+        return CGImageDestinationFinalize(dest) ? (out as Data) : nil
     }
 
     private static func jsonString(_ s: String) -> String {
