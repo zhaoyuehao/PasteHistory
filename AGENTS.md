@@ -32,13 +32,16 @@ PasteHistory.app/Contents/MacOS/PasteHistory --restore-images   # 从 iCloud 恢
 - 推送用个人号凭据（本机全局 `insteadOf` 会把 `https://github.com/` 改写为 SSH 并走公司号）：
 
   ```bash
-  git -c credential.helper=.git/credential-personal.sh \
+  git -c credential.helper="!$HOME/Documents/PasteHistory/.git/credential-personal.sh" \
       push https://github.com:443/zhaoyuehao/PasteHistory.git <branch>
   ```
 
-  输出里的 `credential-...  is not a git command` 是无害警告。
+  **`!` + 绝对路径是必须的**：写成相对路径 `.git/credential-personal.sh` 时 git 会把它当子命令，
+  报 `credential-...  is not a git command` 并退化到匿名推送（会失败）。helper 内部走
+  `gh auth token --user zhaoyuehao`（个人号，已登录）。
   推显式 URL 不会更新 `origin/main` 指针，`git status` 可能误报 `ahead N`——以
-  `git ls-remote --heads https://github.com:443/zhaoyuehao/PasteHistory.git` 为准。
+  `git ls-remote --heads https://github.com:443/zhaoyuehao/PasteHistory.git` 为准，
+  必要时 `git update-ref refs/remotes/origin/main <sha>` 校正。
 - 远端 main 领先时（用户在 GitHub 上合并了 PR）：`git fetch <url> main && git rebase FETCH_HEAD`，不要 force push。
 
 ## 模块职责
