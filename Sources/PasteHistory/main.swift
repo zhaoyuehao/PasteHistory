@@ -7,7 +7,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let monitor = ClipboardMonitor()
     private let hotKey = HotKeyManager()
     private var statusItem: NSStatusItem?
-    private var recentMenu: NSMenu?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -61,6 +60,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 仅供冒烟测试：--show 启动即打开面板
         if ProcessInfo.processInfo.arguments.contains("--show") {
             PanelController.shared.show()
+        }
+
+        // 仅供冒烟测试：--show-pair 启动即打开手机同步配对面板
+        if ProcessInfo.processInfo.arguments.contains("--show-pair") {
+            QRPairPanel.shared.show()
         }
 
         // 维护参数：--purge-ids uuid1,uuid2 清除指定记录（本地 DB + iCloud 文件 + 墓碑）
@@ -133,23 +137,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
 
-        let open = NSMenuItem(title: "打开剪贴板历史", action: #selector(togglePanel), keyEquivalent: "C")
+        let open = NSMenuItem(title: "显示剪贴板历史", action: #selector(togglePanel), keyEquivalent: "C")
         open.keyEquivalentModifierMask = [.command, .shift]
+        open.image = Self.menuIcon("clipboard")
         menu.addItem(open)
-
-        let phone = NSMenuItem(title: "和手机同步剪贴板…", action: #selector(showQR), keyEquivalent: "")
-        menu.addItem(phone)
 
         menu.addItem(NSMenuItem.separator())
 
-        let recent = NSMenuItem(title: "最近复制的内容", action: nil, keyEquivalent: "")
-        let submenu = NSMenu()
-        recent.submenu = submenu
-        menu.addItem(recent)
-        recentMenu = submenu
+        // 最近复制：内联展示，具体条目在 menuWillOpen 里按 tag 插到这个标题后面
+        let recentHeader = NSMenuItem(title: "最近复制", action: nil, keyEquivalent: "")
+        recentHeader.isEnabled = false
+        recentHeader.tag = Self.recentHeaderTag
+        menu.addItem(recentHeader)
 
-        let clear = NSMenuItem(title: "清空全部记录…", action: #selector(clearHistory), keyEquivalent: "")
-        menu.addItem(clear)
+        menu.addItem(NSMenuItem.separator())
+
+        let phone = NSMenuItem(title: "手机同步", action: #selector(showQR), keyEquivalent: "")
+        phone.image = Self.menuIcon("qrcode")
+        menu.addItem(phone)
+
+        // 状态文字走 badge（右对齐），标题保持简短
+        let syncItem = NSMenuItem(title: "iCloud 同步", action: #selector(toggleSync), keyEquivalent: "")
+        syncItem.image = Self.menuIcon("icloud")
+        syncItem.tag = Self.syncMenuItemTag
+        menu.addItem(syncItem)
+
+        let axItem = NSMenuItem(title: "自动粘贴权限", action: #selector(requestAX), keyEquivalent: "")
+        axItem.image = Self.menuIcon("hand.raised")
+        axItem.tag = Self.axMenuItemTag
+        menu.addItem(axItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -167,23 +183,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
-        // 多台 Mac 同步状态
-        let syncOn = Settings.shared.iCloudSync && iCloudSync.shared.isActive
-        let syncItem = NSMenuItem(
-            title: syncOn ? "同步到其他 Mac：已开启" : (Settings.shared.iCloudSync ? "同步到其他 Mac：未登录 iCloud" : "同步到其他 Mac：已关闭"),
-            action: #selector(toggleSync),
-            keyEquivalent: ""
-        )
-        menu.addItem(syncItem)
-
-        let trusted = PasteService.isTrusted()
-        let axItem = NSMenuItem(
-            title: trusted ? "自动粘贴权限：已开启" : "开启自动粘贴权限…",
-            action: trusted ? nil : #selector(requestAX),
-            keyEquivalent: ""
-        )
-        menu.addItem(axItem)
-
         // 记录数统计。必须带 tag 定位：分隔线的 title 也是空字符串，
         // menuWillOpen 里按空 title 反查会误命中分隔线，导致这一行永远空白
         let count = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -192,13 +191,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(count)
 
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "退出", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+
+        let clear = NSMenuItem(title: "清空历史", action: #selector(clearHistory), keyEquivalent: "")
+        clear.image = Self.menuIcon("trash")
+        clear.attributedTitle = NSAttributedString(
+            string: "清空历史",
+            attributes: [.foregroundColor: NSColor.systemRed]
+        )
+        menu.addItem(clear)
+
+        menu.addItem(NSMenuItem(title: "退出 PasteHistory",
+                                action: #selector(NSApplication.terminate(_:)),
+                                keyEquivalent: "q"))
 
         menu.delegate = self
         return menu
     }
 
+    private static func menuIcon(_ name: String) -> NSImage? {
+        let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)
+        image?.size = NSSize(width: 15, height: 15)
+        image?.isTemplate = true
+        return image
+    }
+
     private static let statsMenuItemTag = 9001
+    private static let recentHeaderTag = 9002
+    private static let syncMenuItemTag = 9003
+    private static let axMenuItemTag = 9004
+    /// 最近复制条目用 9101…9109 标记，menuWillOpen 时先按 tag 清掉再重插
+    private static let recentItemTagBase = 9100
 
     @objc private func showQR() {
         QRPairPanel.shared.show()
@@ -245,25 +267,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 extension AppDelegate: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
-        guard let submenu = recentMenu else { return }
-        submenu.removeAllItems()
-        let top = store.recent(10)
-        if top.isEmpty {
-            submenu.addItem(NSMenuItem(title: "暂无记录", action: nil, keyEquivalent: ""))
-        } else {
-            for (i, item) in top.enumerated() {
-                let title = String(item.summary.prefix(48))
-                let menuItem = NSMenuItem(title: title, action: #selector(pasteRecent(_:)), keyEquivalent: "")
-                menuItem.representedObject = item.id.uuidString
-                if i < 9 {
-                    menuItem.keyEquivalent = "\(i + 1)"
-                    menuItem.keyEquivalentModifierMask = [.command]
-                }
-                submenu.addItem(menuItem)
+        rebuildRecentItems(in: menu)
+
+        if let countItem = menu.item(withTag: Self.statsMenuItemTag) {
+            countItem.title = "已保存 \(store.count) 条记录"
+        }
+
+        if let syncItem = menu.item(withTag: Self.syncMenuItemTag) {
+            let syncOn = Settings.shared.iCloudSync && iCloudSync.shared.isActive
+            syncItem.badge = NSMenuItemBadge(string: syncOn ? "已开启"
+                                                            : (Settings.shared.iCloudSync ? "未登录" : "已关闭"))
+        }
+
+        if let axItem = menu.item(withTag: Self.axMenuItemTag) {
+            let trusted = PasteService.isTrusted()
+            axItem.badge = NSMenuItemBadge(string: trusted ? "已开启" : "待授权")
+        }
+    }
+
+    /// 最近 3 条内联在标题下方，⌘1–3 直接粘贴（菜单展开时才响应，不会劫持全局快捷键）
+    private func rebuildRecentItems(in menu: NSMenu) {
+        for i in 1...9 {
+            if let old = menu.item(withTag: Self.recentItemTagBase + i) {
+                menu.removeItem(old)
             }
         }
-        if let countItem = menu.item(withTag: Self.statsMenuItemTag) {
-            countItem.title = "已保存 \(store.count) 条 · 最多保留 \(Settings.shared.maxItems) 条"
+        guard let header = menu.item(withTag: Self.recentHeaderTag) else { return }
+        var insertIndex = menu.index(of: header) + 1
+
+        let top = store.recent(3)
+        if top.isEmpty {
+            let none = NSMenuItem(title: "暂无记录", action: nil, keyEquivalent: "")
+            none.isEnabled = false
+            none.tag = Self.recentItemTagBase + 1
+            menu.insertItem(none, at: insertIndex)
+            return
+        }
+        for (i, item) in top.enumerated() {
+            let entry = NSMenuItem(title: String(item.summary.prefix(40)),
+                                   action: #selector(pasteRecent(_:)),
+                                   keyEquivalent: "\(i + 1)")
+            entry.keyEquivalentModifierMask = [.command]
+            entry.representedObject = item.id.uuidString
+            entry.tag = Self.recentItemTagBase + i + 1
+            entry.image = Self.menuIcon(Self.symbol(for: item.kind))
+            menu.insertItem(entry, at: insertIndex)
+            insertIndex += 1
+        }
+    }
+
+    private static func symbol(for kind: ClipKind) -> String {
+        switch kind {
+        case .text: return "doc.text"
+        case .image: return "photo"
+        case .files: return "folder"
         }
     }
 

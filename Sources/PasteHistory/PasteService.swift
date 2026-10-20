@@ -31,9 +31,15 @@ enum PasteService {
                 pb.setString(text, forType: .string)
             }
         case .files:
-            let urls = (item.filePaths ?? []).compactMap { URL(fileURLWithPath: $0) }
+            let paths = item.filePaths ?? []
+            let urls = paths.compactMap { URL(fileURLWithPath: $0) }
             if !urls.isEmpty {
                 pb.writeObjects(urls as [NSURL])
+            }
+            // 同时写一份路径文本：目标是输入框（而非 Finder）时，剪贴板里得有 string 才粘得出东西。
+            // fileURL 类型不受影响，Finder 里 ⌘V 仍然粘贴文件本身。
+            if !paths.isEmpty {
+                pb.setString(paths.joined(separator: "\n"), forType: .string)
             }
         }
     }

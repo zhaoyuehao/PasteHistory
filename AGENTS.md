@@ -20,6 +20,7 @@ open PasteHistory.app           # 运行（菜单栏出现剪贴板图标）
 
 ```bash
 PasteHistory.app/Contents/MacOS/PasteHistory --show            # 启动即打开面板（UI 冒烟）
+PasteHistory.app/Contents/MacOS/PasteHistory --show-pair       # 启动即打开手机同步配对面板（UI 冒烟）
 PasteHistory.app/Contents/MacOS/PasteHistory --print-ax         # 把辅助功能授权状态写到 ax_status.txt
 PasteHistory.app/Contents/MacOS/PasteHistory --paste-latest     # 对最新记录走完整粘贴流程
 PasteHistory.app/Contents/MacOS/PasteHistory --purge-ids a,b    # 清除指定记录（DB + iCloud + 墓碑）

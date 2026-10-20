@@ -1,5 +1,6 @@
 import AppKit
 import CoreImage.CIFilterBuiltins
+import SwiftUI
 
 /// "手机同步"面板：显示二维码（地址+配对码）与手动输入信息
 @MainActor
@@ -7,91 +8,34 @@ final class QRPairPanel {
     static let shared = QRPairPanel()
 
     private var panel: NSPanel?
-    private var qrView: NSImageView?
-    private var urlField: NSTextField?
-    private var codeField: NSTextField?
-    private var warnField: NSTextField?
+    private var model = PairModel()
 
     func show() {
         WebSyncServer.shared.start()
         if panel == nil { buildPanel() }
         guard let panel else { return }
 
-        // 刷新内容（IP 可能变化）
-        let url = WebSyncServer.shared.pairingURL ?? ""
-        qrView?.image = Self.qrImage(url)
-        urlField?.stringValue = url.isEmpty ? "（未找到局域网地址，请确认 Wi-Fi）" : url
-        codeField?.stringValue = "配对码：" + WebSyncServer.shared.pairCode
-        warnField?.stringValue = WebSyncServer.shared.lastError ?? ""
-
+        model.refresh()
         panel.center()
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate()
     }
 
     private func buildPanel() {
-        let stack = NSStackView()
-        stack.orientation = .vertical
-        stack.alignment = .centerX
-        stack.spacing = 12
-        stack.translatesAutoresizingMaskIntoConstraints = false
-
-        let title = NSTextField(labelWithString: "手机扫码连接剪贴板")
-        title.font = .systemFont(ofSize: 16, weight: .semibold)
-
-        // 二维码：白底圆角卡片，显式约束尺寸（不能关掉 autoresizing 又不补约束，会塌成 0）
-        let qrView = NSImageView()
-        qrView.imageScaling = .scaleProportionallyUpOrDown
-        qrView.wantsLayer = true
-        qrView.layer?.backgroundColor = NSColor.white.cgColor
-        qrView.layer?.cornerRadius = 12
-        qrView.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            qrView.widthAnchor.constraint(equalToConstant: 220),
-            qrView.heightAnchor.constraint(equalToConstant: 220),
-        ])
-        self.qrView = qrView
-
-        let urlField = NSTextField(labelWithString: "")
-        urlField.font = .systemFont(ofSize: 11)
-        urlField.textColor = .secondaryLabelColor
-        self.urlField = urlField
-
-        let codeField = NSTextField(labelWithString: "")
-        codeField.font = .systemFont(ofSize: 13, weight: .medium)
-        self.codeField = codeField
-
-        let hint = NSTextField(labelWithString: "同一 Wi-Fi 下扫码即可，连接加密（AES-256-GCM）\n添加到主屏幕可获得 App 般体验")
-        hint.alignment = .center
-        hint.font = .systemFont(ofSize: 11)
-        hint.textColor = .tertiaryLabelColor
-        hint.lineBreakMode = .byWordWrapping
-        hint.maximumNumberOfLines = 2
-
-        let warnField = NSTextField(wrappingLabelWithString: "")
-        warnField.font = .systemFont(ofSize: 11)
-        warnField.textColor = .systemOrange
-        warnField.alignment = .center
-        warnField.maximumNumberOfLines = 2
-        self.warnField = warnField
-
-        stack.addArrangedSubview(title)
-        stack.addArrangedSubview(qrView)
-        stack.addArrangedSubview(warnField)
-        stack.addArrangedSubview(codeField)
-        stack.addArrangedSubview(urlField)
-        stack.addArrangedSubview(hint)
-
-        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 300, height: 430),
-                            styleMask: [.titled, .closable],
-                            backing: .buffered, defer: false)
+        let hosting = NSHostingController(rootView: PairPanelView(model: model) {
+            Task { @MainActor in Self.shared.model.refresh() }
+        })
+        let panel = NSPanel(contentViewController: hosting)
+        panel.styleMask = [.titled, .closable, .fullSizeContentView]
         panel.title = "手机同步"
-        panel.contentView = stack
+        panel.titlebarAppearsTransparent = true
+        panel.titleVisibility = .hidden
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces]
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
+        panel.setContentSize(NSSize(width: 320, height: 452))
         panel.center()
         self.panel = panel
     }
@@ -108,5 +52,132 @@ final class QRPairPanel {
         let image = NSImage(size: rep.size)
         image.addRepresentation(rep)
         return image
+    }
+}
+
+// MARK: - 面板状态
+
+@MainActor
+final class PairModel: ObservableObject {
+    @Published var qr: NSImage?
+    @Published var address = ""
+    @Published var pairCode = ""
+    @Published var warning = ""
+
+    func refresh() {
+        let url = WebSyncServer.shared.pairingURL ?? ""
+        qr = QRPairPanel.qrImage(url)
+        address = url.isEmpty ? "未找到局域网地址，请确认 Wi-Fi" : url
+        pairCode = WebSyncServer.shared.pairCode
+        warning = WebSyncServer.shared.lastError ?? ""
+    }
+}
+
+// MARK: - 面板视图
+
+private struct PairPanelView: View {
+    @ObservedObject var model: PairModel
+    var onRefresh: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 3) {
+                Text("手机同步")
+                    .font(.system(size: 14, weight: .medium))
+                Text("同一 Wi-Fi 下扫码连接")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color(NSColor.tertiaryLabelColor))
+            }
+            .padding(.top, 18)
+            .padding(.bottom, 14)
+
+            Group {
+                if let qr = model.qr {
+                    Image(nsImage: qr)
+                        .resizable()
+                        .interpolation(.none)
+                        .scaledToFit()
+                } else {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color(NSColor.controlBackgroundColor))
+                        .overlay(
+                            Text("等待网络")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color(NSColor.tertiaryLabelColor))
+                        )
+                }
+            }
+            .frame(width: 176, height: 176)
+            .padding(10)
+            .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color(NSColor.separatorColor).opacity(0.6))
+            )
+
+            Text(model.pairCode.isEmpty ? "------" : model.pairCode)
+                .font(.system(size: 19, weight: .medium, design: .monospaced))
+                .tracking(2)
+                .padding(.top, 16)
+            Text("配对码，手机端输入一次即可记住")
+                .font(.system(size: 10.5))
+                .foregroundStyle(Color(NSColor.tertiaryLabelColor))
+                .padding(.top, 3)
+
+            HStack(spacing: 5) {
+                Text(model.address)
+                    .font(.system(size: 10.5, design: .monospaced))
+                    .foregroundStyle(Color(NSColor.secondaryLabelColor))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(model.address, forType: .string)
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                        .font(.system(size: 10))
+                }
+                .buttonStyle(.borderless)
+                .help("复制地址")
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(Color(NSColor.controlBackgroundColor).opacity(0.6))
+            )
+            .padding(.top, 12)
+
+            if !model.warning.isEmpty {
+                Text(model.warning)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Color.orange)
+                    .multilineTextAlignment(.center)
+                    .padding(.top, 10)
+                    .padding(.horizontal, 20)
+            }
+
+            HStack(spacing: 5) {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(Color(NSColor.tertiaryLabelColor))
+                Text("端到端加密 · AES-256-GCM")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Color(NSColor.tertiaryLabelColor))
+            }
+            .padding(.top, 12)
+            .padding(.bottom, 14)
+
+            Spacer(minLength: 0)
+
+            Button("刷新二维码", action: onRefresh)
+                .buttonStyle(.borderless)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.accentColor)
+                .padding(.bottom, 14)
+        }
+        .frame(width: 320)
+        .background(Color(NSColor.windowBackgroundColor))
     }
 }

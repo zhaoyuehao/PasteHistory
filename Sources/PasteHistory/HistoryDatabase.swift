@@ -254,28 +254,39 @@ final class HistoryDatabase {
         return "%" + escaped.lowercased() + "%"
     }
 
+    /// 筛选条件对应的 SQL 片段；.all 表示不筛选
+    private static func filterClause(_ filter: ClipFilter) -> String? {
+        switch filter {
+        case .all: return nil
+        case .text: return "kind = 'text'"
+        case .image: return "kind = 'image'"
+        case .files: return "kind = 'files'"
+        case .pinned: return "pinned = 1"
+        }
+    }
+
+    /// 搜索词 + 类型筛选拼出的 WHERE 条件；搜索词永远占第一个占位符
+    private static func conditions(query: String, filter: ClipFilter) -> [String] {
+        var out: [String] = []
+        if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            out.append("search_text LIKE ?1 ESCAPE '\\'")
+        }
+        if let f = filterClause(filter) { out.append(f) }
+        return out
+    }
+
     /// 分页查询：置顶在前，其余时间倒序；query 命中 search_text（含 OCR 文本）
-    func list(query: String, limit: Int, offset: Int) -> [ClipItem] {
-        queue.sync {
+    func list(query: String, filter: ClipFilter = .all, limit: Int, offset: Int) -> [ClipItem] {
+        queue.sync { () -> [ClipItem] in
             var items: [ClipItem] = []
-            let sql: String
-            let s: Stmt?
-            if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                sql = "SELECT * FROM clips ORDER BY pinned DESC, created_at DESC LIMIT ?1 OFFSET ?2"
-                s = Stmt(db, sql)
-                s?.int(1, limit)
-                s?.int(2, offset)
-            } else {
-                sql = """
-                SELECT * FROM clips WHERE search_text LIKE ?1 ESCAPE '\\'
-                ORDER BY pinned DESC, created_at DESC LIMIT ?2 OFFSET ?3
-                """
-                s = Stmt(db, sql)
-                s?.text(1, Self.likePattern(query))
-                s?.int(2, limit)
-                s?.int(3, offset)
-            }
-            guard let s else { return items }
+            let conds = Self.conditions(query: query, filter: filter)
+            let whereSQL = conds.isEmpty ? "" : " WHERE " + conds.joined(separator: " AND ")
+            let sql = "SELECT * FROM clips\(whereSQL) ORDER BY pinned DESC, created_at DESC LIMIT ?\(conds.count + 1) OFFSET ?\(conds.count + 2)"
+            guard let s = Stmt(db, sql) else { return items }
+            let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !q.isEmpty { s.text(1, Self.likePattern(q)) }
+            s.int(Int32(conds.count + 1), limit)
+            s.int(Int32(conds.count + 2), offset)
             while s.step() == SQLITE_ROW {
                 items.append(rowToItem(s))
             }
@@ -283,19 +294,19 @@ final class HistoryDatabase {
         }
     }
 
-    func counts(query: String) -> (matched: Int, total: Int) {
+    func counts(query: String, filter: ClipFilter = .all) -> (matched: Int, total: Int) {
         queue.sync {
             let total: Int
             if let s = Stmt(db, "SELECT COUNT(*) FROM clips"), s.step() == SQLITE_ROW {
                 total = s.colInt(0)
             } else { total = 0 }
 
+            let conds = Self.conditions(query: query, filter: filter)
+            guard !conds.isEmpty else { return (total, total) }
+            let sql = "SELECT COUNT(*) FROM clips WHERE " + conds.joined(separator: " AND ")
+            guard let s = Stmt(db, sql) else { return (0, total) }
             let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !q.isEmpty else { return (total, total) }
-            guard let s = Stmt(db, "SELECT COUNT(*) FROM clips WHERE search_text LIKE ?1 ESCAPE '\\'") else {
-                return (0, total)
-            }
-            s.text(1, Self.likePattern(q))
+            if !q.isEmpty { s.text(1, Self.likePattern(q)) }
             return s.step() == SQLITE_ROW ? (s.colInt(0), total) : (0, total)
         }
     }
