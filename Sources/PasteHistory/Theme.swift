@@ -15,8 +15,6 @@ enum Scale {
     static let body: CGFloat = 13
     /// 输入框与空状态标题
     static let field: CGFloat = 15
-    /// 配对码：要能隔着一张桌子念给另一个人听
-    static let code: CGFloat = 19
 }
 
 // MARK: - 图标

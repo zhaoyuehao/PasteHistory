@@ -65,7 +65,6 @@ enum L10n {
 
     static var phoneSyncSubtitle: String { value("同一 Wi-Fi 下扫码连接", "在同一 Wi-Fi 下掃描連線", "Scan to connect on the same Wi-Fi") }
     static var waitingForNetwork: String { value("等待网络", "等待網路", "Waiting for network") }
-    static var pairingCodeHint: String { value("配对码，手机端输入一次即可记住", "配對碼，手機輸入一次即可記住", "Enter this pairing code once on your phone") }
     static var encrypted: String { value("端到端加密 · AES-256-GCM", "端對端加密 · AES-256-GCM", "End-to-end encrypted · AES-256-GCM") }
     static var refreshQRCode: String { value("刷新二维码", "重新整理 QR Code", "Refresh QR Code") }
     static var noNetworkAddress: String { value("未找到局域网地址，请确认 Wi-Fi", "找不到區域網路位址，請確認 Wi-Fi", "No local network address. Check Wi-Fi.") }
