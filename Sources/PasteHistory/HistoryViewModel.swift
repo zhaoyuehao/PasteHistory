@@ -12,6 +12,12 @@ final class HistoryViewModel: ObservableObject {
     let store: ClipStore
     @Published private(set) var selection = 0
     @Published private(set) var sections: [HistorySection] = []
+
+    /// 渲染、键盘、⌘1–9 共用的唯一顺序：置顶在前，其余按时间倒序。
+    /// 之前只有渲染把置顶提到最前，键盘仍按时间顺序走，
+    /// 于是视觉第一行和选中项不是同一条，⌘1 粘的也不是看到的第一条。
+    @Published private(set) var ordered: [ClipItem] = []
+
     var lastMoveAt = Date.distantPast
 
     init(store: ClipStore) {
@@ -19,7 +25,7 @@ final class HistoryViewModel: ObservableObject {
         rebuildSections()
     }
 
-    var results: [ClipItem] { store.displayed }
+    var results: [ClipItem] { ordered }
     var safeSelection: Int { results.isEmpty ? 0 : min(max(selection, 0), results.count - 1) }
     var current: ClipItem? { safeSelection < results.count ? results[safeSelection] : nil }
 
@@ -43,7 +49,15 @@ final class HistoryViewModel: ObservableObject {
         selection = min(max(index, 0), results.count - 1)
     }
 
-    func resetSelection() { selection = 0 }
+    /// 每次打开面板都是一次新的「找」：回到第一条
+    func resetForPresentation() {
+        selection = 0
+    }
+
+    /// 换搜索词：结果集变了，重新扫
+    func resetSelection() {
+        selection = 0
+    }
 
     func deleteCurrent() {
         guard let item = current else { return }
@@ -58,34 +72,49 @@ final class HistoryViewModel: ObservableObject {
         rebuildSections()
     }
 
+    func togglePin(at index: Int) {
+        guard index < ordered.count else { return }
+        store.togglePin(id: ordered[index].id)
+        rebuildSections()
+    }
+
+    func delete(at index: Int) {
+        guard index < ordered.count else { return }
+        store.remove(id: ordered[index].id)
+        selection = max(0, min(selection, ordered.count - 1))
+        rebuildSections()
+    }
+
     func rebuildSections() {
-        var grouped: [HistorySection] = []
-        var pinned: [(ClipItem, Int)] = []
-        var rest: [(ClipItem, Int)] = []
-        for (index, item) in results.enumerated() {
-            if item.pinned { pinned.append((item, index)) } else { rest.append((item, index)) }
+        var pinned: [ClipItem] = []
+        var rest: [ClipItem] = []
+        for item in store.displayed {
+            if item.pinned { pinned.append(item) } else { rest.append(item) }
         }
+        ordered = pinned + rest
+
+        var grouped: [HistorySection] = []
         if !pinned.isEmpty {
             grouped.append(HistorySection(title: L10n.pinned,
-                                          items: pinned.map { (item: $0.0, index: $0.1) }))
+                                          items: pinned.enumerated().map { (item: $0.element, index: $0.offset) }))
         }
+
+        let offset = pinned.count
         var currentTitle: String?
-        var bucket: [(ClipItem, Int)] = []
-        for pair in rest {
-            let title = Self.dayTitle(pair.0.createdAt)
+        var bucket: [(item: ClipItem, index: Int)] = []
+        for pair in rest.enumerated() {
+            let title = Self.dayTitle(pair.element.createdAt)
             if title != currentTitle {
                 if let currentTitle, !bucket.isEmpty {
-                    grouped.append(HistorySection(title: currentTitle,
-                                                  items: bucket.map { (item: $0.0, index: $0.1) }))
+                    grouped.append(HistorySection(title: currentTitle, items: bucket))
                     bucket = []
                 }
                 currentTitle = title
             }
-            bucket.append(pair)
+            bucket.append((item: pair.element, index: offset + pair.offset))
         }
         if let currentTitle, !bucket.isEmpty {
-            grouped.append(HistorySection(title: currentTitle,
-                                          items: bucket.map { (item: $0.0, index: $0.1) }))
+            grouped.append(HistorySection(title: currentTitle, items: bucket))
         }
         sections = grouped
     }

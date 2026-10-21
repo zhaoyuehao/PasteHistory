@@ -345,6 +345,7 @@ final class Settings {
         static let iCloudSync = "iCloudSyncEnabled"
         static let iCloudInitialExport = "iCloudInitialExportDone"
         static let machineId = "syncMachineId"
+        static let anchorPanel = "anchorPanelToInput"
     }
 
     var maxItems: Int {
@@ -375,6 +376,13 @@ final class Settings {
     var launchedBefore: Bool {
         get { defaults.bool(forKey: Key.launchedBefore) }
         set { defaults.set(true, forKey: Key.launchedBefore) }
+    }
+
+    /// 面板贴着唤起它的输入框出现（默认开）。
+    /// 粘贴的终点永远是输入框，视线已经在那里了，不该再被拉到屏幕中央。
+    var anchorPanel: Bool {
+        get { defaults.object(forKey: Key.anchorPanel) == nil ? true : defaults.bool(forKey: Key.anchorPanel) }
+        set { defaults.set(newValue, forKey: Key.anchorPanel) }
     }
 
     /// iCloud 同步开关（默认开；未登录 iCloud Drive 时自动无效）

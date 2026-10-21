@@ -87,23 +87,23 @@ private struct PairPanelView: View {
             ZStack(alignment: .topTrailing) {
                 VStack(spacing: 3) {
                     Text(L10n.phoneSync)
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.system(size: Scale.field, weight: .medium))
                     Text(L10n.phoneSyncSubtitle)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color(NSColor.tertiaryLabelColor))
+                        .font(.system(size: Scale.meta))
+                        .foregroundStyle(Palette.meta)
                 }
 
                 HStack(spacing: 8) {
                     Image(systemName: "lock.fill")
-                        .font(.system(size: 9.5))
-                        .foregroundStyle(Color(NSColor.tertiaryLabelColor))
+                        .font(.system(size: Icon.mark))
+                        .foregroundStyle(Palette.meta)
                         .help(L10n.encrypted)
                         .accessibilityLabel(L10n.encrypted)
                     Button {
                         onRefresh()
                     } label: {
                         Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(size: Icon.action, weight: .medium))
                             .frame(width: 24, height: 24)
                     }
                     .buttonStyle(.borderless)
@@ -128,8 +128,8 @@ private struct PairPanelView: View {
                         .fill(Color(NSColor.controlBackgroundColor))
                         .overlay(
                             Text(L10n.waitingForNetwork)
-                                .font(.system(size: 11))
-                                .foregroundStyle(Color(NSColor.tertiaryLabelColor))
+                                .font(.system(size: Scale.meta))
+                                .foregroundStyle(Palette.meta)
                         )
                 }
             }
@@ -143,18 +143,18 @@ private struct PairPanelView: View {
             )
 
             Text(model.pairCode.isEmpty ? "------" : model.pairCode)
-                .font(.system(size: 19, weight: .medium, design: .monospaced))
+                .font(.system(size: Scale.code, weight: .medium, design: .monospaced))
                 .tracking(2)
                 .padding(.top, 16)
             Text(L10n.pairingCodeHint)
-                .font(.system(size: 10.5))
-                .foregroundStyle(Color(NSColor.tertiaryLabelColor))
+                .font(.system(size: Scale.meta))
+                .foregroundStyle(Palette.meta)
                 .padding(.top, 3)
 
             HStack(spacing: 5) {
                 Text(model.address)
-                    .font(.system(size: 10.5, design: .monospaced))
-                    .foregroundStyle(Color(NSColor.secondaryLabelColor))
+                    .font(.system(size: Scale.meta, design: .monospaced))
+                    .foregroundStyle(Palette.meta)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Button {
@@ -162,11 +162,12 @@ private struct PairPanelView: View {
                     NSPasteboard.general.setString(model.address, forType: .string)
                 } label: {
                     Image(systemName: "doc.on.doc")
-                        .font(.system(size: 10))
+                        .font(.system(size: Icon.action))
                 }
                 .buttonStyle(.borderless)
-                .help(L10n.clearAddress)
-                .accessibilityLabel(L10n.clearAddress)
+                .foregroundStyle(Palette.meta)
+                .help(L10n.copyAddress)
+                .accessibilityLabel(L10n.copyAddress)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
@@ -178,8 +179,9 @@ private struct PairPanelView: View {
 
             if !model.warning.isEmpty {
                 Text(model.warning)
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(Color.orange)
+                    .font(.system(size: Scale.meta))
+                    // 系统橙在浅色底上只有 2.2:1，当文字用等于看不见
+                    .foregroundStyle(Palette.warning)
                     .multilineTextAlignment(.center)
                     .padding(.top, 10)
                     .padding(.horizontal, 20)

@@ -20,6 +20,7 @@ open PasteHistory.app           # 运行（菜单栏出现剪贴板图标）
 
 ```bash
 PasteHistory.app/Contents/MacOS/PasteHistory --show            # 启动即打开面板（UI 冒烟）
+PasteHistory.app/Contents/MacOS/PasteHistory --show --trace-anchor   # 打印面板贴到了哪（below-input / above-input / …-clamped / fallback-center）+ 输入框 frame
 PasteHistory.app/Contents/MacOS/PasteHistory --show-pair       # 启动即打开手机同步配对面板（UI 冒烟）
 PasteHistory.app/Contents/MacOS/PasteHistory --print-ax         # 把辅助功能授权状态写到 ax_status.txt
 PasteHistory.app/Contents/MacOS/PasteHistory --paste-latest     # 对最新记录走完整粘贴流程
@@ -34,7 +35,24 @@ PasteHistory.app/Contents/MacOS/PasteHistory --restore-images   # 从 iCloud 恢
   `git -c credential.helper="!$HOME/Documents/PasteHistory/.git/credential-personal.sh" fetch https://github.com:443/zhaoyuehao/PasteHistory.git main`，
   把本地 main 快进/对齐到 FETCH_HEAD，再从这个最新点拉新分支。**禁止基于过期的本地 main 开发**。
 - **所有改动走 PR**：开分支 → 提交 → 推分支 → `gh pr create` → review 后再合并。**禁止直接推 main**。
-- 推送用个人号凭据（本机全局 `insteadOf` 会把 `https://github.com/` 改写为 SSH 并走公司号）：
+- **此仓库始终用个人号 `zhaoyuehao`**（仓库归属 `zhaoyuehao`，不是公司号）。
+  本机全局 `insteadOf` 会把 `https://github.com/` 改写为 SSH 并走公司号 `zhaoyuehao_codeck`，
+  所以仓库内已做了三层锁定，**直接 `git push` / `gh pr create` 即可，不要再手写凭据参数**：
+
+  1. `credential.https://github.com/zhaoyuehao/PasteHistory.git.helper`：
+     先写空值清空全局助手（verdent + `gh auth git-credential`），再挂 `.git/credential-personal.sh`。
+  2. `url.https://github.com:443/zhaoyuehao/PasteHistory.git.insteadOf`：
+     把 `https://github.com/...` 和 `git@github.com:...` 两种写法都归一到 `:443` 形式，绕开全局 SSH 改写。
+  3. `gh auth switch --user zhaoyuehao`（gh 没有按仓库切账号的能力，切了会影响其它仓库；
+     回公司仓库时用 `gh auth switch --user zhaoyuehao_codeck` 切回去）。
+
+  自查凭据到底走哪个号（应恒为 `zhaoyuehao`，与公司号活跃与否无关）：
+
+  ```bash
+  printf 'protocol=https\nhost=github.com\npath=zhaoyuehao/PasteHistory.git\n' | git credential fill
+  ```
+
+  保留的手工兜底（helper 脚本失效时用）：
 
   ```bash
   git -c credential.helper="!$HOME/Documents/PasteHistory/.git/credential-personal.sh" \
@@ -59,6 +77,7 @@ PasteHistory.app/Contents/MacOS/PasteHistory --restore-images   # 从 iCloud 恢
 | `ClipStore.swift` | 分页门面、Settings（UserDefaults） |
 | `PanelController.swift` | ⇧⌘C 面板（NSHostingController 承载 SwiftUI） |
 | `HistoryView.swift` | 面板 UI（搜索 / 列表 / 键盘导航） |
+| `Theme.swift` | 字号 / 图标档位与语义色（`Palette.meta` / `.warning` 按 WCAG AA 反解） |
 | `PasteService.swift` / `AXFocus.swift` | 回写剪贴板、AX 权限、捕获并还原聚焦输入框、模拟 ⌘V |
 | `PasteCycler.swift` | ⇧⌘V 循环粘贴：不开面板，⌘Z 撤回上一条再贴更早一条 |
 | `OCRIndexer.swift` | Vision 文字识别 + 场景分类 |
