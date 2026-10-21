@@ -38,11 +38,6 @@ final class PanelController: NSObject, NSWindowDelegate {
         onPasteHandler?(item)
     }
 
-    /// 冒烟用：不经过 UI，直接走「面板里选中并回车」的同一条粘贴路径
-    func pasteItem(_ item: ClipItem) {
-        onPasteHandler?(item)
-    }
-
     func toggle() {
         isVisible ? hide() : show()
     }
