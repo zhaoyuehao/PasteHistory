@@ -31,6 +31,30 @@ enum AXFocus {
               let value else { return nil }
         return value as? String
     }
+
+    /// 只有真正的输入框才值得把面板贴过去：focusedElement 常常返回窗口 / 容器，
+    /// 贴上去等于贴到半个屏幕
+    static func isTextInput(_ element: AXUIElement) -> Bool {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, "AXRole" as CFString, &value) == .success,
+              let role = value as? String else { return false }
+        return ["AXTextField", "AXTextArea", "AXSecureTextField", "AXComboBox", "AXSearchField"]
+            .contains(role)
+    }
+
+    /// 元素在屏幕上的位置与大小，用于把面板贴到输入框旁边。
+    /// 返回的是 AX 坐标系：原点在主屏左上角、y 向下。
+    static func frame(of element: AXUIElement) -> CGRect? {
+        var value: CFTypeRef?
+        // kAXFrameAttribute 没有导出到 Swift，用属性名字符串
+        guard AXUIElementCopyAttributeValue(element, "AXFrame" as CFString, &value) == .success,
+              let value,
+              CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+        let axValue = value as! AXValue
+        var rect = CGRect.zero
+        guard AXValueGetValue(axValue, .cgRect, &rect) else { return nil }
+        return rect
+    }
 }
 
 /// 记录"上一个非本应用的前台应用"，避免从菜单栏打开时把焦点还给错误的对象

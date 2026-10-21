@@ -35,6 +35,7 @@ enum L10n {
     static var phoneSync: String { value("手机同步", "手機同步", "Phone Sync") }
     static var iCloudUnsynced: String { value("iCloud 未同步", "iCloud 未同步", "iCloud Not Synced") }
     static var pauseRecording: String { value("暂停记录", "暫停記錄", "Pause Recording") }
+    static var anchorPanelToInput: String { value("面板跟随输入框", "面板跟隨輸入框", "Anchor Panel to Input") }
     static var clearHistory: String { value("清空历史…", "清除歷史記錄…", "Clear History…") }
     static var quit: String { value("退出 PasteHistory", "結束 PasteHistory", "Quit PasteHistory") }
     static var clipboardHistoryAccessibility: String { value("剪贴板历史", "剪貼簿歷史", "Clipboard history") }
@@ -57,6 +58,8 @@ enum L10n {
     static func quickPaste(_ n: Int) -> String {
         value("快速粘贴第 \(n) 条", "快速貼上第 \(n) 筆", "Paste item \(n)")
     }
+    static var expandDetail: String { value("查看详情", "查看詳情", "Show detail") }
+    static var collapseDetail: String { value("收起", "收起", "Collapse") }
     static var noHistory: String { value("你的剪贴板还没有记忆。", "你的剪貼簿還沒有記錄。", "Your clipboard history is empty.") }
     static var noMatch: String { value("没找到。", "找不到。", "No matches.") }
     static var copySomething: String { value("⌘C 复制点什么，⇧⌘C 回来", "⌘C 複製內容，再按 ⇧⌘C 回來", "Copy something with ⌘C, then press ⇧⌘C") }

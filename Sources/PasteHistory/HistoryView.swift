@@ -210,7 +210,11 @@ struct HistoryView: View {
                                         expanded: pair.1 == safeSelection && model.expanded,
                                         expandedImage: pair.1 == safeSelection && model.expanded ? loader.image : nil,
                                         onPin: { model.togglePin(at: pair.1) },
-                                        onDelete: { model.delete(at: pair.1) })
+                                        onDelete: { model.delete(at: pair.1) },
+                                        onToggleExpand: {
+                                            if pair.1 == safeSelection { model.toggleExpanded() }
+                                            else { model.select(pair.1) }
+                                        })
                                     .id(pair.0.id)
                                     .contentShape(Rectangle())
                                     .onTapGesture(count: 2) { onPaste(pair.0) }
@@ -302,6 +306,8 @@ struct RowView: View {
     let expandedImage: NSImage?
     var onPin: () -> Void
     var onDelete: () -> Void
+    /// 点 chevron 展开 / 收起：详情必须有个看得见的入口
+    var onToggleExpand: () -> Void
 
     @State private var hovered = false
 
@@ -378,12 +384,32 @@ struct RowView: View {
         .frame(height: thumbSize)
     }
 
-    /// 右侧固定 44 宽：常态是 ⌘N 角标，悬停时原位换成置顶 / 删除。
-    /// 宽度恒定，所以悬停不会把摘要挤动；也终于让鼠标能操作单条
+    /// 右侧固定 44 宽，三层状态共用一个位置：
+    /// 未选中 → ⌘N 角标（候选，告诉你怎么直达）
+    /// 选中   → chevron（可展开的**可见**入口：没有它，展开只是个没人知道的隐藏手势）
+    /// 悬停   → 置顶 / 删除
+    /// 宽度恒定，所以切换不会把摘要挤动
     private var trailing: some View {
         ZStack {
             quickBadge
+                .opacity(hovered || selected ? 0 : 1)
+
+            if selected {
+                Button { onToggleExpand() } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: Icon.action, weight: .medium))
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(Palette.meta)
+                .help(expanded ? L10n.collapseDetail : L10n.expandDetail)
+                .accessibilityLabel(expanded ? L10n.collapseDetail : L10n.expandDetail)
                 .opacity(hovered ? 0 : 1)
+                .allowsHitTesting(!hovered)
+            }
+
             HStack(spacing: 4) {
                 RowActionButton(symbol: "pin.fill", label: L10n.pinItem, action: onPin)
                 RowActionButton(symbol: "trash", label: L10n.deleteItem, action: onDelete)
@@ -392,6 +418,8 @@ struct RowView: View {
             .allowsHitTesting(hovered)
         }
         .frame(minWidth: 44, alignment: .trailing)
+        .animation(Motion.hover, value: hovered)
+        .animation(Motion.expand, value: expanded)
     }
 
     @ViewBuilder

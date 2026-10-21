@@ -69,7 +69,7 @@ final class PanelController: NSObject, NSWindowDelegate {
               target?.processIdentifier ?? -1,
               previousFocusElement == nil ? "nil" : "有")
 
-        center(panel)
+        place(panel, near: previousFocusElement)
         installKeyMonitor()
         // 每次打开都是一次新的「找」：回到第一条、收起，一屏扫十条
         Self.post(.phPanelWillShow)
@@ -180,18 +180,92 @@ final class PanelController: NSObject, NSWindowDelegate {
         self.panel = panel
     }
 
-    private func center(_ panel: NSPanel) {
-        // 显示在鼠标所在的屏幕，更符合剪贴板工具的使用习惯
+    /// 定位策略：优先贴着唤起面板的那个输入框（下方 → 上方），拿不到坐标就退回居中偏上。
+    ///
+    /// 粘贴的终点永远是输入框，视线已经在那里了：把面板放到输入框旁边，
+    /// 用户不用在屏幕中央和光标之间来回搬视线。硬约束是**面板绝不压住输入框本体**——
+    /// 否则你就看不到自己正要填的地方。
+    private func place(_ panel: NSPanel, near element: AXUIElement?) {
+        // AX 原点在主屏左上角、y 向下；AppKit 原点在主屏左下角、y 向上
+        let axisHeight = NSScreen.screens.first?.frame.height
+            ?? NSScreen.main?.frame.height
+            ?? 0
+
+        // 先问「输入框在哪」，再决定用哪块屏：
+        // 多屏时鼠标常在另一块屏上，按鼠标屏去夹取会把面板贴到错的地方
+        var anchor: (field: CGRect, screen: NSScreen)?
+        if Settings.shared.anchorPanel,
+           let element,
+           AXFocus.isTextInput(element),          // 窗口 / 容器不算输入框
+           let field = AXFocus.frame(of: element),
+           field.width > 8, field.height > 8 {
+            let center = NSPoint(x: field.midX, y: axisHeight - field.midY)
+            if let screen = NSScreen.screens.first(where: { $0.frame.contains(center) }),
+               field.height <= screen.visibleFrame.height / 2 {   // 高过半屏的肯定是容器
+                anchor = (field, screen)
+            }
+        }
+
         let mouse = NSEvent.mouseLocation
-        let screen = NSScreen.screens.first { $0.frame.contains(mouse) }
+        let screen = anchor?.screen
+            ?? NSScreen.screens.first { $0.frame.contains(mouse) }
             ?? NSScreen.main
             ?? NSScreen.screens.first
         guard let screen else { return }
+
         let visible = screen.visibleFrame
         let size = panel.frame.size
+        let gap: CGFloat = 6      // 紧贴但不粘连，留一线
+        let margin: CGFloat = 12  // 屏幕边缘留白
+
+        // --trace-anchor：真机验收时能看到面板到底贴到了哪、为什么这么贴
+        let tracing = ProcessInfo.processInfo.arguments.contains("--trace-anchor")
+        let apply: (NSPoint, String, CGRect?) -> Void = { origin, why, field in
+            panel.setFrameOrigin(origin)
+            guard tracing else { return }
+            NSLog("[PH] anchor: %@ panel=(%.0f, %.0f, %.0fx%.0f) visible=(%.0f, %.0f, %.0fx%.0f) field=%@",
+                  why,
+                  origin.x, origin.y, size.width, size.height,
+                  visible.minX, visible.minY, visible.width, visible.height,
+                  field.map { String(format: "(%.0f, %.0f, %.0fx%.0f)", $0.minX, $0.minY, $0.width, $0.height) } ?? "nil")
+        }
+
+        if let (field, _) = anchor {
+            let top = axisHeight - field.minY      // 输入框上缘（AppKit y）
+            let bottom = axisHeight - field.maxY   // 输入框下缘（AppKit y）
+
+            let x = min(max(field.minX, visible.minX + margin),
+                        max(visible.minX + margin, visible.maxX - size.width - margin))
+
+            // 先试下方：大多数输入框上方是内容区，往下让开更不挡视线
+            if bottom - gap - size.height >= visible.minY + margin {
+                apply(NSPoint(x: x, y: bottom - gap - size.height), "below-input", field)
+                return
+            }
+            // 下方不够（输入框靠近屏幕底）就翻到上方
+            if top + gap + size.height <= visible.maxY - margin {
+                apply(NSPoint(x: x, y: top + gap), "above-input", field)
+                return
+            }
+            // 上下都塞不下（可视区比面板还矮）：贴着空间大的一边，够不着就居中
+            let below = bottom - visible.minY
+            let above = visible.maxY - top
+            if below >= above {
+                apply(NSPoint(x: x, y: max(visible.minY + margin, bottom - gap - size.height)),
+                      "below-input-clamped", field)
+            } else {
+                apply(NSPoint(x: x, y: min(visible.maxY - size.height - margin, top + gap)),
+                      "above-input-clamped", field)
+            }
+            return
+        }
+
+        // 兜底：自绘控件 / Electron 应用不报准确坐标，退回原来的居中偏上
         let x = visible.midX - size.width / 2
         let y = visible.maxY - size.height - 60
-        panel.setFrameOrigin(NSPoint(x: x, y: max(y, visible.minY + 20)))
+        apply(NSPoint(x: x, y: max(y, visible.minY + 20)),
+              Settings.shared.anchorPanel ? "fallback-center" : "anchoring-off",
+              nil)
     }
 
     // MARK: - 键盘（面板内快捷键）
