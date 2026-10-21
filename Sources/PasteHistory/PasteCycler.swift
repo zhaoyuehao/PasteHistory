@@ -4,7 +4,7 @@ import Foundation
 /// ⇧⌘V 循环粘贴：不开面板，直接在时间轴上擦。
 ///
 /// 第一次按下贴最近一条；继续按则 ⌘Z 撤回刚才贴进去的内容、原地换成更早一条。
-/// 会话在 3 秒无操作后自动结束（此时再按会重新开始）。
+/// 会话空闲 8 秒算定稿，或用户一复制新东西就立刻结束——那说明新一轮工作开始了。
 /// 整个过程中焦点从未离开原输入框，也没有任何窗口出现过。
 @MainActor
 final class PasteCycler {
@@ -12,8 +12,10 @@ final class PasteCycler {
 
     /// 一次会话最多回溯多少条
     private let limit = 9
-    /// 会话空闲多久算定稿
-    private static let sessionTimeout: TimeInterval = 3.0
+    /// 会话空闲多久算定稿。
+    /// 原来 3 秒：够用来按第二次，不够用来判断「贴进去的到底是不是这条」。
+    /// 想清楚再按，常常要五六秒，超时后会话一断，再按又从头开始——那是最挫败的一下。
+    private static let sessionTimeout: TimeInterval = 8.0
 
     private var items: [ClipItem] = []
     private var index = 0
@@ -22,8 +24,29 @@ final class PasteCycler {
     /// 首次按下需要 activate 原应用并等焦点稳定；后续不用重复切
     private var activated = false
     private var idleTimer: DispatchWorkItem?
+    /// 上一次我们自己往剪贴板回写的时刻。
+    /// 回写同样会 bump changeCount，若轮询抢在 syncChangeCount 之前跑，
+    /// 监视器会把「我们自己贴的这条」当成用户的新复制——于是第一次按下就被自己掐断。
+    private var lastSelfWriteAt: Date = .distantPast
+    /// 抑制窗口：略大于一轮轮询间隔（0.4s）
+    private static let selfWriteGrace: TimeInterval = 0.6
 
     var isActive: Bool { !items.isEmpty }
+
+    private init() {
+        // 用户一复制新东西，这次回溯就该收工了：他要的是刚复制的那条，
+        // 而不是继续往下翻。计时不该是唯一能结束会话的东西。
+        NotificationCenter.default.addObserver(forName: .pasteHistoryDidCapture,
+                                               object: nil,
+                                               queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                // 刚刚是我们自己在写剪贴板，不是用户复制了新东西
+                guard Date().timeIntervalSince(self.lastSelfWriteAt) > Self.selfWriteGrace else { return }
+                self.end()
+            }
+        }
+    }
 
     /// 每次按下 ⇧⌘V 调用
     func advance() {
@@ -68,6 +91,7 @@ final class PasteCycler {
         guard index < items.count else { return }
         let item = items[index]
 
+        lastSelfWriteAt = Date()
         PasteService.write(item)
         NotificationCenter.default.post(name: .pasteHistoryDidWritePasteboard, object: nil)
 
