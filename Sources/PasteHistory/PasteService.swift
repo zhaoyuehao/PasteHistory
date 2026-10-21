@@ -107,7 +107,8 @@ enum PasteService {
         guard isTrusted() else {
             // 没权限就别静默失败，明确告诉用户内容已经在哪
             Toast.show(L10n.pastePermissionHint, duration: 3)
-            requestTrust()
+            // 授权提示只在首次启动时触发。粘贴路径不能每次失败都拉起系统弹窗，
+            // 否则 TCC 状态尚未刷新或用户刚从设置返回时会反复打断操作。
             return
         }
 
