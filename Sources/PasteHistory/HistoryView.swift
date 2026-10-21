@@ -88,20 +88,27 @@ private final class ExpandedImageLoader: ObservableObject {
 
 struct HistoryView: View {
     @ObservedObject var store: ClipStore
+    @StateObject private var model: HistoryViewModel
     @StateObject private var loader = ExpandedImageLoader()
-    @State private var selection = 0
-    @State private var lastMoveAt = Date.distantPast
     @FocusState private var searchFocused: Bool
 
     var onPaste: (ClipItem) -> Void
     var onCopyOnly: (ClipItem) -> Void
     var onClose: () -> Void
 
-    private var results: [ClipItem] { store.displayed }
-    private var safeSelection: Int {
-        guard !results.isEmpty else { return 0 }
-        return min(max(selection, 0), results.count - 1)
+    init(store: ClipStore,
+         onPaste: @escaping (ClipItem) -> Void,
+         onCopyOnly: @escaping (ClipItem) -> Void,
+         onClose: @escaping () -> Void) {
+        self.store = store
+        _model = StateObject(wrappedValue: HistoryViewModel(store: store))
+        self.onPaste = onPaste
+        self.onCopyOnly = onCopyOnly
+        self.onClose = onClose
     }
+
+    private var results: [ClipItem] { model.results }
+    private var safeSelection: Int { model.safeSelection }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -117,9 +124,10 @@ struct HistoryView: View {
         .onAppear {
             DispatchQueue.main.async { searchFocused = true }
             loader.load(for: current)
+            model.rebuildSections()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .phMoveDown)) { _ in move(1) }
-        .onReceive(NotificationCenter.default.publisher(for: .phMoveUp)) { _ in move(-1) }
+        .onReceive(NotificationCenter.default.publisher(for: .phMoveDown)) { _ in model.move(1) }
+        .onReceive(NotificationCenter.default.publisher(for: .phMoveUp)) { _ in model.move(-1) }
         .onReceive(NotificationCenter.default.publisher(for: .phConfirm)) { _ in
             guard let item = current else { return }
             onPaste(item)
@@ -129,13 +137,12 @@ struct HistoryView: View {
             onCopyOnly(item)
         }
         .onReceive(NotificationCenter.default.publisher(for: .phDelete)) { _ in
-            guard let item = current else { return }
-            store.remove(id: item.id)
-            selection = max(0, safeSelection - 1)
+            guard current != nil else { return }
+            model.deleteCurrent()
         }
         .onReceive(NotificationCenter.default.publisher(for: .phPin)) { _ in
-            guard let item = current else { return }
-            store.togglePin(id: item.id)
+            guard current != nil else { return }
+            model.togglePinCurrent()
         }
         .onReceive(NotificationCenter.default.publisher(for: .phClose)) { _ in onClose() }
         .onReceive(NotificationCenter.default.publisher(for: .phQuickPaste)) { note in
@@ -143,28 +150,10 @@ struct HistoryView: View {
             onPaste(results[index])
         }
         .onChange(of: safeSelection) { _, _ in loader.load(for: current) }
+        .onChange(of: store.displayed) { _, _ in model.rebuildSections() }
     }
 
-    private var current: ClipItem? {
-        guard safeSelection < results.count else { return nil }
-        return results[safeSelection]
-    }
-
-    /// 连按时不带动画：长按方向键时 0.30s 的弹簧会堆积成迟滞，速度必须让位
-    private func move(_ delta: Int) {
-        guard !results.isEmpty else { return }
-        let now = Date()
-        let fast = now.timeIntervalSince(lastMoveAt) < Motion.repeatThreshold
-        lastMoveAt = now
-        let next = min(max(safeSelection + delta, 0), results.count - 1)
-        if fast {
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) { selection = next }
-        } else {
-            withAnimation(Motion.selection) { selection = next }
-        }
-    }
+    private var current: ClipItem? { model.current }
 
     // MARK: - 搜索
 
@@ -173,7 +162,7 @@ struct HistoryView: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 13))
                 .foregroundStyle(searchFocused ? Color.accentColor : Color(NSColor.tertiaryLabelColor))
-            TextField("搜索", text: $store.query)
+            TextField(L10n.search, text: $store.query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 15))
                 .focused($searchFocused)
@@ -184,7 +173,7 @@ struct HistoryView: View {
                         .foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.plain)
-                .help("清空")
+                .help(L10n.clear)
             }
         }
         .padding(.horizontal, Spec.searchPadding)
@@ -216,7 +205,7 @@ struct HistoryView: View {
                                     .id(pair.0.id)
                                     .contentShape(Rectangle())
                                     .onTapGesture(count: 2) { onPaste(pair.0) }
-                                    .simultaneousGesture(TapGesture(count: 1).onEnded { selection = pair.1 })
+                                    .simultaneousGesture(TapGesture(count: 1).onEnded { model.select(pair.1) })
                                     .onAppear {
                                         if pair.1 >= results.count - 8 { store.loadMore() }
                                     }
@@ -232,7 +221,7 @@ struct HistoryView: View {
                 guard newValue < results.count else { return }
                 // 不带 anchor：只滚最小位移。anchor: .center 每按一次都把行拉到正中，
                 // 整片列表跟着滑——那是「抖」的根源
-                if Date().timeIntervalSince(lastMoveAt) < Motion.repeatThreshold {
+                if Date().timeIntervalSince(model.lastMoveAt) < Motion.repeatThreshold {
                     var transaction = Transaction()
                     transaction.disablesAnimations = true
                     withTransaction(transaction) { proxy.scrollTo(results[newValue].id) }
@@ -240,7 +229,7 @@ struct HistoryView: View {
                     withAnimation(Motion.selection) { proxy.scrollTo(results[newValue].id) }
                 }
             }
-            .onChange(of: store.query) { _, _ in selection = 0 }
+            .onChange(of: store.query) { _, _ in model.resetSelection() }
         }
         // 内容区比头部暗一档，两个材质一明一暗，区域自然分开
         .background(Color(NSColor.windowBackgroundColor))
@@ -251,42 +240,13 @@ struct HistoryView: View {
 
     /// 区域划分靠分组，不靠分割线：置顶 / 今天 / 昨天 / 更早
     /// （分页与键盘导航仍按展平的 results 走，这里只影响渲染顺序）
-    private var sections: [(title: String, items: [(ClipItem, Int)])] {
-        var out: [(String, [(ClipItem, Int)])] = []
-
-        var pinned: [(ClipItem, Int)] = []
-        var rest: [(ClipItem, Int)] = []
-        for (i, item) in results.enumerated() {
-            if item.pinned { pinned.append((item, i)) } else { rest.append((item, i)) }
-        }
-        if !pinned.isEmpty { out.append(("置顶", pinned)) }
-
-        var current: String?
-        var bucket: [(ClipItem, Int)] = []
-        for pair in rest {
-            let title = Self.dayTitle(pair.0.createdAt)
-            if title != current {
-                if let current, !bucket.isEmpty { out.append((current, bucket)); bucket = [] }
-                current = title
-            }
-            bucket.append(pair)
-        }
-        if let current, !bucket.isEmpty { out.append((current, bucket)) }
-        return out
-    }
-
-    private static func dayTitle(_ date: Date) -> String {
-        let cal = Calendar.current
-        if cal.isDateInToday(date) { return "今天" }
-        if cal.isDateInYesterday(date) { return "昨天" }
-        return "更早"
-    }
+    private var sections: [HistorySection] { model.sections }
 
     private var emptyState: some View {
         VStack(spacing: 8) {
-            Text(store.totalCount == 0 ? "你的剪贴板还没有记忆。" : "没找到。")
+            Text(store.totalCount == 0 ? L10n.noHistory : L10n.noMatch)
                 .font(.system(size: 15, weight: .medium))
-            Text(store.totalCount == 0 ? "⌘C 复制点什么，⇧⌘C 回来" : "换个词试试")
+            Text(store.totalCount == 0 ? L10n.copySomething : L10n.tryAnother)
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
         }
@@ -494,10 +454,10 @@ struct RowView: View {
             // 图片自带的文字、OCR 出来的文字，都是内容——内容必须能选中、能复制。
             // 乔布斯删的是「解释软件的 UI」，不是用户要拿走的东西
             if hasText {
-                NoteBlock(label: "附带文字", content: item.text ?? "")
+                NoteBlock(label: L10n.attachedText, content: item.text ?? "")
             }
             if hasOCR {
-                NoteBlock(label: "图内文字", content: item.ocrText ?? "")
+                NoteBlock(label: L10n.imageText, content: item.ocrText ?? "")
             }
         }
     }
@@ -508,7 +468,7 @@ struct RowView: View {
                 FileLine(path: path)
             }
             if paths.count > Spec.maxFileLines {
-                Text("还有 \(paths.count - Spec.maxFileLines) 个")
+                Text(L10n.moreFiles(paths.count - Spec.maxFileLines))
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -589,7 +549,7 @@ private struct FileLine: View {
                     .monospacedDigit()
             }
             if !exists {
-                Text("原文件已不存在")
+                Text(L10n.fileMissing)
                     .font(.system(size: 11))
                     .foregroundStyle(.orange)
             }

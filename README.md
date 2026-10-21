@@ -90,10 +90,14 @@ Sources/PasteHistory/
 ├── iCloudSync.swift       # iCloud Drive 事件文件导出/导入合并 + NSMetadataQuery
 ├── HotKeyManager.swift    # Carbon 全局热键 ⇧⌘C
 ├── PanelController.swift  # 浮动面板 + 键盘事件分发
-├── HistoryView.swift      # 搜索框 + 分页列表 + 预览（SwiftUI）
+├── HistoryViewModel.swift # 面板选择、分组、键盘导航和记录操作（业务状态）
+├── HistoryView.swift      # 只负责 SwiftUI 布局、渲染和事件绑定
+├── Localization.swift     # 跟随系统首选语言的简体中文 / 繁體中文 / English 文案
 ├── AXFocus.swift          # AX 聚焦输入框的捕获/恢复 + 目标应用跟踪
 ├── Toast.swift            # 无权限提示条
 └── PasteService.swift     # 回写剪贴板 + 恢复焦点 + 模拟 ⌘V
 ```
+
+界面层通过 `HistoryViewModel` 读取分页结果并发送用户操作，数据写入、删除、置顶仍由 `ClipStore` 负责。所有原生界面文案集中在 `Localization.swift`，启动时读取 macOS 的首选语言列表，未匹配中文时使用 English。
 
 自定义热键：改 `HotKeyManager.register(keyCode:carbonModifiers:)` 参数（kVK_ANSI_* + cmdKey/shiftKey/optionKey/controlKey）。

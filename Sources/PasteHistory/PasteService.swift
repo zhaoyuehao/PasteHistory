@@ -100,13 +100,13 @@ enum PasteService {
         NotificationCenter.default.post(name: .pasteHistoryDidWritePasteboard, object: nil)
 
         guard Settings.shared.autoPaste else {
-            Toast.show("已复制到剪贴板，按 ⌘V 粘贴")
+            Toast.show(L10n.pasteToClipboard)
             return
         }
 
         guard isTrusted() else {
             // 没权限就别静默失败，明确告诉用户内容已经在哪
-            Toast.show("已复制到剪贴板，按 ⌘V 粘贴。开启自动粘贴权限后可免按 ⌘V", duration: 3)
+            Toast.show(L10n.pastePermissionHint, duration: 3)
             requestTrust()
             return
         }
