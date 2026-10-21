@@ -31,6 +31,19 @@ private enum Highlight {
     static let id = "selectionHighlight"
 }
 
+/// 扁平列表条目：分组标题或剪贴记录，id 全局稳定
+private enum ListEntry: Identifiable {
+    case header(String)
+    case item(ClipItem, Int)
+
+    var id: String {
+        switch self {
+        case .header(let title): return "header:" + title
+        case .item(let item, _): return item.id.uuidString
+        }
+    }
+}
+
 // MARK: - 面板
 
 struct HistoryView: View {
@@ -149,30 +162,20 @@ struct HistoryView: View {
                 // 不用 pinnedViews：悬浮标题盖在视口顶部，而 scrollTo 的「最小滚动」
                 // 只保证行进入 ScrollView 边界、不知道上面还浮着一层标题——
                 // 滚到顶时第一条的上半截正好被压在标题下面（真机截图实锤）。
-                // 标题随内容滚动，任何行都不会再被盖住
+                // 标题随内容滚动，任何行都不会再被盖住。
+                //
+                // 分组标题也是一行：整个列表只有一个 ForEach、稳定 id。
+                // 之前 ForEach(sections, id: \.offset) + Section 的组合里，置顶区
+                // 连续生长时 SwiftUI 按 offset 复用分区视图、内容原地突变，
+                // LazyVStack 的布局跟不上——行序错乱（⌘1 排到 ⌘2 下面）、
+                // 标题丢失、部分行选不到，全是这一个错误源
                 LazyVStack(spacing: Spec.rowSpacing) {
-                    ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
-                        Section {
-                            ForEach(Array(section.items.enumerated()), id: \.element.0.id) { _, pair in
-                                RowView(item: pair.0,
-                                        index: pair.1,
-                                        query: store.query,
-                                        selected: pair.1 == safeSelection,
-                                        selectionSpace: selectionSpace,
-                                        onPin: { model.togglePin(at: pair.1) },
-                                        onDelete: { model.delete(at: pair.1) })
-                                    .id(pair.0.id)
-                                    .contentShape(Rectangle())
-                                    .onTapGesture(count: 2) { onPaste(pair.0) }
-                                    .simultaneousGesture(TapGesture(count: 1).onEnded {
-                                        model.select(pair.1)
-                                    })
-                                    .onAppear {
-                                        if pair.1 >= results.count - 8 { store.loadMore() }
-                                    }
-                            }
-                        } header: {
-                            SectionHeader(title: section.title)
+                    ForEach(entries) { entry in
+                        switch entry {
+                        case .header(let title):
+                            SectionHeader(title: title)
+                        case .item(let item, let index):
+                            row(item: item, index: index)
                         }
                     }
                 }
@@ -209,9 +212,40 @@ struct HistoryView: View {
         }
     }
 
-    /// 区域划分靠分组，不靠分割线：置顶 / 今天 / 昨天 / 更早
-    /// （分页与键盘导航仍按展平的 results 走，这里只影响渲染顺序）
+    /// 区域划分靠分组，不靠分割线：置顶 / 今天 / 昨天 / 更早。
+    /// 分页与键盘导航按展平的 results 走；渲染把标题插进同一条流
     private var sections: [HistorySection] { model.sections }
+
+    /// 扁平化后的列表内容：标题行 + 条目行，id 全局稳定
+    private var entries: [ListEntry] {
+        var out: [ListEntry] = []
+        for section in sections {
+            out.append(.header(section.title))
+            for pair in section.items {
+                out.append(.item(pair.item, pair.index))
+            }
+        }
+        return out
+    }
+
+    private func row(item: ClipItem, index: Int) -> some View {
+        RowView(item: item,
+                index: index,
+                query: store.query,
+                selected: index == safeSelection,
+                selectionSpace: selectionSpace,
+                onPin: { model.togglePin(at: index) },
+                onDelete: { model.delete(at: index) })
+            .id(item.id)
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2) { onPaste(item) }
+            .simultaneousGesture(TapGesture(count: 1).onEnded {
+                model.select(index)
+            })
+            .onAppear {
+                if index >= results.count - 8 { store.loadMore() }
+            }
+    }
 
     private var emptyState: some View {
         VStack(spacing: 8) {

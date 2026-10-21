@@ -20,6 +20,7 @@ final class HistoryDatabase {
             _ = queue.sync { open(at: fallback) }
         }
         queue.sync { migrateIfNeeded() }
+        queue.sync { migrateAddPinnedAt() }
         queue.sync { migrateTextHashes() }
     }
 
@@ -55,7 +56,8 @@ final class HistoryDatabase {
             created_at   REAL NOT NULL,
             pinned       INTEGER NOT NULL DEFAULT 0,
             thumbnail    BLOB,
-            ocr_text     TEXT
+            ocr_text     TEXT,
+            pinned_at    REAL
         )
         """)
         exec("CREATE INDEX IF NOT EXISTS idx_clips_created ON clips(created_at DESC)")
@@ -89,6 +91,17 @@ final class HistoryDatabase {
               let old = try? JSONDecoder().decode([ClipItem].self, from: data) else { return }
         for item in old { _ = insert(item) }
         try? FileManager.default.moveItem(at: legacy, to: legacy.appendingPathExtension("migrated"))
+    }
+
+    /// 老库补列：pinned_at（置顶时间）。新库建表已带，老库 ALTER 追加到末尾，
+    /// 列序与 SELECT * 的下标保持一致
+    private func migrateAddPinnedAt() {
+        guard let s = Stmt(db, "PRAGMA table_info(clips)") else { return }
+        var has = false
+        while s.step() == SQLITE_ROW {
+            if s.colText(1) == "pinned_at" { has = true }
+        }
+        if !has { exec("ALTER TABLE clips ADD COLUMN pinned_at REAL") }
     }
 
     private func exec(_ sql: String) {
@@ -162,6 +175,7 @@ final class HistoryDatabase {
             sourceApp: s.colText(7),
             createdAt: Date(timeIntervalSince1970: s.colDouble(8)),
             pinned: s.colInt(9) != 0,
+            pinnedAt: s.colDouble(12) > 0 ? Date(timeIntervalSince1970: s.colDouble(12)) : nil,
             thumbnailData: s.colBlob(10),
             ocrText: s.colText(11)
         )
@@ -183,12 +197,13 @@ final class HistoryDatabase {
         s.int(10, item.pinned ? 1 : 0)
         s.blob(11, item.thumbnailData)
         s.text(12, item.ocrText)
+        s.double(13, item.pinnedAt?.timeIntervalSince1970 ?? 0)
     }
 
     private let insertSQL = """
     INSERT INTO clips (id, kind, text, search_text, content_hash, image_file, file_paths,
-                       source_app, created_at, pinned, thumbnail, ocr_text)
-    VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)
+                       source_app, created_at, pinned, thumbnail, ocr_text, pinned_at)
+    VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)
     """
 
     // MARK: - 公开操作（全部串行队列内执行）
@@ -232,14 +247,15 @@ final class HistoryDatabase {
         queue.sync {
             guard let s = Stmt(db, """
                 INSERT INTO clips (id, kind, text, search_text, content_hash, image_file, file_paths,
-                                   source_app, created_at, pinned, thumbnail, ocr_text)
-                VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)
+                                   source_app, created_at, pinned, thumbnail, ocr_text, pinned_at)
+                VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)
                 ON CONFLICT(id) DO UPDATE SET
                     kind=excluded.kind, text=excluded.text, search_text=excluded.search_text,
                     content_hash=excluded.content_hash, image_file=excluded.image_file,
                     file_paths=excluded.file_paths, source_app=excluded.source_app,
                     created_at=excluded.created_at, pinned=excluded.pinned,
-                    thumbnail=excluded.thumbnail, ocr_text=excluded.ocr_text
+                    thumbnail=excluded.thumbnail, ocr_text=excluded.ocr_text,
+                    pinned_at=excluded.pinned_at
                 """) else { return false }
             bindItem(s, item)
             return s.step() == SQLITE_DONE
@@ -281,7 +297,7 @@ final class HistoryDatabase {
             var items: [ClipItem] = []
             let conds = Self.conditions(query: query, filter: filter)
             let whereSQL = conds.isEmpty ? "" : " WHERE " + conds.joined(separator: " AND ")
-            let sql = "SELECT * FROM clips\(whereSQL) ORDER BY pinned DESC, created_at DESC LIMIT ?\(conds.count + 1) OFFSET ?\(conds.count + 2)"
+            let sql = "SELECT * FROM clips\(whereSQL) ORDER BY pinned DESC, CASE WHEN pinned = 1 THEN COALESCE(pinned_at, created_at) ELSE created_at END DESC, created_at DESC LIMIT ?\(conds.count + 1) OFFSET ?\(conds.count + 2)"
             guard let s = Stmt(db, sql) else { return items }
             let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
             if !q.isEmpty { s.text(1, Self.likePattern(q)) }
@@ -328,11 +344,18 @@ final class HistoryDatabase {
         }
     }
 
+    /// 置顶时顺手记录置顶时间：置顶区按它倒序（新置顶的排第一）。
+    /// 老的置顶记录没有 pinned_at，退回按 created_at 排
     func setPinned(id: UUID, pinned: Bool) {
         queue.sync {
-            if let s = Stmt(db, "UPDATE clips SET pinned = ?1 WHERE id = ?2") {
-                s.int(1, pinned ? 1 : 0)
+            if pinned {
+                guard let s = Stmt(db, "UPDATE clips SET pinned = 1, pinned_at = ?1 WHERE id = ?2") else { return }
+                s.double(1, Date().timeIntervalSince1970)
                 s.text(2, id.uuidString)
+                s.step()
+            } else {
+                guard let s = Stmt(db, "UPDATE clips SET pinned = 0 WHERE id = ?1") else { return }
+                s.text(1, id.uuidString)
                 s.step()
             }
         }

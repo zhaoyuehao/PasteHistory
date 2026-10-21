@@ -149,6 +149,9 @@ final class ClipStore: ObservableObject {
     func togglePin(id: UUID) {
         guard var item = syncDatabase.get(id: id) else { return }
         item.pinned.toggle()
+        // 置顶时间随记录走：本机排序用它，iCloud 导出也带着它，
+        // 其他设备导入后置顶顺序一致
+        if item.pinned { item.pinnedAt = Date() }
         syncDatabase.setPinned(id: id, pinned: item.pinned)
         refresh()
         iCloudSync.shared.exportClip(item)
