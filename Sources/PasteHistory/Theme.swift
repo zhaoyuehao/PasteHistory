@@ -21,16 +21,14 @@ enum Scale {
 
 // MARK: - 图标
 
-/// 图标三档 + 缩略图一档。图标跟着作用走，不跟着容器顺手缩放。
+/// 图标三档。图标跟着作用走，不跟着容器顺手缩放。
 enum Icon {
     /// 行内标记（置顶）：不抢正文
     static let mark: CGFloat = 11
     /// 可点的图标（搜索、清除、行内按钮）：13 是能看清又不出格的一档
     static let action: CGFloat = 13
-    /// 缩略图占位（收起 34 见方）
+    /// 缩略图占位（34 见方）
     static let thumb: CGFloat = 15
-    /// 缩略图占位（展开 44 见方）
-    static let thumbOpen: CGFloat = 19
 }
 
 // MARK: - 语义色

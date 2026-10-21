@@ -14,21 +14,10 @@ private enum Spec {
     static let rowSpacing: CGFloat = 2
 
     static let rowPadding: CGFloat = 12
-    static let rowPaddingOpen: CGFloat = 13
     static let thumb: CGFloat = 34
-    static let thumbOpen: CGFloat = 44
 
     static let corner: CGFloat = 8
-    static let imageCorner: CGFloat = 10
     static let badgeCorner: CGFloat = 5
-
-    static let imageDetail: CGFloat = 240
-    static let textDetail: CGFloat = 200
-    /// 一块「文字块」的高度上限：标签 + 最多三行 + 间距
-    static let noteBlock: CGFloat = 88
-    static let noteScroll: CGFloat = 72
-    static let fileLine: CGFloat = 32
-    static let maxFileLines: Int = 4
 
     // 配色：一切「块」都用 primary 的透明度表达，不用 controlBackgroundColor
     // （后者在深色下是一块脏浅灰，跟窗口底色打架）
@@ -38,8 +27,6 @@ private enum Spec {
 }
 
 private enum Motion {
-    /// 就地展开 / 收起
-    static let expand = Animation.spring(response: 0.30, dampingFraction: 0.86)
     /// 选中态与跟随滚动
     static let selection = Animation.easeOut(duration: 0.20)
     /// 悬停：比选中快一档，不然手感发木
@@ -48,48 +35,11 @@ private enum Motion {
     static let repeatThreshold: TimeInterval = 0.2
 }
 
-// MARK: - 展开大图：后台解码，避免展开动画首帧空白
-
-@MainActor
-private final class ExpandedImageLoader: ObservableObject {
-    @Published private(set) var image: NSImage?
-    private var wantedID: UUID?
-
-    func load(for item: ClipItem?) {
-        guard let item, item.kind == .image || item.firstImageFilePath != nil else {
-            wantedID = nil
-            image = nil
-            return
-        }
-        wantedID = item.id
-
-        // 缓存命中：同步给出，首帧不空
-        let name = item.imageFile
-        let path = item.firstImageFilePath
-        if let hit = ClipStore.shared.peek(named: name) ?? ClipStore.shared.peekFile(path: path) {
-            image = hit
-            return
-        }
-
-        image = nil
-        let id = item.id
-        DispatchQueue.global(qos: .userInitiated).async {
-            let decoded = ClipStore.decodeImage(named: name) ?? ClipStore.decodeImage(atPath: path)
-            DispatchQueue.main.async { [weak self] in
-                guard let self, self.wantedID == id, let decoded else { return }
-                ClipStore.shared.cache(decoded, named: name, path: path)
-                self.image = decoded
-            }
-        }
-    }
-}
-
 // MARK: - 面板
 
 struct HistoryView: View {
     @ObservedObject var store: ClipStore
     @StateObject private var model: HistoryViewModel
-    @StateObject private var loader = ExpandedImageLoader()
     @FocusState private var searchFocused: Bool
 
     var onPaste: (ClipItem) -> Void
@@ -123,7 +73,6 @@ struct HistoryView: View {
         .background(Color(NSColor.controlBackgroundColor))
         .onAppear {
             DispatchQueue.main.async { searchFocused = true }
-            loader.load(for: model.expanded ? current : nil)
             model.rebuildSections()
         }
         .onReceive(NotificationCenter.default.publisher(for: .phMoveDown)) { _ in model.move(1) }
@@ -136,7 +85,6 @@ struct HistoryView: View {
             guard let item = current else { return }
             onCopyOnly(item)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .phToggleExpand)) { _ in model.toggleExpanded() }
         .onReceive(NotificationCenter.default.publisher(for: .phDelete)) { _ in
             guard current != nil else { return }
             model.deleteCurrent()
@@ -146,15 +94,12 @@ struct HistoryView: View {
             model.togglePinCurrent()
         }
         .onReceive(NotificationCenter.default.publisher(for: .phClose)) { _ in onClose() }
-        // 每次打开面板都是一次新的「找」：回到第一条并收起，一屏能扫到十条
+        // 每次打开面板都是一次新的「找」：回到第一条
         .onReceive(NotificationCenter.default.publisher(for: .phPanelWillShow)) { _ in model.resetForPresentation() }
         .onReceive(NotificationCenter.default.publisher(for: .phQuickPaste)) { note in
             guard let index = note.object as? Int, index < results.count else { return }
             onPaste(results[index])
         }
-        .onChange(of: safeSelection) { _, _ in loader.load(for: model.expanded ? current : nil) }
-        // 收起时不解码大图：一屏十条时没人看得见，白费一次后台解码
-        .onChange(of: model.expanded) { _, isOn in loader.load(for: isOn ? current : nil) }
         .onChange(of: store.displayed) { _, _ in model.rebuildSections() }
     }
 
@@ -207,24 +152,13 @@ struct HistoryView: View {
                                         index: pair.1,
                                         query: store.query,
                                         selected: pair.1 == safeSelection,
-                                        expanded: pair.1 == safeSelection && model.expanded,
-                                        expandedImage: pair.1 == safeSelection && model.expanded ? loader.image : nil,
                                         onPin: { model.togglePin(at: pair.1) },
-                                        onDelete: { model.delete(at: pair.1) },
-                                        onToggleExpand: {
-                                            if pair.1 == safeSelection { model.toggleExpanded() }
-                                            else { model.select(pair.1) }
-                                        })
+                                        onDelete: { model.delete(at: pair.1) })
                                     .id(pair.0.id)
                                     .contentShape(Rectangle())
                                     .onTapGesture(count: 2) { onPaste(pair.0) }
-                                    // 鼠标也要能展开：点已选中的那一行就是切换展开
                                     .simultaneousGesture(TapGesture(count: 1).onEnded {
-                                        if pair.1 == safeSelection {
-                                            model.toggleExpanded()
-                                        } else {
-                                            model.select(pair.1)
-                                        }
+                                        model.select(pair.1)
                                     })
                                     .onAppear {
                                         if pair.1 >= results.count - 8 { store.loadMore() }
@@ -301,57 +235,14 @@ struct RowView: View {
     let index: Int
     let query: String
     let selected: Bool
-    /// 收起是默认态；只有 expanded 才放大缩略图、加宽内边距、长出内容区
-    let expanded: Bool
-    let expandedImage: NSImage?
     var onPin: () -> Void
     var onDelete: () -> Void
-    /// 点 chevron 展开 / 收起：详情必须有个看得见的入口
-    var onToggleExpand: () -> Void
 
     @State private var hovered = false
 
-    /// 缩略图与内边距跟展开走，不跟选中走：
-    /// 选中的行如果也撑大，收起状态下一样扫不了几条
-    private var thumbSize: CGFloat { expanded ? Spec.thumbOpen : Spec.thumb }
-    private var padding: CGFloat { expanded ? Spec.rowPaddingOpen : Spec.rowPadding }
-
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            detail
-                // 高度是连续量而不是结构变化：内容常驻，收起时高度归零并裁掉。
-                // 用 if 插入/移除会走 appear/disappear 路径，macOS 上表现为瞬变。
-                // 用 maxHeight 而不是 height：短内容不撑出一片空白
-                .frame(maxHeight: expanded ? detailHeight : 0)
-                .clipped()
-                .opacity(expanded ? 1 : 0)
-        }
-        .padding(.horizontal, padding)
-        .padding(.vertical, 5)
-        .background(
-            RoundedRectangle(cornerRadius: Spec.corner)
-                .fill(fill)
-        )
-        .contentShape(Rectangle())
-        .onHover { hovered = $0 }
-        .animation(Motion.hover, value: hovered)
-        .animation(Motion.expand, value: expanded)
-    }
-
-    /// 选中 > 悬停 > 无。悬停是「这里可以按」的承诺，必须看得见但压得住
-    private var fill: Color {
-        if selected { return Color.accentColor.opacity(Spec.selectFill) }
-        if hovered { return Color.primary.opacity(Spec.hoverFill) }
-        return Color.clear
-    }
-
-    // MARK: 头部（收起时就是整行）
-
-    private var header: some View {
         HStack(spacing: 12) {
             thumbnail
-                .frame(width: thumbSize, height: thumbSize)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(summary)
@@ -381,35 +272,31 @@ struct RowView: View {
             Spacer(minLength: 8)
             trailing
         }
-        .frame(height: thumbSize)
+        .frame(height: Spec.thumb)
+        .padding(.horizontal, Spec.rowPadding)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: Spec.corner)
+                .fill(fill)
+        )
+        .contentShape(Rectangle())
+        .onHover { hovered = $0 }
+        .animation(Motion.hover, value: hovered)
     }
 
-    /// 右侧固定 44 宽，三层状态共用一个位置：
-    /// 未选中 → ⌘N 角标（候选，告诉你怎么直达）
-    /// 选中   → chevron（可展开的**可见**入口：没有它，展开只是个没人知道的隐藏手势）
-    /// 悬停   → 置顶 / 删除
-    /// 宽度恒定，所以切换不会把摘要挤动
+    /// 选中 > 悬停 > 无。悬停是「这里可以按」的承诺，必须看得见但压得住
+    private var fill: Color {
+        if selected { return Color.accentColor.opacity(Spec.selectFill) }
+        if hovered { return Color.primary.opacity(Spec.hoverFill) }
+        return Color.clear
+    }
+
+    /// 右侧固定 44 宽：常态是 ⌘N 角标，悬停时原位换成置顶 / 删除。
+    /// 宽度恒定，所以悬停不会把摘要挤动；也终于让鼠标能操作单条
     private var trailing: some View {
         ZStack {
             quickBadge
-                .opacity(hovered || selected ? 0 : 1)
-
-            if selected {
-                Button { onToggleExpand() } label: {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: Icon.action, weight: .medium))
-                        .rotationEffect(.degrees(expanded ? 90 : 0))
-                        .frame(width: 20, height: 20)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.borderless)
-                .foregroundStyle(Palette.meta)
-                .help(expanded ? L10n.collapseDetail : L10n.expandDetail)
-                .accessibilityLabel(expanded ? L10n.collapseDetail : L10n.expandDetail)
                 .opacity(hovered ? 0 : 1)
-                .allowsHitTesting(!hovered)
-            }
-
             HStack(spacing: 4) {
                 RowActionButton(symbol: "pin.fill", label: L10n.pinItem, action: onPin)
                 RowActionButton(symbol: "trash", label: L10n.deleteItem, action: onDelete)
@@ -419,7 +306,6 @@ struct RowView: View {
         }
         .frame(minWidth: 44, alignment: .trailing)
         .animation(Motion.hover, value: hovered)
-        .animation(Motion.expand, value: expanded)
     }
 
     @ViewBuilder
@@ -428,14 +314,18 @@ struct RowView: View {
             Image(nsImage: thumb)
                 .resizable()
                 .scaledToFill()
+                // scaledToFill 会画出 frame 外，必须裁——不然宽图会探出去压住别行
+                .frame(width: Spec.thumb, height: Spec.thumb)
+                .clipShape(RoundedRectangle(cornerRadius: Spec.corner))
         } else {
             ZStack {
                 RoundedRectangle(cornerRadius: Spec.corner)
                     .fill(Color.primary.opacity(Spec.chipFill))
                 Image(systemName: symbol)
-                    .font(.system(size: expanded ? Icon.thumbOpen : Icon.thumb))
+                    .font(.system(size: Icon.thumb))
                     .foregroundStyle(.secondary)
             }
+            .frame(width: Spec.thumb, height: Spec.thumb)
         }
     }
 
@@ -464,86 +354,6 @@ struct RowView: View {
                 // 图标化不能牺牲读屏：⌘1 念出来没人听得懂
                 .accessibilityLabel(L10n.quickPaste(index + 1))
         }
-    }
-
-    // MARK: 展开内容
-
-    private var detailHeight: CGFloat {
-        switch item.kind {
-        case .text: return Spec.textDetail
-        case .image:
-            return Spec.imageDetail
-                + (hasText ? Spec.noteBlock : 0)
-                + (hasOCR ? Spec.noteBlock : 0)
-        case .files: return CGFloat(min(paths.count, Spec.maxFileLines)) * Spec.fileLine + 6
-        }
-    }
-
-    private var paths: [String] { item.filePaths ?? [] }
-    private var hasOCR: Bool { !(item.ocrText ?? "").isEmpty }
-    private var hasText: Bool { !(item.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-
-    @ViewBuilder
-    private var detail: some View {
-        switch item.kind {
-        case .text: textDetail
-        case .image: imageDetail
-        case .files: filesDetail
-        }
-    }
-
-    private var textDetail: some View {
-        ScrollView {
-            Text(item.text ?? "")
-                .font(.system(size: Scale.body))
-                .lineSpacing(6)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.top, 10)
-        // 不固定高度：内容短则矮，上限 200 由外层 detailHeight 控制
-    }
-
-    private var imageDetail: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Group {
-                if let expandedImage {
-                    Image(nsImage: expandedImage).resizable().scaledToFit()
-                } else if let thumb = item.thumbnail {
-                    // 原图还没解码完，先用缩略图顶住第一帧
-                    Image(nsImage: thumb).resizable().scaledToFit()
-                } else {
-                    Rectangle().fill(Color.primary.opacity(Spec.chipFill))
-                }
-            }
-            .frame(height: Spec.imageDetail)
-            .clipShape(RoundedRectangle(cornerRadius: Spec.imageCorner))
-            .padding(.top, 10)
-
-            // 图片自带的文字、OCR 出来的文字，都是内容——内容必须能选中、能复制。
-            // 乔布斯删的是「解释软件的 UI」，不是用户要拿走的东西
-            if hasText {
-                NoteBlock(label: L10n.attachedText, content: item.text ?? "")
-            }
-            if hasOCR {
-                NoteBlock(label: L10n.imageText, content: item.ocrText ?? "")
-            }
-        }
-    }
-
-    private var filesDetail: some View {
-        VStack(spacing: 6) {
-            ForEach(Array(paths.prefix(Spec.maxFileLines).enumerated()), id: \.offset) { _, path in
-                FileLine(path: path)
-            }
-            if paths.count > Spec.maxFileLines {
-                Text(L10n.moreFiles(paths.count - Spec.maxFileLines))
-                    .font(.system(size: Scale.meta))
-                    .foregroundStyle(Palette.meta)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-        .padding(.top, 10)
     }
 
     /// 摘要里高亮搜索命中
@@ -585,72 +395,5 @@ private struct RowActionButton: View {
         .help(label)
         .accessibilityLabel(label)
         .onHover { hovering = $0 }
-    }
-}
-
-// MARK: - 文字块
-
-/// 图片附带的文字 / OCR 出来的文字：可选中即复制，不额外给按钮
-private struct NoteBlock: View {
-    let label: String
-    let content: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(label)
-                .font(.system(size: Scale.meta))
-                .foregroundStyle(Palette.meta)
-            ScrollView {
-                Text(content)
-                    .font(.system(size: Scale.body))
-                    // 这是要拿走的内容，不是注释：按正文对比度给
-                    .foregroundStyle(.primary)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(maxHeight: Spec.noteScroll)
-        }
-        .padding(.top, 9)
-    }
-}
-
-// MARK: - 文件行
-
-private struct FileLine: View {
-    let path: String
-
-    private var exists: Bool { FileManager.default.fileExists(atPath: path) }
-    private var name: String { (path as NSString).lastPathComponent }
-
-    private var size: String? {
-        guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
-              let n = attrs[.size] as? NSNumber else { return nil }
-        return ByteCountFormatter.string(fromByteCount: n.int64Value, countStyle: .file)
-    }
-
-    var body: some View {
-        HStack(spacing: 9) {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: path))
-                .resizable()
-                .frame(width: 20, height: 20)
-                .opacity(exists ? 1 : 0.4)
-            Text(name)
-                .font(.system(size: Scale.body))
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer(minLength: 8)
-            if let size {
-                Text(size)
-                    .font(.system(size: Scale.meta))
-                    .foregroundStyle(Palette.meta)
-                    .monospacedDigit()
-            }
-            if !exists {
-                Text(L10n.fileMissing)
-                    .font(.system(size: Scale.meta))
-                    .foregroundStyle(Palette.warning)
-            }
-        }
-        .frame(height: 24)
     }
 }

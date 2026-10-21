@@ -58,8 +58,6 @@ enum L10n {
     static func quickPaste(_ n: Int) -> String {
         value("快速粘贴第 \(n) 条", "快速貼上第 \(n) 筆", "Paste item \(n)")
     }
-    static var expandDetail: String { value("查看详情", "查看詳情", "Show detail") }
-    static var collapseDetail: String { value("收起", "收起", "Collapse") }
     static var noHistory: String { value("你的剪贴板还没有记忆。", "你的剪貼簿還沒有記錄。", "Your clipboard history is empty.") }
     static var noMatch: String { value("没找到。", "找不到。", "No matches.") }
     static var copySomething: String { value("⌘C 复制点什么，⇧⌘C 回来", "⌘C 複製內容，再按 ⇧⌘C 回來", "Copy something with ⌘C, then press ⇧⌘C") }
