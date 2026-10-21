@@ -15,7 +15,7 @@ enum WebSyncPage {
 <meta name="theme-color" content="#1c1c1e">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.json">
-<title>剪贴板</title>
+<title id="pageTitle">剪贴板</title>
 <style>
 :root { color-scheme: dark; }
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
@@ -76,7 +76,7 @@ main { padding: 10px 14px; }
 </head>
 <body>
 <header>
-  <h1>剪贴板历史</h1>
+  <h1 id="heading">剪贴板历史</h1>
   <div id="status">连接中…</div>
   <div class="row">
     <input type="search" id="q" placeholder="搜索（含图片内文字）">
@@ -93,9 +93,9 @@ main { padding: 10px 14px; }
 </div>
 <div id="toast"></div>
 <div id="lock">
-  <p>请输入 Mac 端显示的 6 位配对码<br>（重新扫码即可自动填入）</p>
+  <p id="pairHint">请输入 Mac 端显示的 6 位配对码<br>（重新扫码即可自动填入）</p>
   <input id="pairInput" inputmode="numeric" maxlength="6" placeholder="······">
-  <button onclick="submitPair()">解锁</button>
+  <button id="unlockBtn" onclick="submitPair()">解锁</button>
 </div>
 <div id="pasteOverlay" onclick="if(event.target===this)closePasteBox()">
   <div id="pbSheet">
@@ -331,6 +331,18 @@ function hexBytes(b) { return [...b].map(x => x.toString(16).padStart(2,'0')).jo
 
 const $ = id => document.getElementById(id);
 let key = null, keyBytes = null, token = null, clips = [], current = null;
+// The phone page follows the browser language; Chinese variants keep the original copy.
+const browserLanguage = (navigator.language || '').toLowerCase();
+const ui = browserLanguage.startsWith('zh-hant') || browserLanguage.startsWith('zh-tw') || browserLanguage.startsWith('zh-hk') ? {
+  title:'剪貼簿', heading:'剪貼簿歷史', phoneWeb:'手機網頁', connecting:'連線中…', search:'搜尋（含圖片中文字）', sync:'同步剪貼簿', pasteSync:'貼上同步', loading:'載入中…', copy:'複製', pairHint:'請輸入 Mac 顯示的 6 位配對碼<br>（重新掃描即可自動填入）', unlock:'解鎖', pasteHint:'目前頁面不是 HTTPS，瀏覽器不允許網頁讀取剪貼簿。<br>請在下方長按 → 貼上，再同步到 Mac。', pastePlaceholder:'長按此處 → 貼上', syncMac:'同步到 Mac', digits:'請輸入 6 位數字', wrongPair:'配對碼不正確', connected:'已連線', secure:'端對端加密', js:'（JS）', failed:'連線失敗：', offline:'無法連線 Mac：確認同一 Wi-Fi（部分 Wi-Fi 會隔離裝置）、已允許「區域網路」權限、Mac 未睡眠', justNow:'剛剛', minutes:'{n} 分鐘前', today:'今天 ', noMatch:'沒有符合的內容', noItems:'還沒有記錄', pinned:'置頂', text:'文字', image:'圖片', files:'檔案', imageSave:'圖片請長按儲存後使用', copied:'已複製，請到目標 App 貼上', copyBlocked:'自動複製被瀏覽器阻止，請長按選取上方內容後點「拷貝」', emptyClipboard:'剪貼簿是空的', reading:'讀取中…', syncing:'同步中…', allowRead:'請在系統彈窗中允許讀取剪貼簿', syncFailed:'同步失敗：', pasteSomething:'先貼上內容', synced:'✅ 已同步到 Mac', decryptFailed:'🔒 解密失敗', decryptCheckFailed:'AES-GCM 驗證失敗', portSecure:'端對端加密'
+} : browserLanguage.startsWith('zh') ? {
+  title:'剪贴板', heading:'剪贴板历史', phoneWeb:'手机网页', connecting:'连接中…', search:'搜索（含图片内文字）', sync:'同步剪贴板', pasteSync:'粘贴同步', loading:'加载中…', copy:'复制', pairHint:'请输入 Mac 端显示的 6 位配对码<br>（重新扫码即可自动填入）', unlock:'解锁', pasteHint:'当前页面不是 HTTPS，浏览器不允许网页读取剪贴板。<br>请在下面长按 → 粘贴，再同步到 Mac。', pastePlaceholder:'长按此处 → 粘贴', syncMac:'同步到 Mac', digits:'请输入 6 位数字', wrongPair:'配对码不正确', connected:'已连接', secure:'端到端加密', js:'（JS）', failed:'连接失败：', offline:'连不上 Mac：确认同一 Wi-Fi（部分 Wi-Fi 有设备隔离）、已允许「本地网络」权限、Mac 未睡眠', justNow:'刚刚', minutes:'{n} 分钟前', today:'今天 ', noMatch:'没有匹配的内容', noItems:'还没有记录', pinned:'置顶', text:'文本', image:'图片', files:'文件', imageSave:'图片请长按保存后使用', copied:'已复制，去粘贴吧', copyBlocked:'自动复制被浏览器阻止，请长按选中上方内容后点「拷贝」', emptyClipboard:'剪贴板是空的', reading:'读取中…', syncing:'同步中…', allowRead:'请在系统弹窗中允许读取剪贴板', syncFailed:'同步失败：', pasteSomething:'先粘贴点内容', synced:'✅ 已同步到 Mac', decryptFailed:'🔒 解密失败', decryptCheckFailed:'AES-GCM 校验失败', portSecure:'端到端加密'
+} : {
+  title:'Clipboard', heading:'Clipboard History', phoneWeb:'Phone web page', connecting:'Connecting…', search:'Search (including text in images)', sync:'Sync Clipboard', pasteSync:'Paste to Sync', loading:'Loading…', copy:'Copy', pairHint:'Enter the 6-digit pairing code shown on your Mac<br>(scanning again fills it automatically)', unlock:'Unlock', pasteHint:'This page is not HTTPS, so the browser cannot read the clipboard.<br>Long-press below to paste, then sync to your Mac.', pastePlaceholder:'Long-press here to paste', syncMac:'Sync to Mac', digits:'Enter 6 digits', wrongPair:'Incorrect pairing code', connected:'Connected', secure:'End-to-end encrypted', js:' (JS)', failed:'Connection failed: ', offline:'Cannot reach Mac: check the same Wi-Fi, Local Network permission, and that the Mac is awake', justNow:'Just now', minutes:'{n} min ago', today:'Today ', noMatch:'No matches', noItems:'No records yet', pinned:'Pinned', text:'Text', image:'Image', files:'Files', imageSave:'Long-press the image to save it', copied:'Copied. Paste it in the target app.', copyBlocked:'Automatic copy was blocked. Long-press the content above and choose Copy.', emptyClipboard:'The clipboard is empty', reading:'Reading…', syncing:'Syncing…', allowRead:'Allow clipboard access in the system prompt', syncFailed:'Sync failed: ', pasteSomething:'Paste some content first', synced:'✅ Synced to Mac', decryptFailed:'🔒 Decryption failed', decryptCheckFailed:'AES-GCM verification failed', portSecure:'End-to-end encrypted'
+};
+function tr(key, value) { return (ui[key] || key).replace('{n}', value == null ? '' : value); }
+document.documentElement.lang = browserLanguage.startsWith('zh') ? browserLanguage : 'en';
+document.title = tr('title'); $('heading').textContent = tr('heading'); $('status').textContent = tr('connecting'); $('q').placeholder = tr('search'); $('syncBtn').textContent = tr('sync'); $('empty').textContent = tr('loading'); $('copyBtn').textContent = tr('copy'); $('pairHint').innerHTML = tr('pairHint'); $('unlockBtn').textContent = tr('unlock'); $('pbTitle').innerHTML = tr('pasteHint'); $('pb').placeholder = tr('pastePlaceholder'); $('pbBtn').textContent = tr('syncMac');
 const decCache = new Map();   // 密文 → 明文缓存（避免轮询重复解密）
 const hasSubtle = !!(window.crypto && window.crypto.subtle);
 // 非安全上下文（http://局域网IP）下 navigator.clipboard 为 undefined，读写剪贴板都要走回退
@@ -346,7 +358,7 @@ async function initPair() {
 }
 async function submitPair() {
   const code = $('pairInput').value.trim();
-  if (!/^\d{6}$/.test(code)) { toast('请输入 6 位数字'); return; }
+  if (!/^\d{6}$/.test(code)) { toast(tr('digits')); return; }
   if (await unlock(code)) { localStorage.setItem('phPair', code); $('lock').style.display = 'none'; }
 }
 async function unlock(code) {
@@ -361,12 +373,12 @@ async function unlock(code) {
       key = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt','decrypt']);
     }
     const r = await api('/api/info');
-    if (!r.ok) { toast('配对码不正确'); key = null; keyBytes = null; return false; }
+    if (!r.ok) { toast(tr('wrongPair')); key = null; keyBytes = null; return false; }
     const info = await r.json();
-    $('status').textContent = '已连接 ' + info.name + ' · ' + info.count + ' 条 · 端到端加密' + (hasSubtle ? '' : '（JS）');
-    if (!canClipboard) $('syncBtn').textContent = '粘贴同步';
+    $('status').textContent = tr('connected') + ' ' + info.name + ' · ' + info.count + ' · ' + tr('secure') + (hasSubtle ? '' : tr('js'));
+    if (!canClipboard) $('syncBtn').textContent = tr('pasteSync');
     return true;
-  } catch (e) { toast('连接失败：' + e.message); return false; }
+  } catch (e) { toast(tr('failed') + e.message); return false; }
 }
 
 function api(path, opts) {
@@ -377,7 +389,7 @@ function api(path, opts) {
 async function gcmDecrypt(iv, data) { // data = ct + tag
   if (hasSubtle) return new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM', iv}, key, data));
   const pt = aesGcmDecBytes(keyBytes, iv, data);
-  if (!pt) throw new Error('AES-GCM 校验失败');
+  if (!pt) throw new Error(tr('decryptCheckFailed'));
   return pt;
 }
 async function gcmEncrypt(iv, data) {
@@ -420,29 +432,29 @@ async function load() {
         item.text = plain.text || ''; item.ocr = plain.ocr || '';
         item.app = plain.app || ''; item.paths = plain.paths || '';
         item.thumb = plain.thumb || null;
-      } else { item.text = '🔒 解密失败'; }
+      } else { item.text = tr('decryptFailed'); }
       out.push(item);
     }
     if (decCache.size > 1000) decCache.clear();
     clips = out;
     render();
   } catch (e) {
-    $('status').textContent = '连不上 Mac：确认同一 Wi-Fi（部分 Wi-Fi 有设备隔离）、已允许「本地网络」权限、Mac 未睡眠';
+    $('status').textContent = tr('offline');
   }
 }
 
 function fmtTime(ts) {
   const d = new Date(ts * 1000), now = new Date();
   const diff = (now - d) / 1000;
-  if (diff < 60) return '刚刚';
-  if (diff < 3600) return Math.floor(diff/60) + ' 分钟前';
+  if (diff < 60) return tr('justNow');
+  if (diff < 3600) return tr('minutes', Math.floor(diff/60));
   const hm = d.toTimeString().slice(0,5);
-  if (d.toDateString() === now.toDateString()) return '今天 ' + hm;
+  if (d.toDateString() === now.toDateString()) return tr('today') + hm;
   return (d.getMonth()+1) + '-' + d.getDate() + ' ' + hm;
 }
 function summary(c) {
   if (c.kind === 'text') return c.text || '';
-  if (c.kind === 'image') return c.ocr ? '🖼 ' + c.ocr.slice(0,60) : '🖼 图片';
+  if (c.kind === 'image') return c.ocr ? '🖼 ' + c.ocr.slice(0,60) : '🖼 ' + tr('image');
   return '📁 ' + (c.paths || '').split('\n')[0];
 }
 
@@ -454,11 +466,11 @@ function render() {
     (c.paths||'').toLowerCase().includes(q) ||
     (c.app||'').toLowerCase().includes(q));
   const el = $('list');
-  if (!list.length) { el.innerHTML = '<div id="empty">' + (clips.length ? '没有匹配的内容' : '还没有记录') + '</div>'; return; }
+  if (!list.length) { el.innerHTML = '<div id="empty">' + (clips.length ? tr('noMatch') : tr('noItems')) + '</div>'; return; }
   el.innerHTML = list.map(c => {
     const thumb = c.thumb ? '<img class="thumb" src="data:image/png;base64,' + c.thumb + '">' : '';
-    const pin = c.pinned ? '<span class="badge pin">置顶</span>' : '';
-    const kind = { text:'文本', image:'图片', files:'文件' }[c.kind] || c.kind;
+    const pin = c.pinned ? '<span class="badge pin">' + tr('pinned') + '</span>' : '';
+    const kind = { text:tr('text'), image:tr('image'), files:tr('files') }[c.kind] || c.kind;
     return '<div class="clip" onclick="openSheet(\'' + c.id + '\')">' + thumb +
       '<div class="content">' + esc(summary(c)) + '</div><div class="meta">' + pin +
       '<span class="badge">' + kind + '</span><span>' + esc(c.app||'') + '</span><span>' + fmtTime(c.ts) + '</span></div></div>';
@@ -469,7 +481,7 @@ function esc(s) { return (s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;
 function openSheet(id) {
   const c = clips.find(x => x.id === id); if (!c) return;
   current = c;
-  $('sheetTitle').textContent = ({text:'文本',image:'图片',files:'文件'})[c.kind] + ' · ' + fmtTime(c.ts) + (c.app ? ' · ' + c.app : '');
+  $('sheetTitle').textContent = ({text:tr('text'),image:tr('image'),files:tr('files')})[c.kind] + ' · ' + fmtTime(c.ts) + (c.app ? ' · ' + c.app : '');
   $('detail').textContent = c.kind === 'text' ? c.text : (c.paths || c.ocr || '');
   $('overlay').style.display = 'flex';
   if (c.kind === 'image' && c.img) loadImg(c.img);
@@ -490,16 +502,16 @@ function closeSheet() { $('overlay').style.display = 'none'; }
 // ---- 复制：Clipboard API 仅在安全上下文可用，非 HTTPS 回退 execCommand ----
 async function copyCurrent() {
   if (!current) return;
-  if (current.kind === 'image') { toast('图片请长按保存后使用'); closeSheet(); return; }
+  if (current.kind === 'image') { toast(tr('imageSave')); closeSheet(); return; }
   const text = current.kind === 'text' ? current.text : current.paths;
   if (canClipboard) {
     try {
       await navigator.clipboard.writeText(text);
-      toast('已复制，去粘贴吧'); closeSheet(); return;
+      toast(tr('copied')); closeSheet(); return;
     } catch (e) { /* 落到下面的回退 */ }
   }
-  if (legacyCopy(text)) { toast('已复制，去粘贴吧'); closeSheet(); return; }
-  toast('自动复制被浏览器阻止，请长按选中上方内容后点「拷贝」');
+  if (legacyCopy(text)) { toast(tr('copied')); closeSheet(); return; }
+  toast(tr('copyBlocked'));
 }
 
 function legacyCopy(text) {
@@ -530,17 +542,17 @@ async function syncClipboard() {
   if (!canClipboard) { openPasteBox(); return; }
   const btn = $('syncBtn');
   try {
-    btn.disabled = true; btn.textContent = '读取中…';
+    btn.disabled = true; btn.textContent = tr('reading');
     const t = await navigator.clipboard.readText();
-    if (!t || !t.trim()) { toast('剪贴板是空的'); return; }
-    btn.textContent = '同步中…';
+    if (!t || !t.trim()) { toast(tr('emptyClipboard')); return; }
+    btn.textContent = tr('syncing');
     await uploadText(t);
     btn.classList.add('on'); setTimeout(()=>btn.classList.remove('on'), 1200);
   } catch (e) {
     if (String(e.message||e).includes('denied') || String(e).includes('NotAllowed'))
-      toast('请在系统弹窗中允许读取剪贴板');
-    else toast('同步失败：' + (e.message || e));
-  } finally { btn.disabled = false; btn.textContent = '同步剪贴板'; }
+      toast(tr('allowRead'));
+    else toast(tr('syncFailed') + (e.message || e));
+  } finally { btn.disabled = false; btn.textContent = tr('sync'); }
 }
 
 function openPasteBox() {
@@ -551,22 +563,22 @@ function openPasteBox() {
 function closePasteBox() { $('pasteOverlay').style.display = 'none'; }
 async function submitPasted() {
   const t = $('pb').value.trim();
-  if (!t) { toast('先粘贴点内容'); return; }
+  if (!t) { toast(tr('pasteSomething')); return; }
   const btn = $('pbBtn');
-  btn.disabled = true; btn.textContent = '同步中…';
+  btn.disabled = true; btn.textContent = tr('syncing');
   try { await uploadText(t); closePasteBox(); }
-  catch (e) { toast('同步失败：' + (e.message || e)); }
-  finally { btn.disabled = false; btn.textContent = '同步到 Mac'; }
+  catch (e) { toast(tr('syncFailed') + (e.message || e)); }
+  finally { btn.disabled = false; btn.textContent = tr('syncMac'); }
 }
 
 async function uploadText(t) {
-  const payload = JSON.stringify({ text: t, kind: 'text', app: '手机网页' });
+  const payload = JSON.stringify({ text: t, kind: 'text', app: tr('phoneWeb') });
   const b64 = await encryptToB64(payload);
   const r = await api('/api/clips', { method:'POST', headers: {
     'Content-Type':'application/json', 'X-Pair-Token': token },
     body: JSON.stringify({ payload: b64 }) });
   if (!r.ok) throw new Error('HTTP ' + r.status);
-  toast('✅ 已同步到 Mac');
+  toast(tr('synced'));
   await load();
 }
 async function encryptToB64(text) {

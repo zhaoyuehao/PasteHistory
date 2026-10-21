@@ -2,7 +2,7 @@ import AppKit
 import CoreImage.CIFilterBuiltins
 import SwiftUI
 
-/// "手机同步"面板：显示二维码（地址+配对码）与手动输入信息
+/// Phone sync panel: displays the QR code, address, and pairing code.
 @MainActor
 final class QRPairPanel {
     static let shared = QRPairPanel()
@@ -27,7 +27,7 @@ final class QRPairPanel {
         })
         let panel = NSPanel(contentViewController: hosting)
         panel.styleMask = [.titled, .closable, .fullSizeContentView]
-        panel.title = "手机同步"
+        panel.title = L10n.phoneSync
         panel.titlebarAppearsTransparent = true
         panel.titleVisibility = .hidden
         panel.isFloatingPanel = true
@@ -67,7 +67,7 @@ final class PairModel: ObservableObject {
     func refresh() {
         let url = WebSyncServer.shared.pairingURL ?? ""
         qr = QRPairPanel.qrImage(url)
-        address = url.isEmpty ? "未找到局域网地址，请确认 Wi-Fi" : url
+        address = url.isEmpty ? L10n.noNetworkAddress : url
         pairCode = WebSyncServer.shared.pairCode
         warning = WebSyncServer.shared.lastError ?? ""
     }
@@ -82,9 +82,9 @@ private struct PairPanelView: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 3) {
-                Text("手机同步")
+                Text(L10n.phoneSync)
                     .font(.system(size: 14, weight: .medium))
-                Text("同一 Wi-Fi 下扫码连接")
+                Text(L10n.phoneSyncSubtitle)
                     .font(.system(size: 11))
                     .foregroundStyle(Color(NSColor.tertiaryLabelColor))
             }
@@ -101,7 +101,7 @@ private struct PairPanelView: View {
                     RoundedRectangle(cornerRadius: 8)
                         .fill(Color(NSColor.controlBackgroundColor))
                         .overlay(
-                            Text("等待网络")
+                            Text(L10n.waitingForNetwork)
                                 .font(.system(size: 11))
                                 .foregroundStyle(Color(NSColor.tertiaryLabelColor))
                         )
@@ -120,7 +120,7 @@ private struct PairPanelView: View {
                 .font(.system(size: 19, weight: .medium, design: .monospaced))
                 .tracking(2)
                 .padding(.top, 16)
-            Text("配对码，手机端输入一次即可记住")
+            Text(L10n.pairingCodeHint)
                 .font(.system(size: 10.5))
                 .foregroundStyle(Color(NSColor.tertiaryLabelColor))
                 .padding(.top, 3)
@@ -139,7 +139,7 @@ private struct PairPanelView: View {
                         .font(.system(size: 10))
                 }
                 .buttonStyle(.borderless)
-                .help("复制地址")
+                .help(L10n.clearAddress)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
@@ -162,7 +162,7 @@ private struct PairPanelView: View {
                 Image(systemName: "lock.fill")
                     .font(.system(size: 9.5))
                     .foregroundStyle(Color(NSColor.tertiaryLabelColor))
-                Text("端到端加密 · AES-256-GCM")
+                Text(L10n.encrypted)
                     .font(.system(size: 10.5))
                     .foregroundStyle(Color(NSColor.tertiaryLabelColor))
             }
@@ -171,7 +171,7 @@ private struct PairPanelView: View {
 
             Spacer(minLength: 0)
 
-            Button("刷新二维码", action: onRefresh)
+            Button(L10n.refreshQRCode, action: onRefresh)
                 .buttonStyle(.borderless)
                 .font(.system(size: 11))
                 .foregroundStyle(Color.accentColor)

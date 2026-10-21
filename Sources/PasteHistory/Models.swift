@@ -21,11 +21,11 @@ enum ClipFilter: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .all: return "全部"
-        case .text: return "文本"
-        case .image: return "图片"
-        case .files: return "文件"
-        case .pinned: return "置顶"
+        case .all: return L10n.all
+        case .text: return L10n.text
+        case .image: return L10n.image
+        case .files: return L10n.files
+        case .pinned: return L10n.pinned
         }
     }
 }
@@ -119,16 +119,15 @@ struct ClipItem: Identifiable, Codable, Equatable {
             }
             let ocr = ocrText?.trimmingCharacters(in: .whitespacesAndNewlines)
             if let ocr, !ocr.isEmpty, ocr.count < 60 {
-                return "图片 · \(ocr)"
+                return L10n.imageSummary(ocr)
             }
             if let ocr, !ocr.isEmpty {
-                return "图片 · " + String(ocr.prefix(40)) + "…"
+                return L10n.imageSummary(String(ocr.prefix(40)) + "…")
             }
-            return "图片"
+            return L10n.image
         case .files:
             let names = (filePaths ?? []).map { ($0 as NSString).lastPathComponent }
-            if names.count == 1 { return names[0] }
-            return "\(names.count) 个文件：" + names.prefix(3).joined(separator: "、")
+            return L10n.fileSummary(count: names.count, names: names)
         }
     }
 
@@ -153,14 +152,14 @@ struct ClipItem: Identifiable, Codable, Equatable {
 enum RelativeTime {
     static func string(from date: Date) -> String {
         let interval = Date().timeIntervalSince(date)
-        if interval < 60 { return "刚刚" }
-        if interval < 3600 { return "\(Int(interval / 60)) 分钟前" }
+        if interval < 60 { return L10n.value("刚刚", "剛剛", "Just now") }
+        if interval < 3600 { return L10n.minutesAgo(Int(interval / 60)) }
         let cal = Calendar.current
         if cal.isDateInToday(date) {
-            return "今天 " + format(date, "HH:mm")
+            return L10n.todayAt(format(date, "HH:mm"))
         }
         if cal.isDateInYesterday(date) {
-            return "昨天 " + format(date, "HH:mm")
+            return L10n.yesterdayAt(format(date, "HH:mm"))
         }
         return format(date, "MM-dd HH:mm")
     }
