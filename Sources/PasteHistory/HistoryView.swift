@@ -165,17 +165,18 @@ struct HistoryView: View {
     private var searchBar: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 13))
-                .foregroundStyle(searchFocused ? Color.accentColor : Color(NSColor.tertiaryLabelColor))
+                .font(.system(size: Icon.action))
+                // 聚焦时点亮，未聚焦时也不该淡到看不见——图标是位置的承诺
+                .foregroundStyle(searchFocused ? Color.accentColor : Palette.meta)
             TextField(L10n.search, text: $store.query)
                 .textFieldStyle(.plain)
-                .font(.system(size: 15))
+                .font(.system(size: Scale.field))
                 .focused($searchFocused)
             if !store.query.isEmpty {
                 Button { store.query = "" } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.tertiary)
+                        .font(.system(size: Icon.action))
+                        .foregroundStyle(Palette.meta)
                 }
                 .buttonStyle(.plain)
                 .help(L10n.clear)
@@ -260,10 +261,10 @@ struct HistoryView: View {
     private var emptyState: some View {
         VStack(spacing: 8) {
             Text(store.totalCount == 0 ? L10n.noHistory : L10n.noMatch)
-                .font(.system(size: 15, weight: .medium))
+                .font(.system(size: Scale.field, weight: .medium))
             Text(store.totalCount == 0 ? L10n.copySomething : L10n.tryAnother)
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
+                .font(.system(size: Scale.body))
+                .foregroundStyle(Palette.meta)
         }
         .multilineTextAlignment(.center)
         .padding(.horizontal, 24)
@@ -278,8 +279,8 @@ private struct SectionHeader: View {
     var body: some View {
         HStack(spacing: 0) {
             Text(title)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.tertiary)
+                .font(.system(size: Scale.meta, weight: .medium))
+                .foregroundStyle(Palette.meta)
             Spacer()
         }
         .padding(.horizontal, Spec.listPadding + 6)
@@ -348,7 +349,7 @@ struct RowView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(summary)
-                    .font(.system(size: 13))
+                    .font(.system(size: Scale.body))
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -356,18 +357,18 @@ struct RowView: View {
                 HStack(spacing: 5) {
                     if item.pinned {
                         Image(systemName: "pin.fill")
-                            .font(.system(size: 9))
-                            .foregroundStyle(selected ? .secondary : .tertiary)
+                            .font(.system(size: Icon.mark))
+                            .foregroundStyle(Palette.meta)
                     }
                     if let app = item.sourceApp {
                         Text(app)
-                            .font(.system(size: 11))
-                            .foregroundStyle(selected ? .secondary : .tertiary)
+                            .font(.system(size: Scale.meta))
+                            .foregroundStyle(Palette.meta)
                             .lineLimit(1)
                     }
                     Text(RelativeTime.string(from: item.createdAt))
-                        .font(.system(size: 11))
-                        .foregroundStyle(selected ? .secondary : .tertiary)
+                        .font(.system(size: Scale.meta))
+                        .foregroundStyle(Palette.meta)
                 }
             }
 
@@ -404,7 +405,7 @@ struct RowView: View {
                 RoundedRectangle(cornerRadius: Spec.corner)
                     .fill(Color.primary.opacity(Spec.chipFill))
                 Image(systemName: symbol)
-                    .font(.system(size: thumbSize * 0.45))
+                    .font(.system(size: expanded ? Icon.thumbOpen : Icon.thumb))
                     .foregroundStyle(.secondary)
             }
         }
@@ -418,19 +419,22 @@ struct RowView: View {
         }
     }
 
-    /// ⌘1–9 快速粘贴角标：可见的承诺，值得常驻
+    /// ⌘1–9 快速粘贴角标：可见的承诺，值得常驻。
+    /// 常驻的前提是读得清——tertiaryLabelColor 在浅色下只有 1.73:1，等于没写
     @ViewBuilder
     private var quickBadge: some View {
         if index < 9 {
             Text("⌘\(index + 1)")
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(selected ? .primary : Color(NSColor.tertiaryLabelColor))
+                .font(.system(size: Scale.meta, design: .monospaced))
+                .foregroundStyle(selected ? .primary : Palette.meta)
                 .padding(.horizontal, 5)
                 .padding(.vertical, 2)
                 .background(
                     RoundedRectangle(cornerRadius: Spec.badgeCorner)
                         .fill(Color.primary.opacity(selected ? 0.14 : Spec.chipFill))
                 )
+                // 图标化不能牺牲读屏：⌘1 念出来没人听得懂
+                .accessibilityLabel(L10n.quickPaste(index + 1))
         }
     }
 
@@ -463,7 +467,7 @@ struct RowView: View {
     private var textDetail: some View {
         ScrollView {
             Text(item.text ?? "")
-                .font(.system(size: 13))
+                .font(.system(size: Scale.body))
                 .lineSpacing(6)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -506,8 +510,8 @@ struct RowView: View {
             }
             if paths.count > Spec.maxFileLines {
                 Text(L10n.moreFiles(paths.count - Spec.maxFileLines))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
+                    .font(.system(size: Scale.meta))
+                    .foregroundStyle(Palette.meta)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -540,7 +544,7 @@ private struct RowActionButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 11))
+                .font(.system(size: Icon.action))
                 .frame(width: 20, height: 20)
                 .background(
                     RoundedRectangle(cornerRadius: Spec.badgeCorner)
@@ -566,12 +570,13 @@ private struct NoteBlock: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(label)
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
+                .font(.system(size: Scale.meta))
+                .foregroundStyle(Palette.meta)
             ScrollView {
                 Text(content)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: Scale.body))
+                    // 这是要拿走的内容，不是注释：按正文对比度给
+                    .foregroundStyle(.primary)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -602,20 +607,20 @@ private struct FileLine: View {
                 .frame(width: 20, height: 20)
                 .opacity(exists ? 1 : 0.4)
             Text(name)
-                .font(.system(size: 12))
+                .font(.system(size: Scale.body))
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 8)
             if let size {
                 Text(size)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
+                    .font(.system(size: Scale.meta))
+                    .foregroundStyle(Palette.meta)
                     .monospacedDigit()
             }
             if !exists {
                 Text(L10n.fileMissing)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.orange)
+                    .font(.system(size: Scale.meta))
+                    .foregroundStyle(Palette.warning)
             }
         }
         .frame(height: 24)

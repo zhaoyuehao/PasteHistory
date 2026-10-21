@@ -55,7 +55,10 @@ main { padding: 10px 14px; }
 #detail img { max-width: 100%; border-radius: 8px; margin: 8px 0; }
 #toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: 80px; background: #3a3a3c;
          color: #fff; padding: 10px 18px; border-radius: 12px; font-size: 14px; opacity: 0;
-         transition: opacity .25s; pointer-events: none; z-index: 30; max-width: 85vw; text-align: center; }
+         transition: opacity .25s; pointer-events: none; z-index: 30; max-width: 85vw; text-align: center;
+         display: flex; align-items: center; justify-content: center; gap: 7px; }
+#toastIcon { line-height: 0; }
+#toastIcon svg { display: block; }
 #lock { position: fixed; inset: 0; background: #1c1c1e; z-index: 40; display: none;
         flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 30px; }
 #lock input { background: #2c2c2e; border: 1px solid #48484a; border-radius: 10px; color: #fff;
@@ -91,7 +94,7 @@ main { padding: 10px 14px; }
     <div id="detail"></div>
   </div>
 </div>
-<div id="toast"></div>
+<div id="toast"><span id="toastIcon"></span><span id="toastText"></span></div>
 <div id="lock">
   <p id="pairHint">请输入 Mac 端显示的 6 位配对码<br>（重新扫码即可自动填入）</p>
   <input id="pairInput" inputmode="numeric" maxlength="6" placeholder="······">
@@ -334,11 +337,11 @@ let key = null, keyBytes = null, token = null, clips = [], current = null;
 // The phone page follows the browser language; Chinese variants keep the original copy.
 const browserLanguage = (navigator.language || '').toLowerCase();
 const ui = browserLanguage.startsWith('zh-hant') || browserLanguage.startsWith('zh-tw') || browserLanguage.startsWith('zh-hk') ? {
-  title:'剪貼簿', heading:'剪貼簿歷史', phoneWeb:'手機網頁', connecting:'連線中…', search:'搜尋（含圖片中文字）', sync:'同步剪貼簿', pasteSync:'貼上同步', loading:'載入中…', copy:'複製', pairHint:'請輸入 Mac 顯示的 6 位配對碼<br>（重新掃描即可自動填入）', unlock:'解鎖', pasteHint:'目前頁面不是 HTTPS，瀏覽器不允許網頁讀取剪貼簿。<br>請在下方長按 → 貼上，再同步到 Mac。', pastePlaceholder:'長按此處 → 貼上', syncMac:'同步到 Mac', digits:'請輸入 6 位數字', wrongPair:'配對碼不正確', connected:'已連線', secure:'端對端加密', js:'（JS）', failed:'連線失敗：', offline:'無法連線 Mac：確認同一 Wi-Fi（部分 Wi-Fi 會隔離裝置）、已允許「區域網路」權限、Mac 未睡眠', justNow:'剛剛', minutes:'{n} 分鐘前', today:'今天 ', noMatch:'沒有符合的內容', noItems:'還沒有記錄', pinned:'置頂', text:'文字', image:'圖片', files:'檔案', imageSave:'圖片請長按儲存後使用', copied:'已複製，請到目標 App 貼上', copyBlocked:'自動複製被瀏覽器阻止，請長按選取上方內容後點「拷貝」', emptyClipboard:'剪貼簿是空的', reading:'讀取中…', syncing:'同步中…', allowRead:'請在系統彈窗中允許讀取剪貼簿', syncFailed:'同步失敗：', pasteSomething:'先貼上內容', synced:'✅ 已同步到 Mac', decryptFailed:'🔒 解密失敗', decryptCheckFailed:'AES-GCM 驗證失敗', portSecure:'端對端加密'
+  title:'剪貼簿', heading:'剪貼簿歷史', phoneWeb:'手機網頁', connecting:'連線中…', search:'搜尋（含圖片中文字）', sync:'同步剪貼簿', pasteSync:'貼上同步', loading:'載入中…', copy:'複製', pairHint:'請輸入 Mac 顯示的 6 位配對碼<br>（重新掃描即可自動填入）', unlock:'解鎖', pasteHint:'目前頁面不是 HTTPS，瀏覽器不允許網頁讀取剪貼簿。<br>請在下方長按 → 貼上，再同步到 Mac。', pastePlaceholder:'長按此處 → 貼上', syncMac:'同步到 Mac', digits:'請輸入 6 位數字', wrongPair:'配對碼不正確', connected:'已連線', secure:'端對端加密', js:'（JS）', failed:'連線失敗：', offline:'無法連線 Mac：確認同一 Wi-Fi（部分 Wi-Fi 會隔離裝置）、已允許「區域網路」權限、Mac 未睡眠', justNow:'剛剛', minutes:'{n} 分鐘前', today:'今天 ', noMatch:'沒有符合的內容', noItems:'還沒有記錄', pinned:'置頂', text:'文字', image:'圖片', files:'檔案', imageSave:'圖片請長按儲存後使用', copied:'已複製，請到目標 App 貼上', copyBlocked:'自動複製被瀏覽器阻止，請長按選取上方內容後點「拷貝」', emptyClipboard:'剪貼簿是空的', reading:'讀取中…', syncing:'同步中…', allowRead:'請在系統彈窗中允許讀取剪貼簿', syncFailed:'同步失敗：', pasteSomething:'先貼上內容', synced:'已同步到 Mac', decryptFailed:'解密失敗', decryptCheckFailed:'AES-GCM 驗證失敗', portSecure:'端對端加密'
 } : browserLanguage.startsWith('zh') ? {
-  title:'剪贴板', heading:'剪贴板历史', phoneWeb:'手机网页', connecting:'连接中…', search:'搜索（含图片内文字）', sync:'同步剪贴板', pasteSync:'粘贴同步', loading:'加载中…', copy:'复制', pairHint:'请输入 Mac 端显示的 6 位配对码<br>（重新扫码即可自动填入）', unlock:'解锁', pasteHint:'当前页面不是 HTTPS，浏览器不允许网页读取剪贴板。<br>请在下面长按 → 粘贴，再同步到 Mac。', pastePlaceholder:'长按此处 → 粘贴', syncMac:'同步到 Mac', digits:'请输入 6 位数字', wrongPair:'配对码不正确', connected:'已连接', secure:'端到端加密', js:'（JS）', failed:'连接失败：', offline:'连不上 Mac：确认同一 Wi-Fi（部分 Wi-Fi 有设备隔离）、已允许「本地网络」权限、Mac 未睡眠', justNow:'刚刚', minutes:'{n} 分钟前', today:'今天 ', noMatch:'没有匹配的内容', noItems:'还没有记录', pinned:'置顶', text:'文本', image:'图片', files:'文件', imageSave:'图片请长按保存后使用', copied:'已复制，去粘贴吧', copyBlocked:'自动复制被浏览器阻止，请长按选中上方内容后点「拷贝」', emptyClipboard:'剪贴板是空的', reading:'读取中…', syncing:'同步中…', allowRead:'请在系统弹窗中允许读取剪贴板', syncFailed:'同步失败：', pasteSomething:'先粘贴点内容', synced:'✅ 已同步到 Mac', decryptFailed:'🔒 解密失败', decryptCheckFailed:'AES-GCM 校验失败', portSecure:'端到端加密'
+  title:'剪贴板', heading:'剪贴板历史', phoneWeb:'手机网页', connecting:'连接中…', search:'搜索（含图片内文字）', sync:'同步剪贴板', pasteSync:'粘贴同步', loading:'加载中…', copy:'复制', pairHint:'请输入 Mac 端显示的 6 位配对码<br>（重新扫码即可自动填入）', unlock:'解锁', pasteHint:'当前页面不是 HTTPS，浏览器不允许网页读取剪贴板。<br>请在下面长按 → 粘贴，再同步到 Mac。', pastePlaceholder:'长按此处 → 粘贴', syncMac:'同步到 Mac', digits:'请输入 6 位数字', wrongPair:'配对码不正确', connected:'已连接', secure:'端到端加密', js:'（JS）', failed:'连接失败：', offline:'连不上 Mac：确认同一 Wi-Fi（部分 Wi-Fi 有设备隔离）、已允许「本地网络」权限、Mac 未睡眠', justNow:'刚刚', minutes:'{n} 分钟前', today:'今天 ', noMatch:'没有匹配的内容', noItems:'还没有记录', pinned:'置顶', text:'文本', image:'图片', files:'文件', imageSave:'图片请长按保存后使用', copied:'已复制，去粘贴吧', copyBlocked:'自动复制被浏览器阻止，请长按选中上方内容后点「拷贝」', emptyClipboard:'剪贴板是空的', reading:'读取中…', syncing:'同步中…', allowRead:'请在系统弹窗中允许读取剪贴板', syncFailed:'同步失败：', pasteSomething:'先粘贴点内容', synced:'已同步到 Mac', decryptFailed:'解密失败', decryptCheckFailed:'AES-GCM 校验失败', portSecure:'端到端加密'
 } : {
-  title:'Clipboard', heading:'Clipboard History', phoneWeb:'Phone web page', connecting:'Connecting…', search:'Search (including text in images)', sync:'Sync Clipboard', pasteSync:'Paste to Sync', loading:'Loading…', copy:'Copy', pairHint:'Enter the 6-digit pairing code shown on your Mac<br>(scanning again fills it automatically)', unlock:'Unlock', pasteHint:'This page is not HTTPS, so the browser cannot read the clipboard.<br>Long-press below to paste, then sync to your Mac.', pastePlaceholder:'Long-press here to paste', syncMac:'Sync to Mac', digits:'Enter 6 digits', wrongPair:'Incorrect pairing code', connected:'Connected', secure:'End-to-end encrypted', js:' (JS)', failed:'Connection failed: ', offline:'Cannot reach Mac: check the same Wi-Fi, Local Network permission, and that the Mac is awake', justNow:'Just now', minutes:'{n} min ago', today:'Today ', noMatch:'No matches', noItems:'No records yet', pinned:'Pinned', text:'Text', image:'Image', files:'Files', imageSave:'Long-press the image to save it', copied:'Copied. Paste it in the target app.', copyBlocked:'Automatic copy was blocked. Long-press the content above and choose Copy.', emptyClipboard:'The clipboard is empty', reading:'Reading…', syncing:'Syncing…', allowRead:'Allow clipboard access in the system prompt', syncFailed:'Sync failed: ', pasteSomething:'Paste some content first', synced:'✅ Synced to Mac', decryptFailed:'🔒 Decryption failed', decryptCheckFailed:'AES-GCM verification failed', portSecure:'End-to-end encrypted'
+  title:'Clipboard', heading:'Clipboard History', phoneWeb:'Phone web page', connecting:'Connecting…', search:'Search (including text in images)', sync:'Sync Clipboard', pasteSync:'Paste to Sync', loading:'Loading…', copy:'Copy', pairHint:'Enter the 6-digit pairing code shown on your Mac<br>(scanning again fills it automatically)', unlock:'Unlock', pasteHint:'This page is not HTTPS, so the browser cannot read the clipboard.<br>Long-press below to paste, then sync to your Mac.', pastePlaceholder:'Long-press here to paste', syncMac:'Sync to Mac', digits:'Enter 6 digits', wrongPair:'Incorrect pairing code', connected:'Connected', secure:'End-to-end encrypted', js:' (JS)', failed:'Connection failed: ', offline:'Cannot reach Mac: check the same Wi-Fi, Local Network permission, and that the Mac is awake', justNow:'Just now', minutes:'{n} min ago', today:'Today ', noMatch:'No matches', noItems:'No records yet', pinned:'Pinned', text:'Text', image:'Image', files:'Files', imageSave:'Long-press the image to save it', copied:'Copied. Paste it in the target app.', copyBlocked:'Automatic copy was blocked. Long-press the content above and choose Copy.', emptyClipboard:'The clipboard is empty', reading:'Reading…', syncing:'Syncing…', allowRead:'Allow clipboard access in the system prompt', syncFailed:'Sync failed: ', pasteSomething:'Paste some content first', synced:'Synced to Mac', decryptFailed:'Decryption failed', decryptCheckFailed:'AES-GCM verification failed', portSecure:'End-to-end encrypted'
 };
 function tr(key, value) { return (ui[key] || key).replace('{n}', value == null ? '' : value); }
 document.documentElement.lang = browserLanguage.startsWith('zh') ? browserLanguage : 'en';
@@ -358,7 +361,7 @@ async function initPair() {
 }
 async function submitPair() {
   const code = $('pairInput').value.trim();
-  if (!/^\d{6}$/.test(code)) { toast(tr('digits')); return; }
+  if (!/^\d{6}$/.test(code)) { toast(tr('digits'), 'warn'); return; }
   if (await unlock(code)) { localStorage.setItem('phPair', code); $('lock').style.display = 'none'; }
 }
 async function unlock(code) {
@@ -373,12 +376,12 @@ async function unlock(code) {
       key = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt','decrypt']);
     }
     const r = await api('/api/info');
-    if (!r.ok) { toast(tr('wrongPair')); key = null; keyBytes = null; return false; }
+    if (!r.ok) { toast(tr('wrongPair'), 'warn'); key = null; keyBytes = null; return false; }
     const info = await r.json();
     $('status').textContent = tr('connected') + ' ' + info.name + ' · ' + info.count + ' · ' + tr('secure') + (hasSubtle ? '' : tr('js'));
     if (!canClipboard) $('syncBtn').textContent = tr('pasteSync');
     return true;
-  } catch (e) { toast(tr('failed') + e.message); return false; }
+  } catch (e) { toast(tr('failed') + e.message, 'warn'); return false; }
 }
 
 function api(path, opts) {
@@ -507,11 +510,11 @@ async function copyCurrent() {
   if (canClipboard) {
     try {
       await navigator.clipboard.writeText(text);
-      toast(tr('copied')); closeSheet(); return;
+      toast(tr('copied'), 'ok'); closeSheet(); return;
     } catch (e) { /* 落到下面的回退 */ }
   }
-  if (legacyCopy(text)) { toast(tr('copied')); closeSheet(); return; }
-  toast(tr('copyBlocked'));
+  if (legacyCopy(text)) { toast(tr('copied'), 'ok'); closeSheet(); return; }
+  toast(tr('copyBlocked'), 'warn');
 }
 
 function legacyCopy(text) {
@@ -544,14 +547,14 @@ async function syncClipboard() {
   try {
     btn.disabled = true; btn.textContent = tr('reading');
     const t = await navigator.clipboard.readText();
-    if (!t || !t.trim()) { toast(tr('emptyClipboard')); return; }
+    if (!t || !t.trim()) { toast(tr('emptyClipboard'), 'warn'); return; }
     btn.textContent = tr('syncing');
     await uploadText(t);
     btn.classList.add('on'); setTimeout(()=>btn.classList.remove('on'), 1200);
   } catch (e) {
     if (String(e.message||e).includes('denied') || String(e).includes('NotAllowed'))
-      toast(tr('allowRead'));
-    else toast(tr('syncFailed') + (e.message || e));
+      toast(tr('allowRead'), 'warn');
+    else toast(tr('syncFailed') + (e.message || e), 'warn');
   } finally { btn.disabled = false; btn.textContent = tr('sync'); }
 }
 
@@ -563,11 +566,11 @@ function openPasteBox() {
 function closePasteBox() { $('pasteOverlay').style.display = 'none'; }
 async function submitPasted() {
   const t = $('pb').value.trim();
-  if (!t) { toast(tr('pasteSomething')); return; }
+  if (!t) { toast(tr('pasteSomething'), 'warn'); return; }
   const btn = $('pbBtn');
   btn.disabled = true; btn.textContent = tr('syncing');
   try { await uploadText(t); closePasteBox(); }
-  catch (e) { toast(tr('syncFailed') + (e.message || e)); }
+  catch (e) { toast(tr('syncFailed') + (e.message || e), 'warn'); }
   finally { btn.disabled = false; btn.textContent = tr('syncMac'); }
 }
 
@@ -578,7 +581,7 @@ async function uploadText(t) {
     'Content-Type':'application/json', 'X-Pair-Token': token },
     body: JSON.stringify({ payload: b64 }) });
   if (!r.ok) throw new Error('HTTP ' + r.status);
-  toast(tr('synced'));
+  toast(tr('synced'), 'ok');
   await load();
 }
 async function encryptToB64(text) {
@@ -597,9 +600,22 @@ function bytesToB64(bytes) {
   return btoa(out);
 }
 
-function toast(msg) {
-  const t = $('toast'); t.textContent = msg; t.style.opacity = 1;
-  clearTimeout(t._h); t._h = setTimeout(() => t.style.opacity = 0, 2200);
+// 状态图标用内联 SVG，不用 emoji：同一句话在 iOS / Android / 桌面会被渲染成三种
+// 不同的图形，还带着系统彩色 emoji 的配色，跟页面这套冷灰凑不到一起
+var ICON = {
+  ok: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+  warn: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>'
+};
+
+function toast(msg, icon) {
+  var t = $('toast'), ic = $('toastIcon');
+  // 提示语里拼了 e.message，只能走 textContent；图标是常量，才敢用 innerHTML
+  // 显隐走内联样式：stylesheet 里的 display:none 会盖住 ''
+  ic.innerHTML = (icon && ICON[icon]) || '';
+  ic.style.display = (icon && ICON[icon]) ? 'inline-flex' : 'none';
+  $('toastText').textContent = msg;
+  t.style.opacity = 1;
+  clearTimeout(t._h); t._h = setTimeout(function () { t.style.opacity = 0; }, 2200);
 }
 
 let debounce;
