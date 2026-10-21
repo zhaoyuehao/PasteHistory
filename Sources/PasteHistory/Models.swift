@@ -43,6 +43,9 @@ struct ClipItem: Identifiable, Codable, Equatable {
     var sourceApp: String?
     var createdAt: Date
     var pinned: Bool
+    /// 最近一次置顶的时间：置顶区按它倒序——「置顶」是把这条拉到最上面的动作，
+    /// 新置顶的排第一，而不是按创建时间混排。老记录 / 老同步文件里没有这个字段，为 nil
+    var pinnedAt: Date?
     /// 列表缩略图（小尺寸，随记录存储/同步）
     var thumbnailData: Data?
     /// 图片 OCR 出的文本（用于搜索索引）
@@ -56,6 +59,7 @@ struct ClipItem: Identifiable, Codable, Equatable {
          sourceApp: String? = nil,
          createdAt: Date = Date(),
          pinned: Bool = false,
+         pinnedAt: Date? = nil,
          thumbnailData: Data? = nil,
          ocrText: String? = nil) {
         self.id = id
@@ -66,6 +70,7 @@ struct ClipItem: Identifiable, Codable, Equatable {
         self.sourceApp = sourceApp
         self.createdAt = createdAt
         self.pinned = pinned
+        self.pinnedAt = pinnedAt
         self.thumbnailData = thumbnailData
         self.ocrText = ocrText
     }
