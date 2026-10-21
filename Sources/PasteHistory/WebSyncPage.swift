@@ -61,10 +61,6 @@ main { padding: 10px 14px; }
 #toastIcon svg { display: block; }
 #lock { position: fixed; inset: 0; background: #1c1c1e; z-index: 40; display: none;
         flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 30px; }
-#lock input { background: #2c2c2e; border: 1px solid #48484a; border-radius: 10px; color: #fff;
-              padding: 12px 14px; font-size: 22px; text-align: center; width: 180px; letter-spacing: 8px; }
-#lock button { background: #0a84ff; color: #fff; border: none; border-radius: 10px; padding: 11px 0;
-               width: 180px; font-size: 16px; font-weight: 600; }
 #lock p { color: #98989f; font-size: 13px; text-align: center; line-height: 1.6; }
 /* 非 Secure Context 下没有剪贴板 API：用粘贴框代替"读取剪贴板" */
 #pasteOverlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; z-index: 25;
@@ -96,9 +92,7 @@ main { padding: 10px 14px; }
 </div>
 <div id="toast"><span id="toastIcon"></span><span id="toastText"></span></div>
 <div id="lock">
-  <p id="pairHint">请输入 Mac 端显示的 6 位配对码<br>（重新扫码即可自动填入）</p>
-  <input id="pairInput" inputmode="numeric" maxlength="6" placeholder="······">
-  <button id="unlockBtn" onclick="submitPair()">解锁</button>
+  <p id="pairHint">重新扫码或打开 Mac 上的链接<br>即可自动解锁</p>
 </div>
 <div id="pasteOverlay" onclick="if(event.target===this)closePasteBox()">
   <div id="pbSheet">
@@ -337,15 +331,15 @@ let key = null, keyBytes = null, token = null, clips = [], current = null;
 // The phone page follows the browser language; Chinese variants keep the original copy.
 const browserLanguage = (navigator.language || '').toLowerCase();
 const ui = browserLanguage.startsWith('zh-hant') || browserLanguage.startsWith('zh-tw') || browserLanguage.startsWith('zh-hk') ? {
-  title:'剪貼簿', heading:'剪貼簿歷史', phoneWeb:'手機網頁', connecting:'連線中…', search:'搜尋（含圖片中文字）', sync:'同步剪貼簿', pasteSync:'貼上同步', loading:'載入中…', copy:'複製', pairHint:'請輸入 Mac 顯示的 6 位配對碼<br>（重新掃描即可自動填入）', unlock:'解鎖', pasteHint:'目前頁面不是 HTTPS，瀏覽器不允許網頁讀取剪貼簿。<br>請在下方長按 → 貼上，再同步到 Mac。', pastePlaceholder:'長按此處 → 貼上', syncMac:'同步到 Mac', digits:'請輸入 6 位數字', wrongPair:'配對碼不正確', connected:'已連線', secure:'端對端加密', js:'（JS）', failed:'連線失敗：', offline:'無法連線 Mac：確認同一 Wi-Fi（部分 Wi-Fi 會隔離裝置）、已允許「區域網路」權限、Mac 未睡眠', justNow:'剛剛', minutes:'{n} 分鐘前', today:'今天 ', noMatch:'沒有符合的內容', noItems:'還沒有記錄', pinned:'置頂', text:'文字', image:'圖片', files:'檔案', imageSave:'圖片請長按儲存後使用', copied:'已複製，請到目標 App 貼上', copyBlocked:'自動複製被瀏覽器阻止，請長按選取上方內容後點「拷貝」', emptyClipboard:'剪貼簿是空的', reading:'讀取中…', syncing:'同步中…', allowRead:'請在系統彈窗中允許讀取剪貼簿', syncFailed:'同步失敗：', pasteSomething:'先貼上內容', synced:'已同步到 Mac', decryptFailed:'解密失敗', decryptCheckFailed:'AES-GCM 驗證失敗', portSecure:'端對端加密'
+  title:'剪貼簿', heading:'剪貼簿歷史', phoneWeb:'手機網頁', connecting:'連線中…', search:'搜尋（含圖片中文字）', sync:'同步剪貼簿', pasteSync:'貼上同步', loading:'載入中…', copy:'複製', pairHint:'重新掃描或開啟 Mac 上的連結<br>即可自動解鎖', pasteHint:'目前頁面不是 HTTPS，瀏覽器不允許網頁讀取剪貼簿。<br>請在下方長按 → 貼上，再同步到 Mac。', pastePlaceholder:'長按此處 → 貼上', syncMac:'同步到 Mac', wrongPair:'配對碼已失效，請重新掃描', connected:'已連線', secure:'端對端加密', js:'（JS）', failed:'連線失敗：', offline:'無法連線 Mac：確認同一 Wi-Fi（部分 Wi-Fi 會隔離裝置）、已允許「區域網路」權限、Mac 未睡眠', justNow:'剛剛', minutes:'{n} 分鐘前', today:'今天 ', noMatch:'沒有符合的內容', noItems:'還沒有記錄', pinned:'置頂', text:'文字', image:'圖片', files:'檔案', imageSave:'圖片請長按儲存後使用', copied:'已複製，請到目標 App 貼上', copyBlocked:'自動複製被瀏覽器阻止，請長按選取上方內容後點「拷貝」', emptyClipboard:'剪貼簿是空的', reading:'讀取中…', syncing:'同步中…', allowRead:'請在系統彈窗中允許讀取剪貼簿', syncFailed:'同步失敗：', pasteSomething:'先貼上內容', synced:'已同步到 Mac', decryptFailed:'解密失敗', decryptCheckFailed:'AES-GCM 驗證失敗', portSecure:'端對端加密'
 } : browserLanguage.startsWith('zh') ? {
-  title:'剪贴板', heading:'剪贴板历史', phoneWeb:'手机网页', connecting:'连接中…', search:'搜索（含图片内文字）', sync:'同步剪贴板', pasteSync:'粘贴同步', loading:'加载中…', copy:'复制', pairHint:'请输入 Mac 端显示的 6 位配对码<br>（重新扫码即可自动填入）', unlock:'解锁', pasteHint:'当前页面不是 HTTPS，浏览器不允许网页读取剪贴板。<br>请在下面长按 → 粘贴，再同步到 Mac。', pastePlaceholder:'长按此处 → 粘贴', syncMac:'同步到 Mac', digits:'请输入 6 位数字', wrongPair:'配对码不正确', connected:'已连接', secure:'端到端加密', js:'（JS）', failed:'连接失败：', offline:'连不上 Mac：确认同一 Wi-Fi（部分 Wi-Fi 有设备隔离）、已允许「本地网络」权限、Mac 未睡眠', justNow:'刚刚', minutes:'{n} 分钟前', today:'今天 ', noMatch:'没有匹配的内容', noItems:'还没有记录', pinned:'置顶', text:'文本', image:'图片', files:'文件', imageSave:'图片请长按保存后使用', copied:'已复制，去粘贴吧', copyBlocked:'自动复制被浏览器阻止，请长按选中上方内容后点「拷贝」', emptyClipboard:'剪贴板是空的', reading:'读取中…', syncing:'同步中…', allowRead:'请在系统弹窗中允许读取剪贴板', syncFailed:'同步失败：', pasteSomething:'先粘贴点内容', synced:'已同步到 Mac', decryptFailed:'解密失败', decryptCheckFailed:'AES-GCM 校验失败', portSecure:'端到端加密'
+  title:'剪贴板', heading:'剪贴板历史', phoneWeb:'手机网页', connecting:'连接中…', search:'搜索（含图片内文字）', sync:'同步剪贴板', pasteSync:'粘贴同步', loading:'加载中…', copy:'复制', pairHint:'重新扫码或打开 Mac 上的链接<br>即可自动解锁', pasteHint:'当前页面不是 HTTPS，浏览器不允许网页读取剪贴板。<br>请在下面长按 → 粘贴，再同步到 Mac。', pastePlaceholder:'长按此处 → 粘贴', syncMac:'同步到 Mac', wrongPair:'配对码已失效，请重新扫码', connected:'已连接', secure:'端到端加密', js:'（JS）', failed:'连接失败：', offline:'连不上 Mac：确认同一 Wi-Fi（部分 Wi-Fi 有设备隔离）、已允许「本地网络」权限、Mac 未睡眠', justNow:'刚刚', minutes:'{n} 分钟前', today:'今天 ', noMatch:'没有匹配的内容', noItems:'还没有记录', pinned:'置顶', text:'文本', image:'图片', files:'文件', imageSave:'图片请长按保存后使用', copied:'已复制，去粘贴吧', copyBlocked:'自动复制被浏览器阻止，请长按选中上方内容后点「拷贝」', emptyClipboard:'剪贴板是空的', reading:'读取中…', syncing:'同步中…', allowRead:'请在系统弹窗中允许读取剪贴板', syncFailed:'同步失败：', pasteSomething:'先粘贴点内容', synced:'已同步到 Mac', decryptFailed:'解密失败', decryptCheckFailed:'AES-GCM 校验失败', portSecure:'端到端加密'
 } : {
-  title:'Clipboard', heading:'Clipboard History', phoneWeb:'Phone web page', connecting:'Connecting…', search:'Search (including text in images)', sync:'Sync Clipboard', pasteSync:'Paste to Sync', loading:'Loading…', copy:'Copy', pairHint:'Enter the 6-digit pairing code shown on your Mac<br>(scanning again fills it automatically)', unlock:'Unlock', pasteHint:'This page is not HTTPS, so the browser cannot read the clipboard.<br>Long-press below to paste, then sync to your Mac.', pastePlaceholder:'Long-press here to paste', syncMac:'Sync to Mac', digits:'Enter 6 digits', wrongPair:'Incorrect pairing code', connected:'Connected', secure:'End-to-end encrypted', js:' (JS)', failed:'Connection failed: ', offline:'Cannot reach Mac: check the same Wi-Fi, Local Network permission, and that the Mac is awake', justNow:'Just now', minutes:'{n} min ago', today:'Today ', noMatch:'No matches', noItems:'No records yet', pinned:'Pinned', text:'Text', image:'Image', files:'Files', imageSave:'Long-press the image to save it', copied:'Copied. Paste it in the target app.', copyBlocked:'Automatic copy was blocked. Long-press the content above and choose Copy.', emptyClipboard:'The clipboard is empty', reading:'Reading…', syncing:'Syncing…', allowRead:'Allow clipboard access in the system prompt', syncFailed:'Sync failed: ', pasteSomething:'Paste some content first', synced:'Synced to Mac', decryptFailed:'Decryption failed', decryptCheckFailed:'AES-GCM verification failed', portSecure:'End-to-end encrypted'
+  title:'Clipboard', heading:'Clipboard History', phoneWeb:'Phone web page', connecting:'Connecting…', search:'Search (including text in images)', sync:'Sync Clipboard', pasteSync:'Paste to Sync', loading:'Loading…', copy:'Copy', pairHint:'Scan the QR code or open the link on your Mac<br>to unlock automatically', pasteHint:'This page is not HTTPS, so the browser cannot read the clipboard.<br>Long-press below to paste, then sync to your Mac.', pastePlaceholder:'Long-press here to paste', syncMac:'Sync to Mac', wrongPair:'Pairing code expired — scan the QR code again', connected:'Connected', secure:'End-to-end encrypted', js:' (JS)', failed:'Connection failed: ', offline:'Cannot reach Mac: check the same Wi-Fi, Local Network permission, and that the Mac is awake', justNow:'Just now', minutes:'{n} min ago', today:'Today ', noMatch:'No matches', noItems:'No records yet', pinned:'Pinned', text:'Text', image:'Image', files:'Files', imageSave:'Long-press the image to save it', copied:'Copied. Paste it in the target app.', copyBlocked:'Automatic copy was blocked. Long-press the content above and choose Copy.', emptyClipboard:'The clipboard is empty', reading:'Reading…', syncing:'Syncing…', allowRead:'Allow clipboard access in the system prompt', syncFailed:'Sync failed: ', pasteSomething:'Paste some content first', synced:'Synced to Mac', decryptFailed:'Decryption failed', decryptCheckFailed:'AES-GCM verification failed', portSecure:'End-to-end encrypted'
 };
 function tr(key, value) { return (ui[key] || key).replace('{n}', value == null ? '' : value); }
 document.documentElement.lang = browserLanguage.startsWith('zh') ? browserLanguage : 'en';
-document.title = tr('title'); $('heading').textContent = tr('heading'); $('status').textContent = tr('connecting'); $('q').placeholder = tr('search'); $('syncBtn').textContent = tr('sync'); $('empty').textContent = tr('loading'); $('copyBtn').textContent = tr('copy'); $('pairHint').innerHTML = tr('pairHint'); $('unlockBtn').textContent = tr('unlock'); $('pbTitle').innerHTML = tr('pasteHint'); $('pb').placeholder = tr('pastePlaceholder'); $('pbBtn').textContent = tr('syncMac');
+document.title = tr('title'); $('heading').textContent = tr('heading'); $('status').textContent = tr('connecting'); $('q').placeholder = tr('search'); $('syncBtn').textContent = tr('sync'); $('empty').textContent = tr('loading'); $('copyBtn').textContent = tr('copy'); $('pairHint').innerHTML = tr('pairHint'); $('pbTitle').innerHTML = tr('pasteHint'); $('pb').placeholder = tr('pastePlaceholder'); $('pbBtn').textContent = tr('syncMac');
 const decCache = new Map();   // 密文 → 明文缓存（避免轮询重复解密）
 const hasSubtle = !!(window.crypto && window.crypto.subtle);
 // 非安全上下文（http://局域网IP）下 navigator.clipboard 为 undefined，读写剪贴板都要走回退
@@ -358,11 +352,6 @@ async function initPair() {
   let code = localStorage.getItem('phPair');
   if (!code) { $('lock').style.display = 'flex'; return false; }
   return await unlock(code);
-}
-async function submitPair() {
-  const code = $('pairInput').value.trim();
-  if (!/^\d{6}$/.test(code)) { toast(tr('digits'), 'warn'); return; }
-  if (await unlock(code)) { localStorage.setItem('phPair', code); $('lock').style.display = 'none'; }
 }
 async function unlock(code) {
   try {

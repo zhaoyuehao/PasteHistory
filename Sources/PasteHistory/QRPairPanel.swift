@@ -2,7 +2,7 @@ import AppKit
 import CoreImage.CIFilterBuiltins
 import SwiftUI
 
-/// Phone sync panel: displays the QR code, address, and pairing code.
+/// Phone sync panel: displays the QR code and address.
 @MainActor
 final class QRPairPanel {
     static let shared = QRPairPanel()
@@ -38,7 +38,7 @@ final class QRPairPanel {
         panel.collectionBehavior = [.canJoinAllSpaces]
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
-        panel.setContentSize(NSSize(width: 320, height: 420))
+        panel.setContentSize(NSSize(width: 320, height: 360))
         panel.center()
         self.panel = panel
     }
@@ -64,14 +64,12 @@ final class QRPairPanel {
 final class PairModel: ObservableObject {
     @Published var qr: NSImage?
     @Published var address = ""
-    @Published var pairCode = ""
     @Published var warning = ""
 
     func refresh() {
         let url = WebSyncServer.shared.pairingURL ?? ""
         qr = QRPairPanel.qrImage(url)
         address = url.isEmpty ? L10n.noNetworkAddress : url
-        pairCode = WebSyncServer.shared.pairCode
         warning = WebSyncServer.shared.lastError ?? ""
     }
 }
@@ -142,15 +140,6 @@ private struct PairPanelView: View {
                     .stroke(Color(NSColor.separatorColor).opacity(0.6))
             )
 
-            Text(model.pairCode.isEmpty ? "------" : model.pairCode)
-                .font(.system(size: Scale.code, weight: .medium, design: .monospaced))
-                .tracking(2)
-                .padding(.top, 16)
-            Text(L10n.pairingCodeHint)
-                .font(.system(size: Scale.meta))
-                .foregroundStyle(Palette.meta)
-                .padding(.top, 3)
-
             HStack(spacing: 5) {
                 Text(model.address)
                     .font(.system(size: Scale.meta, design: .monospaced))
@@ -175,7 +164,7 @@ private struct PairPanelView: View {
                 RoundedRectangle(cornerRadius: 7)
                     .fill(Color(NSColor.controlBackgroundColor).opacity(0.6))
             )
-            .padding(.top, 12)
+            .padding(.top, 16)
 
             if !model.warning.isEmpty {
                 Text(model.warning)
@@ -189,7 +178,7 @@ private struct PairPanelView: View {
 
             Spacer(minLength: 0)
         }
-        .frame(width: 320, height: 420)
+        .frame(width: 320, height: 360)
         .background(Color(NSColor.windowBackgroundColor))
     }
 }
