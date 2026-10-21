@@ -22,7 +22,8 @@ final class HistoryViewModel: ObservableObject {
     /// 每次递增是因为「连撞两次」也要弹两次——只发状态不发事件的话，
     /// 第二次撞墙 selection 没变、onChange 不触发，就成了哑巴
     @Published private(set) var bounceTick = 0
-    /// 回弹方向：+1 往下撞底，-1 往上撞顶
+    /// 回弹方向：+1 撞顶内容向下沉，-1 撞底内容向上顶——跟系统橡皮筋同向。
+    /// 撞顶时往上蹿会把第一行更狠地推出视口，看起来像故障而不是反馈
     @Published private(set) var bounceDirection: Int = 1
 
     var lastMoveAt = Date.distantPast
@@ -48,7 +49,7 @@ final class HistoryViewModel: ObservableObject {
         let next = min(max(safeSelection + delta, 0), results.count - 1)
 
         guard next != safeSelection else {
-            bounceDirection = delta > 0 ? 1 : -1
+            bounceDirection = delta > 0 ? -1 : 1
             bounceTick += 1
             return
         }
