@@ -26,6 +26,16 @@ final class PanelController: NSObject, NSWindowDelegate {
     private var previousFocusElement: AXUIElement?
     private var onPasteHandler: ((ClipItem) -> Void)?
     private let store = ClipStore.shared
+    /// 面板与预览大窗共用的列表状态：预览内容直接跟着选中走
+    private let panelModel = HistoryViewModel(store: ClipStore.shared)
+    private var previewStorage: PreviewPanelController?
+    /// 惰性创建：构造它需要 self（owner），不能在属性初始化期拿到
+    private var preview: PreviewPanelController {
+        if let previewStorage { return previewStorage }
+        let created = PreviewPanelController(model: panelModel, owner: self)
+        previewStorage = created
+        return created
+    }
     /// 上一次定位的结果，用来判断补位时到底有没有挪动
     private var lastPlacement: Placement?
     /// 冒烟用：`--fake-field x,y,w,h` 直接喂一个输入框矩形（AX 坐标），
@@ -56,6 +66,8 @@ final class PanelController: NSObject, NSWindowDelegate {
         // 否则快速收起后再按 ⇧⌘C，那个延迟激活会把面板顶掉 → resignKey → 面板立刻又消失
         showGeneration += 1
         isHiding = false
+        // 面板重开是一次新的会话：预览不跨会话存活
+        preview.close()
 
         // 打开面板 = 用户要「找」，⇧⌘V 的循环会话立刻结束
         PasteCycler.shared.end()
@@ -109,6 +121,8 @@ final class PanelController: NSObject, NSWindowDelegate {
         let generation = showGeneration
         isHiding = true
         removeKeyMonitor()
+        // 预览窗的命挂在面板上：面板收它一定收，绝不孤儿化
+        preview.close()
         // 消失：0.15s 只做 opacity，不缩放。缩小消失会读出「弹回」，廉价
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.15
@@ -148,6 +162,7 @@ final class PanelController: NSObject, NSWindowDelegate {
 
         let view = HistoryView(
             store: store,
+            model: panelModel,
             onPaste: pasteHandler,
             onCopyOnly: { [weak self] item in
                 guard let self else { return }
@@ -387,8 +402,9 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     private func installKeyMonitor() {
         removeKeyMonitor()
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            return Self.handle(event)
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            return self.handle(event)
         }
     }
 
@@ -403,27 +419,48 @@ final class PanelController: NSObject, NSWindowDelegate {
         NotificationCenter.default.post(name: name, object: object)
     }
 
-    private static func handle(_ event: NSEvent) -> NSEvent? {
+    private func handle(_ event: NSEvent) -> NSEvent? {
         let key = Int(event.keyCode)
         let mods = event.modifierFlags.intersection([.command, .shift, .option, .control])
 
         switch key {
-        case 53: // esc
-            post(.phClose); return nil
+        case 53: // esc：两层退出——预览开着先关预览，再按才收面板
+            // 输入法组词中：Esc 是「取消组词」，得还给输入法（顺带修掉老问题——
+            // 以前打着字按 Esc 面板直接没了，组词却还挂着）
+            if isComposingText { return event }
+            if preview.isVisible {
+                if !event.isARepeat { preview.close() }
+            } else {
+                Self.post(.phClose)
+            }
+            return nil
+        case 49 where mods == []: // 空格：查询框为空时是预览开关；有文字时照常输入
+            // 按住空格的 key repeat 不能反复开关，否则会闪
+            if event.isARepeat { return nil }
+            guard store.query.isEmpty else { return event }
+            // 拼音打到一半：空格是「选第一个候选词」，此时劫走会打断组词
+            // 还弹出一个莫名的窗（真机实测踩到：组词中的 a 还没提交，query 是空的）
+            if isComposingText { return event }
+            preview.toggle()
+            return nil
+        case 16 where mods == [.command]: // ⌘Y：预览的兜底别名，任何时候可用
+            if event.isARepeat { return nil }
+            preview.toggle()
+            return nil
         case 126: // ↑
-            post(.phMoveUp); return nil
+            Self.post(.phMoveUp); return nil
         case 125: // ↓
-            post(.phMoveDown); return nil
+            Self.post(.phMoveDown); return nil
         case 36, 76: // return / enter
-            post(.phConfirm); return nil
+            Self.post(.phConfirm); return nil
         case 8 where mods == [.command]: // ⌘C 仅复制
-            post(.phCopyOnly); return nil
+            Self.post(.phCopyOnly); return nil
         case 51 where mods == [.command]: // ⌘⌫ 删除
-            post(.phDelete); return nil
+            Self.post(.phDelete); return nil
         case 35 where mods == [.command]: // ⌘P 置顶
-            post(.phPin); return nil
+            Self.post(.phPin); return nil
         case 13 where mods == [.command]: // ⌘W 关闭
-            post(.phClose); return nil
+            Self.post(.phClose); return nil
         default:
             break
         }
@@ -432,19 +469,43 @@ final class PanelController: NSObject, NSWindowDelegate {
         if mods == [.command] {
             let digitMap: [Int: Int] = [18: 1, 19: 2, 20: 3, 21: 4, 23: 5, 22: 6, 26: 7, 28: 8, 25: 9]
             if let n = digitMap[key] {
-                post(.phQuickPaste, object: n - 1)
+                Self.post(.phQuickPaste, object: n - 1)
                 return nil
             }
         }
         return event
     }
 
+    /// 输入法正在组词吗（marked text 非空）：中文输入法打到一半时，
+    /// 空格和 Esc 都有输入法自己的含义，不能当面板快捷键劫走
+    private var isComposingText: Bool {
+        guard let responder = NSApp.keyWindow?.firstResponder,
+              let editor = responder as? NSTextView else { return false }
+        return editor.markedRange().length > 0
+    }
+
+    // MARK: - 预览窗联动（PreviewPanelController 回调）
+
+    var previewAnchorFrame: NSRect? { panel?.frame }
+    var previewAnchorVisible: Bool { (panel?.isVisible ?? false) && !isHiding }
+    func makePanelKeyAgain() { panel?.makeKey() }
+    func dismissAllFromPreview() { hide() }
+
+    // MARK: - 冒烟钩子（--smoke-preview 用）
+
+    var isPreviewVisible: Bool { preview.isVisible }
+    /// 与按空格完全同一条路径
+    func togglePreview() { preview.toggle() }
+
     // MARK: - NSWindowDelegate
 
     func windowDidResignKey(_ notification: Notification) {
-        // 我们自己 orderOut 也会触发 resignKey；只在面板确实还可见（焦点被别的应用抢走）时收起
-        if panel?.isVisible == true {
-            hide()
+        // 焦点的去向要等一拍才问得出（makeKey 交接有时序）：
+        // 交给自己的预览窗（点选里面的文字）不算离开，真去了别的应用再收
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let panel = self.panel, panel.isVisible, !self.isHiding else { return }
+            if let previewWindow = self.preview.window, NSApp.keyWindow === previewWindow { return }
+            self.hide()
         }
     }
 

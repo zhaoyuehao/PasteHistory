@@ -43,6 +43,29 @@ enum Panel {
     static let minHeight: CGFloat = 300
 }
 
+// MARK: - 预览窗尺寸
+
+/// 空格预览大窗。宽度恒定；高度按内容形态给，塞不下收到恰好放得下。
+///
+/// 落位跟着面板走：右侧优先（间隙 12）→ 左侧 → 当前屏居中偏上，
+/// 绝不压住面板本体。
+enum Preview {
+    static let width: CGFloat = 640
+    static let textHeight: CGFloat = 520
+    static let imageHeight: CGFloat = 460
+    static let filesHeight: CGFloat = 440
+    static let minHeight: CGFloat = 300
+    /// 与面板的间隙 / 屏幕边缘留白
+    static let gap: CGFloat = 12
+    static let margin: CGFloat = 12
+    /// 切换条目时新内容浮入的位移：有东西在移动，才谈得上阻尼感
+    static let slideDistance: CGFloat = 16
+    /// 原图解码的最大边长：预览窗就 640 宽，8000px 整图进内存是风扇测试
+    static let maxImagePixel: CGFloat = 1600
+    /// 超长文本只渲染前 N 字符，底部亮截断提示
+    static let maxTextLength: Int = 100_000
+}
+
 // MARK: - 语义色
 
 /// 界面里所有「不是正文」的颜色。

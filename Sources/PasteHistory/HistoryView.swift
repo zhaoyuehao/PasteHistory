@@ -16,8 +16,8 @@ private enum Spec {
     static let corner: CGFloat = 8
     static let badgeCorner: CGFloat = 5
 
-    /// 撞到顶/底时整片内容被推出去的距离。8pt 够看见、又不至于糊成一片
-    static let bounceDistance: CGFloat = 8
+    /// 撞到顶/底时整片内容被推出去的距离（列表与预览大窗共用，单一来源在 Motion）
+    static let bounceDistance = Motion.bounceDistance
 
     // 配色：一切「块」都用 primary 的透明度表达，不用 controlBackgroundColor
     // （后者在深色下是一块脏浅灰，跟窗口底色打架）
@@ -48,7 +48,9 @@ private enum ListEntry: Identifiable {
 
 struct HistoryView: View {
     @ObservedObject var store: ClipStore
-    @StateObject private var model: HistoryViewModel
+    /// 由 PanelController 持有并传入：预览大窗要跟着选中条目联动，
+    /// 共享同一个 ViewModel 比通知转发少一层状态
+    @ObservedObject private var model: HistoryViewModel
     @FocusState private var searchFocused: Bool
     @Namespace private var selectionSpace
     /// 边界橡皮筋：撞到顶/底时整片内容纵向下沉一下再弹回
@@ -59,11 +61,12 @@ struct HistoryView: View {
     var onClose: () -> Void
 
     init(store: ClipStore,
+         model: HistoryViewModel,
          onPaste: @escaping (ClipItem) -> Void,
          onCopyOnly: @escaping (ClipItem) -> Void,
          onClose: @escaping () -> Void) {
         self.store = store
-        _model = StateObject(wrappedValue: HistoryViewModel(store: store))
+        self.model = model
         self.onPaste = onPaste
         self.onCopyOnly = onCopyOnly
         self.onClose = onClose
