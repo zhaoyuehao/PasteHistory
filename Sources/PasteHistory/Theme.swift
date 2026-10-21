@@ -31,6 +31,20 @@ enum Icon {
     static let thumb: CGFloat = 15
 }
 
+// MARK: - 面板尺寸
+
+/// 面板外框。宽度恒定；高度只在「贴着输入框放不下」时才收。
+///
+/// 540 是一屏十条的高度，平时就这么高。但输入框常常在屏幕中段，
+/// 上下都塞不下 540 —— 以前这时会把面板夹到屏幕边上，结果必然压住输入框。
+/// 所以高度是区间：放得下就 540，放不下就收到恰好塞进去，但不低于 300
+/// （搜索区 + 约四行，再矮扫不动了）。
+enum Panel {
+    static let width: CGFloat = 520
+    static let maxHeight: CGFloat = 540
+    static let minHeight: CGFloat = 300
+}
+
 // MARK: - 语义色
 
 /// 界面里所有「不是正文」的颜色。

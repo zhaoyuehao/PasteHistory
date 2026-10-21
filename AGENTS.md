@@ -15,12 +15,17 @@ open PasteHistory.app           # 运行（菜单栏出现剪贴板图标）
 - 移动项目目录后必须 `rm -rf .build` 重新构建：模块缓存里写死了旧绝对路径，会报
   `PCH was compiled with module cache path ... but the path is currently ...`。
 - 数据目录：`~/Library/Application Support/PasteHistory/`（history.sqlite + images/），iCloud 同步走 iCloud Drive 的 `PasteHistory/`。
+- 面板定位日志：`~/Library/Application Support/PasteHistory/anchor_trace.log`，每次打开面板写一行
+  （结论 `below-input` / `above-input` / `below-input/shrunk-to-N` / `fallback-center` + role + 坐标）。
+  真机说「没贴过去 / 有遮挡」时先看它：没拿到输入框（fallback-center）和位置算错（能贴但贴歪）是两回事。
+  文件超过 200KB 会整体重写，不会无限涨。
 
 ## 维护 / 调试参数
 
 ```bash
 PasteHistory.app/Contents/MacOS/PasteHistory --show            # 启动即打开面板（UI 冒烟）
-PasteHistory.app/Contents/MacOS/PasteHistory --show --trace-anchor   # 打印面板贴到了哪（below-input / above-input / …-clamped / fallback-center）+ 输入框 frame
+PasteHistory.app/Contents/MacOS/PasteHistory --show --trace-anchor   # 额外把定位结论打到 NSLog（落盘是默认开着的，见下）
+PasteHistory.app/Contents/MacOS/PasteHistory --show --fake-field 100,470,300,60   # 喂一个假输入框（AX 坐标），绕开 AX 直接验证定位几何
 PasteHistory.app/Contents/MacOS/PasteHistory --show-pair       # 启动即打开手机同步配对面板（UI 冒烟）
 PasteHistory.app/Contents/MacOS/PasteHistory --print-ax         # 把辅助功能授权状态写到 ax_status.txt
 PasteHistory.app/Contents/MacOS/PasteHistory --paste-latest     # 对最新记录走完整粘贴流程
@@ -89,10 +94,15 @@ PasteHistory.app/Contents/MacOS/PasteHistory --restore-images   # 从 iCloud 恢
 
 ## 修改时务必遵守
 
-1. **动效别再走「禁用动画」这条路**：连按方向键时把弹簧压短（`Motion.selectionFast`），
-   不是关掉——关掉等于瞬移，而连续移动恰恰是最需要阻尼的时刻。同理，选中高亮必须是
-   **一个会移动的物体**（`matchedGeometryEffect`），而不是每行的 `fill` 各自淡入淡出：
-   后者中间没有任何东西在走，人眼对交叉淡化几乎无感，表现出来就是「上下选中的感觉没了」。
+1. **任何状态切换都必须有阻尼感，没有阻尼感就不觉得流畅**（用户原话，最高优先级）。
+   这条**优先于密度、优先于「一屏多显示几条」这类优化**——行内展开被删那次阻尼感跟着
+   一起没了，用户当场就发现。删交互前先问一句：还有阻尼感吗？
+   - 阻尼感 = **有一个东西真的在移动** × **幅度够大** × **连续可打断**，缺一个就没感觉。
+   - 所以选中高亮必须是**一个会移动的物体**（`matchedGeometryEffect`），而不是每行的
+     `fill` 各自淡入淡出：后者中间没有任何东西在走，人眼对交叉淡化几乎无感，
+     表现出来就是「上下选中的感觉没了」。
+   - 连按方向键时**把弹簧压短**（`Motion.selectionFast`），不是关掉
+     （`disablesAnimations = true`）。关掉等于瞬移，而连续移动恰恰最需要阻尼。
 2. **HTTP 服务不能跑 MainActor**。菜单跟踪（nested runloop）或主线程弹窗会让服务假死。
    路由/加解密全在 `queue`（`com.verdent.pastehistory.websync`）；读用独立 SQLite 连接，写 `DispatchQueue.main.async`。
 3. **禁止用 `NSJSONSerialization` 序列化顶层 String**——会抛 ObjC 异常直接崩进程，用 `JSONEncoder`。

@@ -32,14 +32,55 @@ enum AXFocus {
         return value as? String
     }
 
+    /// 元素类型，诊断用：贴错位置时日志里能看出拿到的到底是个什么
+    static func role(of element: AXUIElement) -> String? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, "AXRole" as CFString, &value) == .success,
+              let value else { return nil }
+        return value as? String
+    }
+
     /// 只有真正的输入框才值得把面板贴过去：focusedElement 常常返回窗口 / 容器，
     /// 贴上去等于贴到半个屏幕
     static func isTextInput(_ element: AXUIElement) -> Bool {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, "AXRole" as CFString, &value) == .success,
-              let role = value as? String else { return false }
+        guard let role = role(of: element) else { return false }
         return ["AXTextField", "AXTextArea", "AXSecureTextField", "AXComboBox", "AXSearchField"]
             .contains(role)
+    }
+
+    /// 把「当前焦点」解析成真正的输入框。
+    ///
+    /// Electron / 自绘应用（飞书、微信、VS Code）把 `AXFocusedUIElement` 报成
+    /// `AXGroup` / `AXWebArea`，输入框在它下面几层。这些应用占了大部分粘贴场景，
+    /// 只认顶层会直接退化成居中兜底——表现就是「面板没有出现在输入框旁边」。
+    /// 深度和节点数都设上限，免得在网页那种上千节点的树里把一次唤起拖成半秒。
+    static func resolveTextInput(_ element: AXUIElement, maxDepth: Int = 3) -> AXUIElement? {
+        if isTextInput(element) { return element }
+        var budget = 24
+        return firstTextInput(in: element, depth: maxDepth, budget: &budget)
+    }
+
+    private static func firstTextInput(in element: AXUIElement,
+                                       depth: Int,
+                                       budget: inout Int) -> AXUIElement? {
+        guard depth > 0, budget > 0 else { return nil }
+        var raw: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, "AXChildren" as CFString, &raw) == .success,
+              let list = raw as? NSArray else { return nil }
+
+        // 先横扫一层再往下钻：输入框通常在浅层，宽度优先能省掉大量 AX 调用
+        var children: [AXUIElement] = []
+        for case let child as AXUIElement in list {
+            budget -= 1
+            guard budget > 0 else { return nil }
+            if isTextInput(child) { return child }
+            children.append(child)
+        }
+        guard depth > 1 else { return nil }
+        for child in children {
+            if let hit = firstTextInput(in: child, depth: depth - 1, budget: &budget) { return hit }
+        }
+        return nil
     }
 
     /// 光标（插入点）在屏幕上的位置：你真正在看的位置。
