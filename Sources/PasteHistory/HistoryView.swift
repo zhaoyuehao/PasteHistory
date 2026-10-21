@@ -19,6 +19,9 @@ private enum Spec {
     static let corner: CGFloat = 8
     static let badgeCorner: CGFloat = 5
 
+    /// 撞到顶/底时整片内容被推出去的距离。8pt 够看见、又不至于糊成一片
+    static let bounceDistance: CGFloat = 8
+
     // 配色：一切「块」都用 primary 的透明度表达，不用 controlBackgroundColor
     // （后者在深色下是一块脏浅灰，跟窗口底色打架）
     static let selectFill: Double = 0.24   // 深色底上 8% 等于没选中，必须够重
@@ -26,13 +29,9 @@ private enum Spec {
     static let chipFill: Double = 0.09     // 角标 / 缩略图占位
 }
 
-private enum Motion {
-    /// 选中态与跟随滚动
-    static let selection = Animation.easeOut(duration: 0.20)
-    /// 悬停：比选中快一档，不然手感发木
-    static let hover = Animation.easeOut(duration: 0.12)
-    /// 连按判定：间隔小于这个值就不做动画，否则动画会堆积成迟滞
-    static let repeatThreshold: TimeInterval = 0.2
+/// 选中高亮的共享 id：matchedGeometryEffect 靠它把矩形从上一行的位置补间到这一行
+private enum Highlight {
+    static let id = "selectionHighlight"
 }
 
 // MARK: - 面板
@@ -41,6 +40,9 @@ struct HistoryView: View {
     @ObservedObject var store: ClipStore
     @StateObject private var model: HistoryViewModel
     @FocusState private var searchFocused: Bool
+    @Namespace private var selectionSpace
+    /// 边界橡皮筋：撞到顶/底时整片内容纵向下沉一下再弹回
+    @State private var bounce: CGFloat = 0
 
     var onPaste: (ClipItem) -> Void
     var onCopyOnly: (ClipItem) -> Void
@@ -152,6 +154,7 @@ struct HistoryView: View {
                                         index: pair.1,
                                         query: store.query,
                                         selected: pair.1 == safeSelection,
+                                        selectionSpace: selectionSpace,
                                         onPin: { model.togglePin(at: pair.1) },
                                         onDelete: { model.delete(at: pair.1) })
                                     .id(pair.0.id)
@@ -170,18 +173,24 @@ struct HistoryView: View {
                     }
                 }
                 .padding(Spec.listPadding)
+                // 橡皮筋位移放在内容上、不放在 ScrollView 上：
+                // 放 ScrollView 会把滚动条一起推出去，看着像整个面板在晃
+                .offset(y: bounce)
             }
             .onChange(of: safeSelection) { _, newValue in
                 guard newValue < results.count else { return }
                 // 不带 anchor：只滚最小位移。anchor: .center 每按一次都把行拉到正中，
                 // 整片列表跟着滑——那是「抖」的根源
-                if Date().timeIntervalSince(model.lastMoveAt) < Motion.repeatThreshold {
-                    var transaction = Transaction()
-                    transaction.disablesAnimations = true
-                    withTransaction(transaction) { proxy.scrollTo(results[newValue].id) }
-                } else {
-                    withAnimation(Motion.selection) { proxy.scrollTo(results[newValue].id) }
-                }
+                let anim = Date().timeIntervalSince(model.lastMoveAt) < Motion.repeatThreshold
+                    ? Motion.selectionFast
+                    : Motion.selection
+                withAnimation(anim) { proxy.scrollTo(results[newValue].id) }
+            }
+            .onChange(of: model.bounceTick) { _, _ in
+                // 先瞬间推出去，再让弹簧把它拉回来——
+                // 「推出去」本身不能有动画，否则撞墙那一下是软的
+                bounce = CGFloat(model.bounceDirection) * Spec.bounceDistance
+                withAnimation(Motion.bounce) { bounce = 0 }
             }
             .onChange(of: store.query) { _, _ in model.resetSelection() }
         }
@@ -235,6 +244,8 @@ struct RowView: View {
     let index: Int
     let query: String
     let selected: Bool
+    /// 选中高亮的共享几何空间
+    let selectionSpace: Namespace.ID
     var onPin: () -> Void
     var onDelete: () -> Void
 
@@ -276,19 +287,27 @@ struct RowView: View {
         .padding(.horizontal, Spec.rowPadding)
         .padding(.vertical, 5)
         .background(
-            RoundedRectangle(cornerRadius: Spec.corner)
-                .fill(fill)
+            ZStack {
+                // 悬停：就地渐变进出，它是「这里可以按」的承诺，不需要移动
+                RoundedRectangle(cornerRadius: Spec.corner)
+                    .fill(Color.primary.opacity(hovered && !selected ? Spec.hoverFill : 0))
+
+                // 选中：一个挂了共享 id 的矩形。上下切换时 SwiftUI 把这块矩形
+                // 从上一行的几何补间到这一行——高亮是真的在走，而不是两行各自淡入淡出。
+                // 后者中间没有任何东西在移动，人眼对交叉淡化几乎无感，
+                // 这就是「上下选中的感觉没了」的根因
+                if selected {
+                    RoundedRectangle(cornerRadius: Spec.corner)
+                        .fill(Color.accentColor.opacity(Spec.selectFill))
+                        .matchedGeometryEffect(id: Highlight.id,
+                                               in: selectionSpace,
+                                               properties: .frame)
+                }
+            }
         )
         .contentShape(Rectangle())
         .onHover { hovered = $0 }
         .animation(Motion.hover, value: hovered)
-    }
-
-    /// 选中 > 悬停 > 无。悬停是「这里可以按」的承诺，必须看得见但压得住
-    private var fill: Color {
-        if selected { return Color.accentColor.opacity(Spec.selectFill) }
-        if hovered { return Color.primary.opacity(Spec.hoverFill) }
-        return Color.clear
     }
 
     /// 右侧固定 44 宽：常态是 ⌘N 角标，悬停时原位换成置顶 / 删除。

@@ -18,6 +18,13 @@ final class HistoryViewModel: ObservableObject {
     /// 于是视觉第一行和选中项不是同一条，⌘1 粘的也不是看到的第一条。
     @Published private(set) var ordered: [ClipItem] = []
 
+    /// 撞到边界的次数。列表按住它做一次橡皮筋回弹，
+    /// 每次递增是因为「连撞两次」也要弹两次——只发状态不发事件的话，
+    /// 第二次撞墙 selection 没变、onChange 不触发，就成了哑巴
+    @Published private(set) var bounceTick = 0
+    /// 回弹方向：+1 往下撞底，-1 往上撞顶
+    @Published private(set) var bounceDirection: Int = 1
+
     var lastMoveAt = Date.distantPast
 
     init(store: ClipStore) {
@@ -29,24 +36,30 @@ final class HistoryViewModel: ObservableObject {
     var safeSelection: Int { results.isEmpty ? 0 : min(max(selection, 0), results.count - 1) }
     var current: ClipItem? { safeSelection < results.count ? results[safeSelection] : nil }
 
+    /// 上下移动选中项。
+    ///
+    /// 到边界时 selection 不会变，`onChange(of: safeSelection)` 也就不会触发——
+    /// 所以撞墙必须自己发一次事件（bounceTick），否则「到底了」是彻底的静默。
     func move(_ delta: Int) {
         guard !results.isEmpty else { return }
         let now = Date()
-        let fast = now.timeIntervalSince(lastMoveAt) < 0.2
+        let fast = now.timeIntervalSince(lastMoveAt) < Motion.repeatThreshold
         lastMoveAt = now
         let next = min(max(safeSelection + delta, 0), results.count - 1)
-        if fast {
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) { selection = next }
-        } else {
-            withAnimation(.easeOut(duration: 0.20)) { selection = next }
+
+        guard next != safeSelection else {
+            bounceDirection = delta > 0 ? 1 : -1
+            bounceTick += 1
+            return
         }
+
+        withAnimation(fast ? Motion.selectionFast : Motion.selection) { selection = next }
     }
 
     func select(_ index: Int) {
         guard !results.isEmpty else { return }
-        selection = min(max(index, 0), results.count - 1)
+        // 鼠标点击也要走同一条弹簧，不然键盘和鼠标是两套手感
+        withAnimation(Motion.selection) { selection = min(max(index, 0), results.count - 1) }
     }
 
     /// 每次打开面板都是一次新的「找」：回到第一条
