@@ -111,19 +111,30 @@ enum PasteService {
             return
         }
 
+        NSLog("[PH] paste: trusted=%d autoPaste=%d target=%@ frontmost=%@",
+              isTrusted(), Settings.shared.autoPaste,
+              app?.localizedName ?? "nil", Self.frontmostName())
+
         if let app {
             app.activate()
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
             // 焦点已经切回原输入框，再发 ⌘V，内容才会落到那个输入框里
+            NSLog("[PH] paste: 0.25s 后 frontmost=%@（目标 %@）focusElement=%@",
+                  Self.frontmostName(), app?.localizedName ?? "nil", focusElement == nil ? "nil" : "有")
             if let element = focusElement {
-                AXFocus.focus(element)
+                NSLog("[PH] paste: AXFocus.focus -> %d", AXFocus.focus(element))
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                NSLog("[PH] paste: 发 ⌘V，此刻 frontmost=%@", Self.frontmostName())
                 sendCommandV()
             }
         }
+    }
+
+    private static func frontmostName() -> String {
+        NSWorkspace.shared.frontmostApplication?.localizedName ?? "nil"
     }
 }
 

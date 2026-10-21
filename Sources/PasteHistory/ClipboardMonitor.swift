@@ -95,6 +95,7 @@ final class ClipboardMonitor {
                 item.thumbnailData = ClipStore.makeThumbnail(cg: cg)
             }
             store.upsert(item)
+            noteCaptured()
             return
         }
 
@@ -111,6 +112,7 @@ final class ClipboardMonitor {
                    Date().timeIntervalSince(pending.at) < Self.mergeWindow,
                    store.attachImage(id: pending.id, saved: saved, caption: text) {
                     lastCapture = nil
+                    noteCaptured()
                     return
                 }
 
@@ -118,6 +120,7 @@ final class ClipboardMonitor {
                                     sourceApp: source, thumbnailData: saved.thumbnail)
                 if store.upsert(item) {
                     lastCapture = PendingMerge(id: item.id, kind: .image, source: source, at: Date())
+                    noteCaptured()
                 }
                 return
             }
@@ -133,15 +136,22 @@ final class ClipboardMonitor {
                    Date().timeIntervalSince(pending.at) < Self.mergeWindow,
                    store.attachText(id: pending.id, text: trimmed) {
                     lastCapture = nil
+                    noteCaptured()
                     return
                 }
 
                 let item = ClipItem(kind: .text, text: trimmed, sourceApp: source)
                 if store.upsert(item) {
                     lastCapture = PendingMerge(id: item.id, kind: .text, source: source, at: Date())
+                    noteCaptured()
                 }
             }
         }
+    }
+
+    /// 捕获成功：菜单栏图标「点头」一下（不弹通知、不出声）
+    private func noteCaptured() {
+        NotificationCenter.default.post(name: .pasteHistoryDidCapture, object: nil)
     }
 
     /// 用 CGImageSource 直接从磁盘解码图片（比 NSImage 更适合非 UI 场景）
@@ -150,4 +160,8 @@ final class ClipboardMonitor {
         guard let source = CGImageSourceCreateWithURL(url, nil) else { return nil }
         return CGImageSourceCreateImageAtIndex(source, 0, nil)
     }
+}
+
+extension Notification.Name {
+    static let pasteHistoryDidCapture = Notification.Name("pasteHistoryDidCapture")
 }

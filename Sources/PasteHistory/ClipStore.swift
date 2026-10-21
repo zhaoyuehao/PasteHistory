@@ -201,6 +201,46 @@ final class ClipStore: ObservableObject {
         return img
     }
 
+    /// 只查缓存不读盘：展开动画的首帧用它，命中就零延迟
+    func peek(named name: String?) -> NSImage? {
+        guard let name, !name.isEmpty else { return nil }
+        return imageCache.object(forKey: name as NSString)
+    }
+
+    /// 同上，按文件路径查缓存
+    func peekFile(path: String?) -> NSImage? {
+        guard let path, !path.isEmpty else { return nil }
+        return imageCache.object(forKey: path as NSString)
+    }
+
+    /// 后台解码完成后回填缓存，下一次展开直接命中
+    func cache(_ image: NSImage, named name: String?, path: String?) {
+        let cost = Int(image.size.width * image.size.height * 4)
+        if let name, !name.isEmpty {
+            imageCache.setObject(image, forKey: name as NSString, cost: cost)
+        }
+        if let path, !path.isEmpty {
+            imageCache.setObject(image, forKey: path as NSString, cost: cost)
+        }
+    }
+
+    /// 后台解码（nonisolated，不碰 MainActor），供展开动画预热
+    nonisolated static func decodeImage(named name: String?) -> NSImage? {
+        guard let name, !name.isEmpty else { return nil }
+        return NSImage(contentsOf: imagesDirectoryURL.appendingPathComponent(name))
+    }
+
+    nonisolated static func decodeImage(atPath path: String?) -> NSImage? {
+        guard let path, !path.isEmpty else { return nil }
+        return NSImage(contentsOfFile: path)
+    }
+
+    nonisolated static var imagesDirectoryURL: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("PasteHistory", isDirectory: true)
+            .appendingPathComponent("images", isDirectory: true)
+    }
+
     /// 文件类图片的预览图（按路径缓存；微信等来源的图片文件不拷进 images 目录）
     func fileImage(path: String?) -> NSImage? {
         guard let path, !path.isEmpty else { return nil }

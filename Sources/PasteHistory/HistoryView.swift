@@ -10,7 +10,7 @@ private enum Spec {
     static let searchHeight: CGFloat = 52
     static let searchPadding: CGFloat = 18
 
-    static let listPadding: CGFloat = 6
+    static let listPadding: CGFloat = 8
     static let rowSpacing: CGFloat = 2
 
     static let rowPadding: CGFloat = 12
@@ -24,9 +24,17 @@ private enum Spec {
 
     static let imageDetail: CGFloat = 240
     static let textDetail: CGFloat = 200
-    static let ocrLine: CGFloat = 26
+    /// 一块「文字块」的高度上限：标签 + 最多三行 + 间距
+    static let noteBlock: CGFloat = 88
+    static let noteScroll: CGFloat = 72
     static let fileLine: CGFloat = 32
     static let maxFileLines: Int = 4
+
+    // 配色：一切「块」都用 primary 的透明度表达，不用 controlBackgroundColor
+    // （后者在深色下是一块脏浅灰，跟窗口底色打架）
+    static let selectFill: Double = 0.24   // 深色底上 8% 等于没选中，必须够重
+    static let hoverFill: Double = 0.06
+    static let chipFill: Double = 0.09     // 角标 / 缩略图占位
 }
 
 private enum Motion {
@@ -34,6 +42,8 @@ private enum Motion {
     static let expand = Animation.spring(response: 0.30, dampingFraction: 0.86)
     /// 选中态与跟随滚动
     static let selection = Animation.easeOut(duration: 0.20)
+    /// 悬停：比选中快一档，不然手感发木
+    static let hover = Animation.easeOut(duration: 0.12)
     /// 连按判定：间隔小于这个值就不做动画，否则动画会堆积成迟滞
     static let repeatThreshold: TimeInterval = 0.2
 }
@@ -100,7 +110,10 @@ struct HistoryView: View {
             content
         }
         .frame(width: Spec.windowWidth, height: Spec.windowHeight)
-        .background(Color(NSColor.windowBackgroundColor))
+        // 内容顶到窗口上缘，别让标题栏白白占 28pt
+        .ignoresSafeArea()
+        // 头部块：比内容区亮一档。层次靠材质差异，不靠多画几条线
+        .background(Color(NSColor.controlBackgroundColor))
         .onAppear {
             DispatchQueue.main.async { searchFocused = true }
             loader.load(for: current)
@@ -175,7 +188,8 @@ struct HistoryView: View {
             }
         }
         .padding(.horizontal, Spec.searchPadding)
-        .frame(height: Spec.searchHeight)
+        .padding(.top, 10)   // ignoresSafeArea 顶掉标题栏后，搜索区需要一点呼吸
+        .frame(height: Spec.searchHeight + 10)
     }
 
     /// 全界面唯一一条线
@@ -190,20 +204,26 @@ struct HistoryView: View {
     private var content: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: Spec.rowSpacing) {
-                    ForEach(Array(results.enumerated()), id: \.element.id) { index, item in
-                        RowView(item: item,
-                                index: index,
-                                query: store.query,
-                                selected: index == safeSelection,
-                                expandedImage: index == safeSelection ? loader.image : nil)
-                            .id(item.id)
-                            .contentShape(Rectangle())
-                            .onTapGesture(count: 2) { onPaste(item) }
-                            .simultaneousGesture(TapGesture(count: 1).onEnded { selection = index })
-                            .onAppear {
-                                if index >= results.count - 8 { store.loadMore() }
+                LazyVStack(spacing: Spec.rowSpacing, pinnedViews: [.sectionHeaders]) {
+                    ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
+                        Section {
+                            ForEach(Array(section.items.enumerated()), id: \.element.0.id) { _, pair in
+                                RowView(item: pair.0,
+                                        index: pair.1,
+                                        query: store.query,
+                                        selected: pair.1 == safeSelection,
+                                        expandedImage: pair.1 == safeSelection ? loader.image : nil)
+                                    .id(pair.0.id)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture(count: 2) { onPaste(pair.0) }
+                                    .simultaneousGesture(TapGesture(count: 1).onEnded { selection = pair.1 })
+                                    .onAppear {
+                                        if pair.1 >= results.count - 8 { store.loadMore() }
+                                    }
                             }
+                        } header: {
+                            SectionHeader(title: section.title)
+                        }
                     }
                 }
                 .padding(Spec.listPadding)
@@ -222,9 +242,44 @@ struct HistoryView: View {
             }
             .onChange(of: store.query) { _, _ in selection = 0 }
         }
+        // 内容区比头部暗一档，两个材质一明一暗，区域自然分开
+        .background(Color(NSColor.windowBackgroundColor))
         .overlay(alignment: .center) {
             if results.isEmpty { emptyState }
         }
+    }
+
+    /// 区域划分靠分组，不靠分割线：置顶 / 今天 / 昨天 / 更早
+    /// （分页与键盘导航仍按展平的 results 走，这里只影响渲染顺序）
+    private var sections: [(title: String, items: [(ClipItem, Int)])] {
+        var out: [(String, [(ClipItem, Int)])] = []
+
+        var pinned: [(ClipItem, Int)] = []
+        var rest: [(ClipItem, Int)] = []
+        for (i, item) in results.enumerated() {
+            if item.pinned { pinned.append((item, i)) } else { rest.append((item, i)) }
+        }
+        if !pinned.isEmpty { out.append(("置顶", pinned)) }
+
+        var current: String?
+        var bucket: [(ClipItem, Int)] = []
+        for pair in rest {
+            let title = Self.dayTitle(pair.0.createdAt)
+            if title != current {
+                if let current, !bucket.isEmpty { out.append((current, bucket)); bucket = [] }
+                current = title
+            }
+            bucket.append(pair)
+        }
+        if let current, !bucket.isEmpty { out.append((current, bucket)) }
+        return out
+    }
+
+    private static func dayTitle(_ date: Date) -> String {
+        let cal = Calendar.current
+        if cal.isDateInToday(date) { return "今天" }
+        if cal.isDateInYesterday(date) { return "昨天" }
+        return "更早"
     }
 
     private var emptyState: some View {
@@ -240,6 +295,25 @@ struct HistoryView: View {
     }
 }
 
+// MARK: - 分组标题
+
+private struct SectionHeader: View {
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.tertiary)
+            Spacer()
+        }
+        .padding(.horizontal, Spec.listPadding + 6)
+        .padding(.vertical, 7)
+        // sticky header 必须不透明，否则滚过去时文字会压在行上
+        .background(Color(NSColor.windowBackgroundColor))
+    }
+}
+
 // MARK: - 单行
 
 struct RowView: View {
@@ -249,6 +323,8 @@ struct RowView: View {
     let selected: Bool
     let expandedImage: NSImage?
 
+    @State private var hovered = false
+
     private var thumbSize: CGFloat { selected ? Spec.thumbOpen : Spec.thumb }
     private var padding: CGFloat { selected ? Spec.rowPaddingOpen : Spec.rowPadding }
 
@@ -257,8 +333,9 @@ struct RowView: View {
             header
             detail
                 // 高度是连续量而不是结构变化：内容常驻，收起时高度归零并裁掉。
-                // 用 if 插入/移除会走 appear/disappear 路径，macOS 上表现为瞬变
-                .frame(height: selected ? detailHeight : 0)
+                // 用 if 插入/移除会走 appear/disappear 路径，macOS 上表现为瞬变。
+                // 用 maxHeight 而不是 height：短内容不撑出一片空白
+                .frame(maxHeight: selected ? detailHeight : 0)
                 .clipped()
                 .opacity(selected ? 1 : 0)
         }
@@ -266,10 +343,19 @@ struct RowView: View {
         .padding(.vertical, 5)
         .background(
             RoundedRectangle(cornerRadius: Spec.corner)
-                .fill(selected ? Color.accentColor.opacity(0.08) : Color.clear)
+                .fill(fill)
         )
         .contentShape(Rectangle())
+        .onHover { hovered = $0 }
+        .animation(Motion.hover, value: hovered)
         .animation(Motion.expand, value: selected)
+    }
+
+    /// 选中 > 悬停 > 无。悬停是「这里可以按」的承诺，必须看得见但压得住
+    private var fill: Color {
+        if selected { return Color.accentColor.opacity(Spec.selectFill) }
+        if hovered { return Color.primary.opacity(Spec.hoverFill) }
+        return Color.clear
     }
 
     // MARK: 头部（收起时就是整行）
@@ -290,17 +376,17 @@ struct RowView: View {
                     if item.pinned {
                         Image(systemName: "pin.fill")
                             .font(.system(size: 9))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(selected ? .secondary : .tertiary)
                     }
                     if let app = item.sourceApp {
                         Text(app)
                             .font(.system(size: 11))
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(selected ? .secondary : .tertiary)
                             .lineLimit(1)
                     }
                     Text(RelativeTime.string(from: item.createdAt))
                         .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(selected ? .secondary : .tertiary)
                 }
             }
 
@@ -319,7 +405,7 @@ struct RowView: View {
         } else {
             ZStack {
                 RoundedRectangle(cornerRadius: Spec.corner)
-                    .fill(Color(NSColor.controlBackgroundColor))
+                    .fill(Color.primary.opacity(Spec.chipFill))
                 Image(systemName: symbol)
                     .font(.system(size: thumbSize * 0.45))
                     .foregroundStyle(.secondary)
@@ -341,13 +427,12 @@ struct RowView: View {
         if index < 9 {
             Text("⌘\(index + 1)")
                 .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(selected ? Color.accentColor : Color(NSColor.tertiaryLabelColor))
+                .foregroundStyle(selected ? .primary : Color(NSColor.tertiaryLabelColor))
                 .padding(.horizontal, 5)
                 .padding(.vertical, 2)
                 .background(
                     RoundedRectangle(cornerRadius: Spec.badgeCorner)
-                        .fill(selected ? Color(NSColor.windowBackgroundColor)
-                                : Color(NSColor.controlBackgroundColor).opacity(0.7))
+                        .fill(Color.primary.opacity(selected ? 0.14 : Spec.chipFill))
                 )
         }
     }
@@ -357,13 +442,17 @@ struct RowView: View {
     private var detailHeight: CGFloat {
         switch item.kind {
         case .text: return Spec.textDetail
-        case .image: return Spec.imageDetail + (hasOCR ? Spec.ocrLine : 0)
+        case .image:
+            return Spec.imageDetail
+                + (hasText ? Spec.noteBlock : 0)
+                + (hasOCR ? Spec.noteBlock : 0)
         case .files: return CGFloat(min(paths.count, Spec.maxFileLines)) * Spec.fileLine + 6
         }
     }
 
     private var paths: [String] { item.filePaths ?? [] }
     private var hasOCR: Bool { !(item.ocrText ?? "").isEmpty }
+    private var hasText: Bool { !(item.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     @ViewBuilder
     private var detail: some View {
@@ -383,7 +472,7 @@ struct RowView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.top, 10)
-        .frame(height: Spec.textDetail)
+        // 不固定高度：内容短则矮，上限 200 由外层 detailHeight 控制
     }
 
     private var imageDetail: some View {
@@ -393,26 +482,22 @@ struct RowView: View {
                     Image(nsImage: expandedImage).resizable().scaledToFit()
                 } else if let thumb = item.thumbnail {
                     // 原图还没解码完，先用缩略图顶住第一帧
-                    Image(nsImage: thumb).resizable().interpolation(.high).scaledToFit()
+                    Image(nsImage: thumb).resizable().scaledToFit()
                 } else {
-                    Rectangle().fill(Color(NSColor.controlBackgroundColor))
+                    Rectangle().fill(Color.primary.opacity(Spec.chipFill))
                 }
             }
             .frame(height: Spec.imageDetail)
             .clipShape(RoundedRectangle(cornerRadius: Spec.imageCorner))
             .padding(.top, 10)
 
+            // 图片自带的文字、OCR 出来的文字，都是内容——内容必须能选中、能复制。
+            // 乔布斯删的是「解释软件的 UI」，不是用户要拿走的东西
+            if hasText {
+                NoteBlock(label: "附带文字", content: item.text ?? "")
+            }
             if hasOCR {
-                HStack(alignment: .firstTextBaseline, spacing: 7) {
-                    Text("图内文字")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-                    Text(item.ocrText ?? "")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                .padding(.top, 9)
+                NoteBlock(label: "图内文字", content: item.ocrText ?? "")
             }
         }
     }
@@ -439,11 +524,36 @@ struct RowView: View {
         guard !q.isEmpty else { return attr }
         var searchRange = attr.startIndex..<attr.endIndex
         while let r = attr[searchRange].range(of: q, options: .caseInsensitive) {
-            attr[r].backgroundColor = Color.accentColor.opacity(0.25)
+            attr[r].backgroundColor = Color.accentColor.opacity(0.35)
             searchRange = r.upperBound..<attr.endIndex
             if searchRange.isEmpty { break }
         }
         return attr
+    }
+}
+
+// MARK: - 文字块
+
+/// 图片附带的文字 / OCR 出来的文字：可选中即复制，不额外给按钮
+private struct NoteBlock: View {
+    let label: String
+    let content: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+            ScrollView {
+                Text(content)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: Spec.noteScroll)
+        }
+        .padding(.top, 9)
     }
 }
 

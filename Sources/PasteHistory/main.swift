@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import QuartzCore
 import SwiftUI
 
 @MainActor
@@ -20,7 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             hotKey.register(id: 1, keyCode: kVK_ANSI_C, carbonModifiers: cmdKey | shiftKey) { [weak self] in
                 Task { @MainActor in self?.togglePanel() }
             }
-            // ⇧⌘V：不开面板，直接在历史里来回擦
+            // ⇧⌘V：不开面板，直接在时间轴上擦。再按一次撤销、换成更早一条
             hotKey.register(id: 2, keyCode: kVK_ANSI_V, carbonModifiers: cmdKey | shiftKey) {
                 Task { @MainActor in PasteCycler.shared.advance() }
             }
@@ -34,6 +35,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in self?.monitor.syncChangeCount() }
+        }
+
+        // 捕获成功：菜单栏图标「点头」一下。不弹通知、不出声——
+        // 状态灯是给工程师看的，用户只需要感到「它被记住了」
+        NotificationCenter.default.addObserver(
+            forName: .pasteHistoryDidCapture,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.nodStatusBar() }
         }
 
         NSWorkspace.shared.notificationCenter.addObserver(
@@ -130,7 +141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = PasteService.requestTrust()
         let alert = NSAlert()
         alert.messageText = "PasteHistory 已在菜单栏运行"
-        alert.informativeText = "按 ⇧⌘C（Shift + Command + C）随时打开剪贴板历史，支持搜索。\n\n自动粘贴需要在「系统设置 → 隐私与安全性 → 辅助功能」中允许 PasteHistory；未授权时只会把内容复制到剪贴板，自行按 ⌘V 即可。"
+        alert.informativeText = "⇧⌘V 直接粘贴上一条，再按一次换成更早一条；要找东西时按 ⇧⌘C 打开面板搜索。\n\n自动粘贴需要在「系统设置 → 隐私与安全性 → 辅助功能」中允许 PasteHistory；未授权时只会把内容复制到剪贴板，自行按 ⌘V 即可。"
         alert.addButton(withTitle: "好")
         alert.runModal()
     }
@@ -156,18 +167,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
 
-        let open = NSMenuItem(title: "显示剪贴板历史", action: #selector(togglePanel), keyEquivalent: "C")
+        let open = NSMenuItem(title: "显示剪贴板", action: #selector(togglePanel), keyEquivalent: "C")
         open.keyEquivalentModifierMask = [.command, .shift]
         open.image = Self.menuIcon("clipboard")
         menu.addItem(open)
 
-        menu.addItem(NSMenuItem.separator())
-
-        // 最近复制：内联展示，具体条目在 menuWillOpen 里按 tag 插到这个标题后面
-        let recentHeader = NSMenuItem(title: "最近复制", action: nil, keyEquivalent: "")
-        recentHeader.isEnabled = false
-        recentHeader.tag = Self.recentHeaderTag
-        menu.addItem(recentHeader)
+        let cycle = NSMenuItem(title: "粘贴更早一条", action: #selector(cyclePaste), keyEquivalent: "V")
+        cycle.keyEquivalentModifierMask = [.command, .shift]
+        cycle.image = Self.menuIcon("clock.arrow.circlepath")
+        menu.addItem(cycle)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -175,49 +183,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         phone.image = Self.menuIcon("qrcode")
         menu.addItem(phone)
 
-        // 状态文字走 badge（右对齐），标题保持简短
-        let syncItem = NSMenuItem(title: "iCloud 同步", action: #selector(toggleSync), keyEquivalent: "")
-        syncItem.image = Self.menuIcon("icloud")
+        // 同步只在失败时出现：成功是承诺，不是新闻
+        let syncItem = NSMenuItem(title: "iCloud 未同步", action: #selector(retrySync), keyEquivalent: "")
+        syncItem.image = Self.menuIcon("icloud.slash")
         syncItem.tag = Self.syncMenuItemTag
+        syncItem.isHidden = true
         menu.addItem(syncItem)
-
-        let axItem = NSMenuItem(title: "自动粘贴权限", action: #selector(requestAX), keyEquivalent: "")
-        axItem.image = Self.menuIcon("hand.raised")
-        axItem.tag = Self.axMenuItemTag
-        menu.addItem(axItem)
 
         menu.addItem(NSMenuItem.separator())
 
-        let pause = NSMenuItem(title: "暂停自动记录", action: #selector(togglePause(_:)), keyEquivalent: "")
+        let pause = NSMenuItem(title: "暂停记录", action: #selector(togglePause(_:)), keyEquivalent: "")
         pause.state = Settings.shared.paused ? .on : .off
         menu.addItem(pause)
 
-        let plain = NSMenuItem(title: "粘贴时不带格式", action: #selector(togglePlainText(_:)), keyEquivalent: "")
-        plain.state = Settings.shared.pasteAsPlainText ? .on : .off
-        menu.addItem(plain)
-
-        let auto = NSMenuItem(title: "双击或回车直接粘贴", action: #selector(toggleAutoPaste(_:)), keyEquivalent: "")
-        auto.state = Settings.shared.autoPaste ? .on : .off
-        menu.addItem(auto)
-
-        menu.addItem(NSMenuItem.separator())
-
-        // 记录数统计。必须带 tag 定位：分隔线的 title 也是空字符串，
-        // menuWillOpen 里按空 title 反查会误命中分隔线，导致这一行永远空白
-        let count = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-        count.isEnabled = false
-        count.tag = Self.statsMenuItemTag
-        menu.addItem(count)
-
-        menu.addItem(NSMenuItem.separator())
-
-        let clear = NSMenuItem(title: "清空历史", action: #selector(clearHistory), keyEquivalent: "")
+        let clear = NSMenuItem(title: "清空历史…", action: #selector(clearHistory), keyEquivalent: "")
         clear.image = Self.menuIcon("trash")
         clear.attributedTitle = NSAttributedString(
-            string: "清空历史",
+            string: "清空历史…",
             attributes: [.foregroundColor: NSColor.systemRed]
         )
         menu.addItem(clear)
+
+        menu.addItem(NSMenuItem.separator())
 
         menu.addItem(NSMenuItem(title: "退出 PasteHistory",
                                 action: #selector(NSApplication.terminate(_:)),
@@ -234,12 +221,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return image
     }
 
-    private static let statsMenuItemTag = 9001
-    private static let recentHeaderTag = 9002
     private static let syncMenuItemTag = 9003
-    private static let axMenuItemTag = 9004
-    /// 最近复制条目用 9101…9109 标记，menuWillOpen 时先按 tag 清掉再重插
-    private static let recentItemTagBase = 9100
 
     @objc private func showQR() {
         QRPairPanel.shared.show()
@@ -260,96 +242,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sender.state = Settings.shared.paused ? .on : .off
     }
 
-    @objc private func togglePlainText(_ sender: NSMenuItem) {
-        Settings.shared.pasteAsPlainText.toggle()
-        sender.state = Settings.shared.pasteAsPlainText ? .on : .off
+    @objc private func cyclePaste() {
+        PasteCycler.shared.advance()
     }
 
-    @objc private func toggleAutoPaste(_ sender: NSMenuItem) {
-        Settings.shared.autoPaste.toggle()
-        sender.state = Settings.shared.autoPaste ? .on : .off
+    @objc private func retrySync() {
+        iCloudSync.shared.start()
     }
 
-    @objc private func toggleSync() {
-        Settings.shared.iCloudSync.toggle()
-        if Settings.shared.iCloudSync {
-            iCloudSync.shared.start()
-        } else {
-            iCloudSync.shared.stop()
-        }
-    }
-
-    @objc private func requestAX() {
-        _ = PasteService.requestTrust()
+    /// 捕获成功：图标「点头」一下，0.30s 内 1→1.15→1
+    private func nodStatusBar() {
+        guard let button = statusItem?.button else { return }
+        button.wantsLayer = true
+        let nod = CABasicAnimation(keyPath: "transform.scale")
+        nod.fromValue = 1.0
+        nod.toValue = 1.15
+        nod.duration = 0.15
+        nod.autoreverses = true
+        nod.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        button.layer?.add(nod, forKey: "nod")
     }
 }
 
 extension AppDelegate: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
-        rebuildRecentItems(in: menu)
-
-        if let countItem = menu.item(withTag: Self.statsMenuItemTag) {
-            countItem.title = "已保存 \(store.count) 条记录"
-        }
-
+        // 同步正常时这一项根本不存在；只有确实没同步上才开口
         if let syncItem = menu.item(withTag: Self.syncMenuItemTag) {
-            let syncOn = Settings.shared.iCloudSync && iCloudSync.shared.isActive
-            syncItem.badge = NSMenuItemBadge(string: syncOn ? "已开启"
-                                                            : (Settings.shared.iCloudSync ? "未登录" : "已关闭"))
+            syncItem.isHidden = !(Settings.shared.iCloudSync && !iCloudSync.shared.isActive)
         }
-
-        if let axItem = menu.item(withTag: Self.axMenuItemTag) {
-            let trusted = PasteService.isTrusted()
-            axItem.badge = NSMenuItemBadge(string: trusted ? "已开启" : "待授权")
-        }
-    }
-
-    /// 最近 3 条内联在标题下方，⌘1–3 直接粘贴（菜单展开时才响应，不会劫持全局快捷键）
-    private func rebuildRecentItems(in menu: NSMenu) {
-        for i in 1...9 {
-            if let old = menu.item(withTag: Self.recentItemTagBase + i) {
-                menu.removeItem(old)
-            }
-        }
-        guard let header = menu.item(withTag: Self.recentHeaderTag) else { return }
-        var insertIndex = menu.index(of: header) + 1
-
-        let top = store.recent(3)
-        if top.isEmpty {
-            let none = NSMenuItem(title: "暂无记录", action: nil, keyEquivalent: "")
-            none.isEnabled = false
-            none.tag = Self.recentItemTagBase + 1
-            menu.insertItem(none, at: insertIndex)
-            return
-        }
-        for (i, item) in top.enumerated() {
-            let entry = NSMenuItem(title: String(item.summary.prefix(40)),
-                                   action: #selector(pasteRecent(_:)),
-                                   keyEquivalent: "\(i + 1)")
-            entry.keyEquivalentModifierMask = [.command]
-            entry.representedObject = item.id.uuidString
-            entry.tag = Self.recentItemTagBase + i + 1
-            entry.image = Self.menuIcon(Self.symbol(for: item.kind))
-            menu.insertItem(entry, at: insertIndex)
-            insertIndex += 1
-        }
-    }
-
-    private static func symbol(for kind: ClipKind) -> String {
-        switch kind {
-        case .text: return "doc.text"
-        case .image: return "photo"
-        case .files: return "folder"
-        }
-    }
-
-    @objc private func pasteRecent(_ sender: NSMenuItem) {
-        guard let idString = sender.representedObject as? String,
-              let id = UUID(uuidString: idString),
-              let item = store.syncDatabase.get(id: id) else { return }
-        let target = AppTracker.targetApp()
-        let element = target.flatMap { AXFocus.focusedElement(pid: $0.processIdentifier) }
-        PasteService.paste(item, to: target, focusElement: element)
     }
 }
 
