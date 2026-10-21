@@ -15,12 +15,17 @@ open PasteHistory.app           # 运行（菜单栏出现剪贴板图标）
 - 移动项目目录后必须 `rm -rf .build` 重新构建：模块缓存里写死了旧绝对路径，会报
   `PCH was compiled with module cache path ... but the path is currently ...`。
 - 数据目录：`~/Library/Application Support/PasteHistory/`（history.sqlite + images/），iCloud 同步走 iCloud Drive 的 `PasteHistory/`。
+- 面板定位日志：`~/Library/Application Support/PasteHistory/anchor_trace.log`，每次打开面板写一行
+  （结论 `below-input` / `above-input` / `below-input/shrunk-to-N` / `fallback-center` + role + 坐标）。
+  真机说「没贴过去 / 有遮挡」时先看它：没拿到输入框（fallback-center）和位置算错（能贴但贴歪）是两回事。
+  文件超过 200KB 会整体重写，不会无限涨。
 
 ## 维护 / 调试参数
 
 ```bash
 PasteHistory.app/Contents/MacOS/PasteHistory --show            # 启动即打开面板（UI 冒烟）
-PasteHistory.app/Contents/MacOS/PasteHistory --show --trace-anchor   # 打印面板贴到了哪（below-input / above-input / …-clamped / fallback-center）+ 输入框 frame
+PasteHistory.app/Contents/MacOS/PasteHistory --show --trace-anchor   # 额外把定位结论打到 NSLog（落盘是默认开着的，见下）
+PasteHistory.app/Contents/MacOS/PasteHistory --show --fake-field 100,470,300,60   # 喂一个假输入框（AX 坐标），绕开 AX 直接验证定位几何
 PasteHistory.app/Contents/MacOS/PasteHistory --show-pair       # 启动即打开手机同步配对面板（UI 冒烟）
 PasteHistory.app/Contents/MacOS/PasteHistory --print-ax         # 把辅助功能授权状态写到 ax_status.txt
 PasteHistory.app/Contents/MacOS/PasteHistory --paste-latest     # 对最新记录走完整粘贴流程

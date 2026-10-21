@@ -73,6 +73,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             firstRun()
         }
 
+        // 仅供冒烟测试：--fake-field x,y,w,h 喂一个假输入框（AX 坐标），验证定位几何
+        let argv = ProcessInfo.processInfo.arguments
+        if let i = argv.firstIndex(of: "--fake-field"), i + 1 < argv.count {
+            let n = argv[i + 1].split(separator: ",").compactMap { Double($0) }
+            if n.count == 4 { PanelController.debugField = CGRect(x: n[0], y: n[1], width: n[2], height: n[3]) }
+        }
+
         // 仅供冒烟测试：--show 启动即打开面板
         if ProcessInfo.processInfo.arguments.contains("--show") {
             PanelController.shared.show()

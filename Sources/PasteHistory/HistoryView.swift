@@ -4,9 +4,6 @@ import SwiftUI
 // MARK: - 规格
 
 private enum Spec {
-    static let windowWidth: CGFloat = 520
-    static let windowHeight: CGFloat = 540
-
     static let searchHeight: CGFloat = 52
     static let searchPadding: CGFloat = 18
 
@@ -68,7 +65,10 @@ struct HistoryView: View {
             hairline
             content
         }
-        .frame(width: Spec.windowWidth, height: Spec.windowHeight)
+        // 高度不写死：贴着输入框放不下时窗口会收，列表跟着滚。
+        // 写死 540 的话，窗口被压小后 SwiftUI 会把内容裁掉而不是滚动
+        .frame(minWidth: Panel.width, maxWidth: Panel.width,
+               minHeight: Panel.minHeight, maxHeight: .infinity)
         // 内容顶到窗口上缘，别让标题栏白白占 28pt
         .ignoresSafeArea()
         // 头部块：比内容区亮一档。层次靠材质差异，不靠多画几条线
