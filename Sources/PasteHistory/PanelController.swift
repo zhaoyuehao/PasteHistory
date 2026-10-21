@@ -11,6 +11,10 @@ extension Notification.Name {
     static let phPin = Notification.Name("phPin")
     static let phClose = Notification.Name("phClose")
     static let phQuickPaste = Notification.Name("phQuickPaste")
+    /// 面板即将显示：视图收到后回到第一条并收起
+    static let phPanelWillShow = Notification.Name("phPanelWillShow")
+    /// 展开 / 收起当前选中项
+    static let phToggleExpand = Notification.Name("phToggleExpand")
 }
 
 @MainActor
@@ -67,6 +71,8 @@ final class PanelController: NSObject, NSWindowDelegate {
 
         center(panel)
         installKeyMonitor()
+        // 每次打开都是一次新的「找」：回到第一条、收起，一屏扫十条
+        Self.post(.phPanelWillShow)
 
         // 出现：0.22s easeOut，opacity 0→1 + scale 0.96→1。
         // 窗口淡入与内容缩放共用同一个 duration，两套时序叠加会出现「先亮后弹」
@@ -208,6 +214,12 @@ final class PanelController: NSObject, NSWindowDelegate {
         NotificationCenter.default.post(name: name, object: object)
     }
 
+    /// 焦点是否在文本输入里（搜索框的 field editor 是 NSTextView）
+    private static func isTextFieldFocused() -> Bool {
+        guard let responder = NSApp.keyWindow?.firstResponder else { return false }
+        return responder is NSTextView || responder is NSTextField
+    }
+
     private static func handle(_ event: NSEvent) -> NSEvent? {
         let key = Int(event.keyCode)
         let mods = event.modifierFlags.intersection([.command, .shift, .option, .control])
@@ -229,6 +241,10 @@ final class PanelController: NSObject, NSWindowDelegate {
             post(.phPin); return nil
         case 13 where mods == [.command]: // ⌘W 关闭
             post(.phClose); return nil
+        case 124, 49: // → / 空格：展开或收起当前条
+            // 搜索框聚焦时这两个键属于输入，必须放行
+            if Self.isTextFieldFocused() { return event }
+            post(.phToggleExpand); return nil
         default:
             break
         }

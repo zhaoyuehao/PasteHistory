@@ -51,6 +51,8 @@ enum L10n {
     static var attachedText: String { value("附带文字", "附帶文字", "Attached text") }
     static var imageText: String { value("图内文字", "圖中文字", "Text in image") }
     static var fileMissing: String { value("原文件已不存在", "原始檔案已不存在", "Original file is missing") }
+    static var pinItem: String { value("置顶", "置頂", "Pin") }
+    static var deleteItem: String { value("删除", "刪除", "Delete") }
     static var noHistory: String { value("你的剪贴板还没有记忆。", "你的剪貼簿還沒有記錄。", "Your clipboard history is empty.") }
     static var noMatch: String { value("没找到。", "找不到。", "No matches.") }
     static var copySomething: String { value("⌘C 复制点什么，⇧⌘C 回来", "⌘C 複製內容，再按 ⇧⌘C 回來", "Copy something with ⌘C, then press ⇧⌘C") }

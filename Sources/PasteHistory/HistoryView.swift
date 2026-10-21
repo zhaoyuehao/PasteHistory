@@ -123,7 +123,7 @@ struct HistoryView: View {
         .background(Color(NSColor.controlBackgroundColor))
         .onAppear {
             DispatchQueue.main.async { searchFocused = true }
-            loader.load(for: current)
+            loader.load(for: model.expanded ? current : nil)
             model.rebuildSections()
         }
         .onReceive(NotificationCenter.default.publisher(for: .phMoveDown)) { _ in model.move(1) }
@@ -136,6 +136,7 @@ struct HistoryView: View {
             guard let item = current else { return }
             onCopyOnly(item)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .phToggleExpand)) { _ in model.toggleExpanded() }
         .onReceive(NotificationCenter.default.publisher(for: .phDelete)) { _ in
             guard current != nil else { return }
             model.deleteCurrent()
@@ -145,11 +146,15 @@ struct HistoryView: View {
             model.togglePinCurrent()
         }
         .onReceive(NotificationCenter.default.publisher(for: .phClose)) { _ in onClose() }
+        // 每次打开面板都是一次新的「找」：回到第一条并收起，一屏能扫到十条
+        .onReceive(NotificationCenter.default.publisher(for: .phPanelWillShow)) { _ in model.resetForPresentation() }
         .onReceive(NotificationCenter.default.publisher(for: .phQuickPaste)) { note in
             guard let index = note.object as? Int, index < results.count else { return }
             onPaste(results[index])
         }
-        .onChange(of: safeSelection) { _, _ in loader.load(for: current) }
+        .onChange(of: safeSelection) { _, _ in loader.load(for: model.expanded ? current : nil) }
+        // 收起时不解码大图：一屏十条时没人看得见，白费一次后台解码
+        .onChange(of: model.expanded) { _, isOn in loader.load(for: isOn ? current : nil) }
         .onChange(of: store.displayed) { _, _ in model.rebuildSections() }
     }
 
@@ -201,11 +206,21 @@ struct HistoryView: View {
                                         index: pair.1,
                                         query: store.query,
                                         selected: pair.1 == safeSelection,
-                                        expandedImage: pair.1 == safeSelection ? loader.image : nil)
+                                        expanded: pair.1 == safeSelection && model.expanded,
+                                        expandedImage: pair.1 == safeSelection && model.expanded ? loader.image : nil,
+                                        onPin: { model.togglePin(at: pair.1) },
+                                        onDelete: { model.delete(at: pair.1) })
                                     .id(pair.0.id)
                                     .contentShape(Rectangle())
                                     .onTapGesture(count: 2) { onPaste(pair.0) }
-                                    .simultaneousGesture(TapGesture(count: 1).onEnded { model.select(pair.1) })
+                                    // 鼠标也要能展开：点已选中的那一行就是切换展开
+                                    .simultaneousGesture(TapGesture(count: 1).onEnded {
+                                        if pair.1 == safeSelection {
+                                            model.toggleExpanded()
+                                        } else {
+                                            model.select(pair.1)
+                                        }
+                                    })
                                     .onAppear {
                                         if pair.1 >= results.count - 8 { store.loadMore() }
                                     }
@@ -281,12 +296,18 @@ struct RowView: View {
     let index: Int
     let query: String
     let selected: Bool
+    /// 收起是默认态；只有 expanded 才放大缩略图、加宽内边距、长出内容区
+    let expanded: Bool
     let expandedImage: NSImage?
+    var onPin: () -> Void
+    var onDelete: () -> Void
 
     @State private var hovered = false
 
-    private var thumbSize: CGFloat { selected ? Spec.thumbOpen : Spec.thumb }
-    private var padding: CGFloat { selected ? Spec.rowPaddingOpen : Spec.rowPadding }
+    /// 缩略图与内边距跟展开走，不跟选中走：
+    /// 选中的行如果也撑大，收起状态下一样扫不了几条
+    private var thumbSize: CGFloat { expanded ? Spec.thumbOpen : Spec.thumb }
+    private var padding: CGFloat { expanded ? Spec.rowPaddingOpen : Spec.rowPadding }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -295,9 +316,9 @@ struct RowView: View {
                 // 高度是连续量而不是结构变化：内容常驻，收起时高度归零并裁掉。
                 // 用 if 插入/移除会走 appear/disappear 路径，macOS 上表现为瞬变。
                 // 用 maxHeight 而不是 height：短内容不撑出一片空白
-                .frame(maxHeight: selected ? detailHeight : 0)
+                .frame(maxHeight: expanded ? detailHeight : 0)
                 .clipped()
-                .opacity(selected ? 1 : 0)
+                .opacity(expanded ? 1 : 0)
         }
         .padding(.horizontal, padding)
         .padding(.vertical, 5)
@@ -308,7 +329,7 @@ struct RowView: View {
         .contentShape(Rectangle())
         .onHover { hovered = $0 }
         .animation(Motion.hover, value: hovered)
-        .animation(Motion.expand, value: selected)
+        .animation(Motion.expand, value: expanded)
     }
 
     /// 选中 > 悬停 > 无。悬停是「这里可以按」的承诺，必须看得见但压得住
@@ -351,9 +372,25 @@ struct RowView: View {
             }
 
             Spacer(minLength: 8)
-            quickBadge
+            trailing
         }
         .frame(height: thumbSize)
+    }
+
+    /// 右侧固定 44 宽：常态是 ⌘N 角标，悬停时原位换成置顶 / 删除。
+    /// 宽度恒定，所以悬停不会把摘要挤动；也终于让鼠标能操作单条
+    private var trailing: some View {
+        ZStack {
+            quickBadge
+                .opacity(hovered ? 0 : 1)
+            HStack(spacing: 4) {
+                RowActionButton(symbol: "pin.fill", label: L10n.pinItem, action: onPin)
+                RowActionButton(symbol: "trash", label: L10n.deleteItem, action: onDelete)
+            }
+            .opacity(hovered ? 1 : 0)
+            .allowsHitTesting(hovered)
+        }
+        .frame(minWidth: 44, alignment: .trailing)
     }
 
     @ViewBuilder
@@ -489,6 +526,33 @@ struct RowView: View {
             if searchRange.isEmpty { break }
         }
         return attr
+    }
+}
+
+/// 行内图标按钮：20 见方，悬停才出现，必须有名字——图标化不能牺牲读屏
+private struct RowActionButton: View {
+    let symbol: String
+    let label: String
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 11))
+                .frame(width: 20, height: 20)
+                .background(
+                    RoundedRectangle(cornerRadius: Spec.badgeCorner)
+                        .fill(Color.primary.opacity(hovering ? 0.14 : 0))
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(hovering ? .primary : .secondary)
+        .help(label)
+        .accessibilityLabel(label)
+        .onHover { hovering = $0 }
     }
 }
 
