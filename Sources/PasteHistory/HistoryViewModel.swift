@@ -13,6 +13,10 @@ final class HistoryViewModel: ObservableObject {
     @Published private(set) var selection = 0
     @Published private(set) var sections: [HistorySection] = []
 
+    /// 搜索词已换、结果集还没刷新（防抖 0.25s）：下一次重排回到第一条，
+    /// 而不是按 id 跟着旧选中漂——搜索永远是一次新的「找」
+    private var resetsToTopOnRebuild = false
+
     /// 渲染、键盘、⌘1–9 共用的唯一顺序：置顶在前，其余按时间倒序。
     /// 之前只有渲染把置顶提到最前，键盘仍按时间顺序走，
     /// 于是视觉第一行和选中项不是同一条，⌘1 粘的也不是看到的第一条。
@@ -71,6 +75,7 @@ final class HistoryViewModel: ObservableObject {
     /// 换搜索词：结果集变了，重新扫
     func resetSelection() {
         selection = 0
+        resetsToTopOnRebuild = true
     }
 
     func deleteCurrent() {
@@ -100,6 +105,11 @@ final class HistoryViewModel: ObservableObject {
     }
 
     func rebuildSections() {
+        // 选中是「这一条」的属性，不是「第几个」。重排（置顶/取消置顶、
+        // 面板开着时新拷贝进来、同步导入）会让索引全体位移，selection 留在
+        // 原索引就指到了别的条目上——置顶那条的高亮随 matchedGeometryEffect
+        // 旧属主一起消失，看起来就是「置顶后没有选中了」。重排后按 id 找回同一条
+        let selectedId = current?.id
         var pinned: [ClipItem] = []
         var rest: [ClipItem] = []
         for item in store.displayed {
@@ -131,6 +141,16 @@ final class HistoryViewModel: ObservableObject {
             grouped.append(HistorySection(title: currentTitle, items: bucket))
         }
         sections = grouped
+
+        if resetsToTopOnRebuild {
+            resetsToTopOnRebuild = false
+            selection = 0
+        } else if let selectedId, let idx = ordered.firstIndex(where: { $0.id == selectedId }) {
+            selection = idx
+        } else {
+            // 选中条目不在新结果集里（被删除 / 被过滤掉）：夹回有效范围
+            selection = safeSelection
+        }
     }
 
     private static func dayTitle(_ date: Date) -> String {
