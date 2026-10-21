@@ -18,9 +18,11 @@ final class HistoryViewModel: ObservableObject {
     /// 于是视觉第一行和选中项不是同一条，⌘1 粘的也不是看到的第一条。
     @Published private(set) var ordered: [ClipItem] = []
 
-    /// 面板默认收起：打开面板是为了「扫」，不是为了读第一条的全文。
-    /// 展开是显式动作（→ / 空格 / 再点一次已选中的行），收起也是。
-    @Published private(set) var expanded = false
+    /// 选中行就地展开（默认展开）：选中=在看，展开才有上下文。
+    /// 之前默认收起确实省了一屏行数，但代价是滑动时「逐条展开」的弹簧阻尼感没了——
+    /// 那种跟着手感开阖的丝滑才是这个面板的味道，密度让位。
+    /// 收起是显式动作（chevron / → / 空格 / 再点一次已选中的行），移动选中即恢复展开。
+    @Published private(set) var expanded = true
 
     var lastMoveAt = Date.distantPast
 
@@ -39,6 +41,8 @@ final class HistoryViewModel: ObservableObject {
         let fast = now.timeIntervalSince(lastMoveAt) < 0.2
         lastMoveAt = now
         let next = min(max(safeSelection + delta, 0), results.count - 1)
+        // 移到新行就恢复展开：滑动的手感 = 每一行跟着指尖开阖
+        expanded = true
         if fast {
             var transaction = Transaction()
             transaction.disablesAnimations = true
@@ -51,6 +55,7 @@ final class HistoryViewModel: ObservableObject {
     func select(_ index: Int) {
         guard !results.isEmpty else { return }
         selection = min(max(index, 0), results.count - 1)
+        expanded = true
     }
 
     func toggleExpanded() {
@@ -58,23 +63,23 @@ final class HistoryViewModel: ObservableObject {
         withAnimation(.spring(response: 0.30, dampingFraction: 0.86)) { expanded.toggle() }
     }
 
-    /// 每次打开面板都是一次新的「找」：回到第一条，并且收起
+    /// 每次打开面板都是一次新的「找」：回到第一条并展开
     func resetForPresentation() {
         selection = 0
-        expanded = false
+        expanded = true
     }
 
-    /// 换搜索词：结果集变了，重新扫，收起
+    /// 换搜索词：结果集变了，回到第一条并展开
     func resetSelection() {
         selection = 0
-        expanded = false
+        expanded = true
     }
 
     func deleteCurrent() {
         guard let item = current else { return }
         store.remove(id: item.id)
         selection = max(0, safeSelection - 1)
-        expanded = false
+        expanded = true
         rebuildSections()
     }
 
@@ -94,7 +99,7 @@ final class HistoryViewModel: ObservableObject {
         guard index < ordered.count else { return }
         store.remove(id: ordered[index].id)
         selection = max(0, min(selection, ordered.count - 1))
-        expanded = false
+        expanded = true
         rebuildSections()
     }
 

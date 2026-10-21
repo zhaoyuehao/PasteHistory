@@ -42,6 +42,29 @@ enum AXFocus {
             .contains(role)
     }
 
+    /// 光标（插入点）在屏幕上的位置：你真正在看的位置。
+    ///
+    /// 文本区常常半屏高，把面板贴到整个文本区必挡正文；贴到光标所在的那一行，
+    /// 才是 IME 候选窗那种「贴着指尖」的感觉。取法：选中范围（无选区时即插入点）→
+    /// 该范围的屏幕 bounds。不是所有应用都支持这个参数化属性，返回 nil 就退回整框。
+    static func caretFrame(of element: AXUIElement) -> CGRect? {
+        var rangeValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, "AXSelectedTextRange" as CFString, &rangeValue) == .success,
+              let rangeValue,
+              CFGetTypeID(rangeValue) == AXValueGetTypeID() else { return nil }
+        var boundsValue: CFTypeRef?
+        // 参数化属性名是 AXBoundsForRange（取 CFRange 的屏幕 bounds），不是 AXBoundsForTextRange
+        guard AXUIElementCopyParameterizedAttributeValue(element,
+                                                         "AXBoundsForRange" as CFString,
+                                                         rangeValue,
+                                                         &boundsValue) == .success,
+              let boundsValue,
+              CFGetTypeID(boundsValue) == AXValueGetTypeID() else { return nil }
+        var rect = CGRect.zero
+        guard AXValueGetValue(boundsValue as! AXValue, .cgRect, &rect) else { return nil }
+        return rect.height > 2 ? rect : nil
+    }
+
     /// 元素在屏幕上的位置与大小，用于把面板贴到输入框旁边。
     /// 返回的是 AX 坐标系：原点在主屏左上角、y 向下。
     static func frame(of element: AXUIElement) -> CGRect? {

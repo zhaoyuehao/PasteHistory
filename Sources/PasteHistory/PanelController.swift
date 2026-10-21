@@ -193,16 +193,33 @@ final class PanelController: NSObject, NSWindowDelegate {
 
         // 先问「输入框在哪」，再决定用哪块屏：
         // 多屏时鼠标常在另一块屏上，按鼠标屏去夹取会把面板贴到错的地方
-        var anchor: (field: CGRect, screen: NSScreen)?
+        var anchor: (rect: CGRect, screen: NSScreen)?
         if Settings.shared.anchorPanel,
            let element,
-           AXFocus.isTextInput(element),          // 窗口 / 容器不算输入框
-           let field = AXFocus.frame(of: element),
-           field.width > 8, field.height > 8 {
-            let center = NSPoint(x: field.midX, y: axisHeight - field.midY)
-            if let screen = NSScreen.screens.first(where: { $0.frame.contains(center) }),
-               field.height <= screen.visibleFrame.height / 2 {   // 高过半屏的肯定是容器
-                anchor = (field, screen)
+           AXFocus.isTextInput(element) {         // 窗口 / 容器不算输入框
+            // 优先贴光标：文本区可能半屏高，整框贴上去必挡正文；光标才是你在看的位置
+            let caret = AXFocus.caretFrame(of: element)
+            let whole = AXFocus.frame(of: element)
+            if ProcessInfo.processInfo.arguments.contains("--trace-anchor") {
+                NSLog("[PH] anchor: probe caret=%@ frame=%@",
+                      caret.map { String(format: "(%.0f, %.0f, %.0fx%.0f)", $0.minX, $0.minY, $0.width, $0.height) } ?? "nil",
+                      whole.map { String(format: "(%.0f, %.0f, %.0fx%.0f)", $0.minX, $0.minY, $0.width, $0.height) } ?? "nil")
+            }
+            if let caret {
+                let center = NSPoint(x: caret.midX, y: axisHeight - caret.midY)
+                if let s = NSScreen.screens.first(where: { $0.frame.contains(center) }) {
+                    anchor = (caret, s)
+                }
+            }
+            // 拿不到光标（部分自绘控件）再退回整框，但高过半屏的一律当容器不贴
+            if anchor == nil,
+               let field = whole,
+               field.width > 8, field.height > 8 {
+                let center = NSPoint(x: field.midX, y: axisHeight - field.midY)
+                if let s = NSScreen.screens.first(where: { $0.frame.contains(center) }),
+                   field.height <= s.visibleFrame.height / 2 {
+                    anchor = (field, s)
+                }
             }
         }
 
