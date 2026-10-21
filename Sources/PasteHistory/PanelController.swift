@@ -153,7 +153,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         // 520×540 固定，不可 resize：工具不是家具，不该让用户承担调尺寸的责任。
         // 窗口尺寸不参与展开动画（高度固定），否则窗口动画与内容动画会打架
         panel.styleMask = [.titled, .closable, .fullSizeContentView, .nonactivatingPanel]
-        panel.title = "剪贴板历史"
+        panel.title = L10n.panelTitle
         panel.titlebarAppearsTransparent = true
         panel.titleVisibility = .hidden
         // 藏掉红绿灯：这是一张卡片，不是一扇窗户

@@ -74,7 +74,7 @@ final class WebSyncServer {
             listener.start(queue: queue)
             self.listener = listener
         } catch {
-            lastError = "端口 \(Self.port) 被占用，手机连不上（换端口或退出占用程序后重启本应用）"
+            lastError = L10n.portBusy(Self.port)
             NSLog("[WebSync] 启动失败: \(error.localizedDescription)")
         }
     }
@@ -288,17 +288,17 @@ final class WebSyncServer {
         let app = obj["app"] as? String
         switch kind {
         case .text:
-            ClipStore.shared.upsert(ClipItem(kind: .text, text: text, sourceApp: app ?? "手机网页"))
+            ClipStore.shared.upsert(ClipItem(kind: .text, text: text, sourceApp: app ?? L10n.phoneWeb))
         case .image:
             guard let b64 = obj["imageBase64"] as? String,
                   let data = Data(base64Encoded: b64),
                   let img = NSImage(data: data),
                   let saved = ClipStore.shared.saveImage(img) else { return }
             ClipStore.shared.upsert(ClipItem(kind: .image, imageFile: saved.name,
-                                             sourceApp: app ?? "手机网页", thumbnailData: saved.thumbnail))
+                                             sourceApp: app ?? L10n.phoneWeb, thumbnailData: saved.thumbnail))
         case .files:
             let paths = text.components(separatedBy: "\n").filter { !$0.isEmpty }
-            ClipStore.shared.upsert(ClipItem(kind: .files, filePaths: paths, sourceApp: app ?? "手机网页"))
+            ClipStore.shared.upsert(ClipItem(kind: .files, filePaths: paths, sourceApp: app ?? L10n.phoneWeb))
         }
     }
 

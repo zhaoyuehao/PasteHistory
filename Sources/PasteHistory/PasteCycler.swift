@@ -53,7 +53,7 @@ final class PasteCycler {
     private func begin() {
         items = ClipStore.shared.recent(limit)
         guard !items.isEmpty else {
-            Toast.show("剪贴板里还没有记录")
+            Toast.show(L10n.noClipboardHistory)
             return
         }
         index = 0
@@ -72,12 +72,12 @@ final class PasteCycler {
         NotificationCenter.default.post(name: .pasteHistoryDidWritePasteboard, object: nil)
 
         guard Settings.shared.autoPaste else {
-            Toast.show("已复制到剪贴板，按 ⌘V 粘贴")
+            Toast.show(L10n.pasteToClipboard)
             end()
             return
         }
         guard PasteService.isTrusted() else {
-            Toast.show("已复制到剪贴板，按 ⌘V 粘贴", duration: 3)
+            Toast.show(L10n.pasteToClipboard, duration: 3)
             end()
             return
         }

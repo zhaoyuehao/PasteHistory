@@ -101,10 +101,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 冒烟：--print-ax 把辅助功能权限状态写到文件（便于脚本断言）；未授权时弹一次系统对话框
         if args.contains("--print-ax") {
-            var status = PasteService.isTrusted() ? "trusted" : "not-trusted"
-            if status == "not-trusted" {
+            if !PasteService.isTrusted() {
                 _ = PasteService.requestTrust()
             }
+            let status = PasteService.isTrusted() ? "trusted" : "not-trusted"
             let out = FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent("Library/Application Support/PasteHistory/ax_status.txt")
             try? status.write(to: out, atomically: true, encoding: .utf8)
@@ -138,11 +138,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func firstRun() {
-        _ = PasteService.requestTrust()
+        if !PasteService.isTrusted() {
+            _ = PasteService.requestTrust()
+        }
         let alert = NSAlert()
-        alert.messageText = "PasteHistory 已在菜单栏运行"
-        alert.informativeText = "⇧⌘V 直接粘贴上一条，再按一次换成更早一条；要找东西时按 ⇧⌘C 打开面板搜索。\n\n自动粘贴需要在「系统设置 → 隐私与安全性 → 辅助功能」中允许 PasteHistory；未授权时只会把内容复制到剪贴板，自行按 ⌘V 即可。"
-        alert.addButton(withTitle: "好")
+        alert.messageText = L10n.firstRunTitle
+        alert.informativeText = L10n.firstRunInfo
+        alert.addButton(withTitle: L10n.ok)
         alert.runModal()
     }
 
@@ -157,8 +159,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func buildStatusBar() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = item.button {
-            button.image = NSImage(systemSymbolName: "clipboard", accessibilityDescription: "剪贴板历史")
-            button.toolTip = "剪贴板历史（⇧⌘C）"
+            button.image = NSImage(systemSymbolName: "clipboard", accessibilityDescription: L10n.clipboardHistoryAccessibility)
+            button.toolTip = "\(L10n.panelTitle)（⇧⌘C）"
         }
         item.menu = buildMenu()
         statusItem = item
@@ -167,24 +169,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
 
-        let open = NSMenuItem(title: "显示剪贴板", action: #selector(togglePanel), keyEquivalent: "C")
+        let open = NSMenuItem(title: L10n.showClipboard, action: #selector(togglePanel), keyEquivalent: "C")
         open.keyEquivalentModifierMask = [.command, .shift]
         open.image = Self.menuIcon("clipboard")
         menu.addItem(open)
 
-        let cycle = NSMenuItem(title: "粘贴更早一条", action: #selector(cyclePaste), keyEquivalent: "V")
+        let cycle = NSMenuItem(title: L10n.pasteEarlier, action: #selector(cyclePaste), keyEquivalent: "V")
         cycle.keyEquivalentModifierMask = [.command, .shift]
         cycle.image = Self.menuIcon("clock.arrow.circlepath")
         menu.addItem(cycle)
 
         menu.addItem(NSMenuItem.separator())
 
-        let phone = NSMenuItem(title: "手机同步", action: #selector(showQR), keyEquivalent: "")
+        let phone = NSMenuItem(title: L10n.phoneSync, action: #selector(showQR), keyEquivalent: "")
         phone.image = Self.menuIcon("qrcode")
         menu.addItem(phone)
 
         // 同步只在失败时出现：成功是承诺，不是新闻
-        let syncItem = NSMenuItem(title: "iCloud 未同步", action: #selector(retrySync), keyEquivalent: "")
+        let syncItem = NSMenuItem(title: L10n.iCloudUnsynced, action: #selector(retrySync), keyEquivalent: "")
         syncItem.image = Self.menuIcon("icloud.slash")
         syncItem.tag = Self.syncMenuItemTag
         syncItem.isHidden = true
@@ -192,21 +194,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
-        let pause = NSMenuItem(title: "暂停记录", action: #selector(togglePause(_:)), keyEquivalent: "")
+        let pause = NSMenuItem(title: L10n.pauseRecording, action: #selector(togglePause(_:)), keyEquivalent: "")
         pause.state = Settings.shared.paused ? .on : .off
         menu.addItem(pause)
 
-        let clear = NSMenuItem(title: "清空历史…", action: #selector(clearHistory), keyEquivalent: "")
+        let clear = NSMenuItem(title: L10n.clearHistory, action: #selector(clearHistory), keyEquivalent: "")
         clear.image = Self.menuIcon("trash")
         clear.attributedTitle = NSAttributedString(
-            string: "清空历史…",
+            string: L10n.clearHistory,
             attributes: [.foregroundColor: NSColor.systemRed]
         )
         menu.addItem(clear)
 
         menu.addItem(NSMenuItem.separator())
 
-        menu.addItem(NSMenuItem(title: "退出 PasteHistory",
+        menu.addItem(NSMenuItem(title: L10n.quit,
                                 action: #selector(NSApplication.terminate(_:)),
                                 keyEquivalent: "q"))
 
@@ -229,10 +231,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func clearHistory() {
         let alert = NSAlert()
-        alert.messageText = "清空全部剪贴板记录？"
-        alert.informativeText = "共 \(store.count) 条，此操作不可撤销。"
-        alert.addButton(withTitle: "清空")
-        alert.addButton(withTitle: "取消")
+        alert.messageText = L10n.clearHistoryTitle
+        alert.informativeText = L10n.clearHistoryInfo(store.count)
+        alert.addButton(withTitle: L10n.clear)
+        alert.addButton(withTitle: L10n.cancel)
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         store.clearAll()
     }

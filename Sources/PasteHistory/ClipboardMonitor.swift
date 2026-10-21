@@ -79,7 +79,7 @@ final class ClipboardMonitor {
         // Apple 私有类型：标记内容来自另一台设备的接力（通用剪贴板）
         let isRemote = types.contains("com.apple.is-remote-clipboard")
         let source = isRemote
-            ? "接力 · iPhone/iPad"
+            ? L10n.remoteClipboard
             : NSWorkspace.shared.frontmostApplication?.localizedName
 
         // 1) 文件（Finder 复制的文件/文件夹）
