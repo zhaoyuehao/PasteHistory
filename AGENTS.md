@@ -78,6 +78,7 @@ PasteHistory.app/Contents/MacOS/PasteHistory --restore-images   # 从 iCloud 恢
 | `PanelController.swift` | ⇧⌘C 面板（NSHostingController 承载 SwiftUI） |
 | `HistoryView.swift` | 面板 UI（搜索 / 列表 / 键盘导航） |
 | `Theme.swift` | 字号 / 图标档位与语义色（`Palette.meta` / `.warning` 按 WCAG AA 反解） |
+| `Motion.swift` | 动效令牌（选中 / 连按 / 边界回弹 / 悬停），View 与 ViewModel 共用 |
 | `PasteService.swift` / `AXFocus.swift` | 回写剪贴板、AX 权限、捕获并还原聚焦输入框、模拟 ⌘V |
 | `PasteCycler.swift` | ⇧⌘V 循环粘贴：不开面板，⌘Z 撤回上一条再贴更早一条 |
 | `OCRIndexer.swift` | Vision 文字识别 + 场景分类 |
@@ -88,13 +89,17 @@ PasteHistory.app/Contents/MacOS/PasteHistory --restore-images   # 从 iCloud 恢
 
 ## 修改时务必遵守
 
-1. **HTTP 服务不能跑 MainActor**。菜单跟踪（nested runloop）或主线程弹窗会让服务假死。
+1. **动效别再走「禁用动画」这条路**：连按方向键时把弹簧压短（`Motion.selectionFast`），
+   不是关掉——关掉等于瞬移，而连续移动恰恰是最需要阻尼的时刻。同理，选中高亮必须是
+   **一个会移动的物体**（`matchedGeometryEffect`），而不是每行的 `fill` 各自淡入淡出：
+   后者中间没有任何东西在走，人眼对交叉淡化几乎无感，表现出来就是「上下选中的感觉没了」。
+2. **HTTP 服务不能跑 MainActor**。菜单跟踪（nested runloop）或主线程弹窗会让服务假死。
    路由/加解密全在 `queue`（`com.verdent.pastehistory.websync`）；读用独立 SQLite 连接，写 `DispatchQueue.main.async`。
-2. **禁止用 `NSJSONSerialization` 序列化顶层 String**——会抛 ObjC 异常直接崩进程，用 `JSONEncoder`。
-3. **Vision 识别中文必须用 `.accurate`** 并显式给 `zh-Hans`/`zh-Hant`/`en-US`；`.fast` 识别中文是乱码。
-4. **不要在 SQLite 串行队列内再 `queue.sync`**（会死锁），需要总数用不 dispatch 的私有方法。
-5. 手机端是**明文 HTTP 局域网地址**（非 Secure Context），页面内任何 Web API 都要考虑不可用，见 MEMORY.md。
-6. 改手机端加密实现后，必须跑 node 交叉验证（方法见 MEMORY.md「加密自测」）。
+3. **禁止用 `NSJSONSerialization` 序列化顶层 String**——会抛 ObjC 异常直接崩进程，用 `JSONEncoder`。
+4. **Vision 识别中文必须用 `.accurate`** 并显式给 `zh-Hans`/`zh-Hant`/`en-US`；`.fast` 识别中文是乱码。
+5. **不要在 SQLite 串行队列内再 `queue.sync`**（会死锁），需要总数用不 dispatch 的私有方法。
+6. 手机端是**明文 HTTP 局域网地址**（非 Secure Context），页面内任何 Web API 都要考虑不可用，见 MEMORY.md。
+7. 改手机端加密实现后，必须跑 node 交叉验证（方法见 MEMORY.md「加密自测」）。
 
 ## 手机端自测速查
 
