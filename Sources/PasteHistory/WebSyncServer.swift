@@ -24,11 +24,11 @@ final class WebSyncServer {
     /// 401 失败时间戳，用于限速（网络串行队列访问，无需加锁）
     private var authFailures: [TimeInterval] = []
 
-    // MARK: - 配对码与密钥（init 时确定，线程安全只读）
+    // MARK: - 配对码与密钥（HTTP 密钥状态由网络队列串行保护）
 
-    let pairCode: String
-    private let pairToken: String
-    private let payloadKey: SymmetricKey
+    private(set) var pairCode: String
+    private var pairToken: String
+    private var payloadKey: SymmetricKey
 
     private init() {
         let saved = UserDefaults.standard.string(forKey: "webSyncPairCode")
@@ -48,6 +48,30 @@ final class WebSyncServer {
             .appendingPathComponent("PasteHistory", isDirectory: true)
             .appendingPathComponent("history.sqlite"))
         iconPNG = Self.makeIconPNG()
+    }
+
+    /// Rotate the pairing code so a newly shown QR code creates a fresh session.
+    /// The network queue owns the token and payload key used by HTTP requests.
+    @MainActor
+    func refreshPairingCode() {
+        var code: String
+        repeat {
+            code = String(format: "%06d", Int.random(in: 0..<1_000_000))
+        } while code == pairCode
+        UserDefaults.standard.set(code, forKey: "webSyncPairCode")
+        let token = SHA256.hash(data: Data(code.utf8)).map { String(format: "%02x", $0) }.joined()
+        let ikm = SymmetricKey(data: Data(code.utf8))
+        let key = HKDF<SHA256>.deriveKey(inputKeyMaterial: ikm,
+                                         salt: Data("PasteHistory-Pairing-v1".utf8),
+                                         info: Data("clip-payload".utf8),
+                                         outputByteCount: 32)
+
+        queue.sync {
+            pairCode = code
+            pairToken = token
+            payloadKey = key
+            authFailures.removeAll()
+        }
     }
 
     // MARK: - 生命周期（从主线程调用）
