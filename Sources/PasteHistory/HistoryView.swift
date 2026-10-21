@@ -146,7 +146,11 @@ struct HistoryView: View {
     private var content: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: Spec.rowSpacing, pinnedViews: [.sectionHeaders]) {
+                // 不用 pinnedViews：悬浮标题盖在视口顶部，而 scrollTo 的「最小滚动」
+                // 只保证行进入 ScrollView 边界、不知道上面还浮着一层标题——
+                // 滚到顶时第一条的上半截正好被压在标题下面（真机截图实锤）。
+                // 标题随内容滚动，任何行都不会再被盖住
+                LazyVStack(spacing: Spec.rowSpacing) {
                     ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
                         Section {
                             ForEach(Array(section.items.enumerated()), id: \.element.0.id) { _, pair in
@@ -187,6 +191,10 @@ struct HistoryView: View {
                 withAnimation(anim) { proxy.scrollTo(results[newValue].id) }
             }
             .onChange(of: model.bounceTick) { _, _ in
+                // 弹簧还没停就再次撞墙（按住方向键的 key repeat）不再重新推——
+                // 每次都瞬间位移再回弹，动作永远叠不严，看起来就是抖。
+                // 停稳后的下一次撞击照常弹
+                guard bounce == 0 else { return }
                 // 先瞬间推出去，再让弹簧把它拉回来——
                 // 「推出去」本身不能有动画，否则撞墙那一下是软的
                 bounce = CGFloat(model.bounceDirection) * Spec.bounceDistance
@@ -232,7 +240,7 @@ private struct SectionHeader: View {
         }
         .padding(.horizontal, Spec.listPadding + 6)
         .padding(.vertical, 7)
-        // sticky header 必须不透明，否则滚过去时文字会压在行上
+        // 不透明底：标题滚过缩略图行时文字不能透出底下内容
         .background(Color(NSColor.windowBackgroundColor))
     }
 }
