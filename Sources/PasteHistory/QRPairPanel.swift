@@ -23,7 +23,10 @@ final class QRPairPanel {
 
     private func buildPanel() {
         let hosting = NSHostingController(rootView: PairPanelView(model: model) {
-            Task { @MainActor in Self.shared.model.refresh() }
+            Task { @MainActor in
+                WebSyncServer.shared.refreshPairingCode()
+                Self.shared.model.refresh()
+            }
         })
         let panel = NSPanel(contentViewController: hosting)
         panel.styleMask = [.titled, .closable, .fullSizeContentView]
@@ -35,7 +38,7 @@ final class QRPairPanel {
         panel.collectionBehavior = [.canJoinAllSpaces]
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
-        panel.setContentSize(NSSize(width: 320, height: 452))
+        panel.setContentSize(NSSize(width: 320, height: 420))
         panel.center()
         self.panel = panel
     }
@@ -81,15 +84,38 @@ private struct PairPanelView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(spacing: 3) {
-                Text(L10n.phoneSync)
-                    .font(.system(size: 14, weight: .medium))
-                Text(L10n.phoneSyncSubtitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color(NSColor.tertiaryLabelColor))
+            ZStack(alignment: .topTrailing) {
+                VStack(spacing: 3) {
+                    Text(L10n.phoneSync)
+                        .font(.system(size: 14, weight: .medium))
+                    Text(L10n.phoneSyncSubtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color(NSColor.tertiaryLabelColor))
+                }
+
+                HStack(spacing: 8) {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(Color(NSColor.tertiaryLabelColor))
+                        .help(L10n.encrypted)
+                        .accessibilityLabel(L10n.encrypted)
+                    Button {
+                        onRefresh()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 12, weight: .medium))
+                            .frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(Color.accentColor)
+                    .contentShape(Rectangle())
+                    .help(L10n.refreshQRCode)
+                    .accessibilityLabel(L10n.refreshQRCode)
+                }
             }
-            .padding(.top, 18)
-            .padding(.bottom, 14)
+            .padding(.top, 14)
+            .padding(.horizontal, 18)
+            .padding(.bottom, 12)
 
             Group {
                 if let qr = model.qr {
@@ -140,6 +166,7 @@ private struct PairPanelView: View {
                 }
                 .buttonStyle(.borderless)
                 .help(L10n.clearAddress)
+                .accessibilityLabel(L10n.clearAddress)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
@@ -158,26 +185,9 @@ private struct PairPanelView: View {
                     .padding(.horizontal, 20)
             }
 
-            HStack(spacing: 5) {
-                Image(systemName: "lock.fill")
-                    .font(.system(size: 9.5))
-                    .foregroundStyle(Color(NSColor.tertiaryLabelColor))
-                Text(L10n.encrypted)
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(Color(NSColor.tertiaryLabelColor))
-            }
-            .padding(.top, 12)
-            .padding(.bottom, 14)
-
             Spacer(minLength: 0)
-
-            Button(L10n.refreshQRCode, action: onRefresh)
-                .buttonStyle(.borderless)
-                .font(.system(size: 11))
-                .foregroundStyle(Color.accentColor)
-                .padding(.bottom, 14)
         }
-        .frame(width: 320)
+        .frame(width: 320, height: 420)
         .background(Color(NSColor.windowBackgroundColor))
     }
 }
