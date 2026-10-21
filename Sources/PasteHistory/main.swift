@@ -101,10 +101,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 冒烟：--print-ax 把辅助功能权限状态写到文件（便于脚本断言）；未授权时弹一次系统对话框
         if args.contains("--print-ax") {
-            var status = PasteService.isTrusted() ? "trusted" : "not-trusted"
-            if status == "not-trusted" {
+            if !PasteService.isTrusted() {
                 _ = PasteService.requestTrust()
             }
+            let status = PasteService.isTrusted() ? "trusted" : "not-trusted"
             let out = FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent("Library/Application Support/PasteHistory/ax_status.txt")
             try? status.write(to: out, atomically: true, encoding: .utf8)
@@ -138,7 +138,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func firstRun() {
-        _ = PasteService.requestTrust()
+        if !PasteService.isTrusted() {
+            _ = PasteService.requestTrust()
+        }
         let alert = NSAlert()
         alert.messageText = L10n.firstRunTitle
         alert.informativeText = L10n.firstRunInfo
