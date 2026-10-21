@@ -89,10 +89,15 @@ PasteHistory.app/Contents/MacOS/PasteHistory --restore-images   # 从 iCloud 恢
 
 ## 修改时务必遵守
 
-1. **动效别再走「禁用动画」这条路**：连按方向键时把弹簧压短（`Motion.selectionFast`），
-   不是关掉——关掉等于瞬移，而连续移动恰恰是最需要阻尼的时刻。同理，选中高亮必须是
-   **一个会移动的物体**（`matchedGeometryEffect`），而不是每行的 `fill` 各自淡入淡出：
-   后者中间没有任何东西在走，人眼对交叉淡化几乎无感，表现出来就是「上下选中的感觉没了」。
+1. **任何状态切换都必须有阻尼感，没有阻尼感就不觉得流畅**（用户原话，最高优先级）。
+   这条**优先于密度、优先于「一屏多显示几条」这类优化**——行内展开被删那次阻尼感跟着
+   一起没了，用户当场就发现。删交互前先问一句：还有阻尼感吗？
+   - 阻尼感 = **有一个东西真的在移动** × **幅度够大** × **连续可打断**，缺一个就没感觉。
+   - 所以选中高亮必须是**一个会移动的物体**（`matchedGeometryEffect`），而不是每行的
+     `fill` 各自淡入淡出：后者中间没有任何东西在走，人眼对交叉淡化几乎无感，
+     表现出来就是「上下选中的感觉没了」。
+   - 连按方向键时**把弹簧压短**（`Motion.selectionFast`），不是关掉
+     （`disablesAnimations = true`）。关掉等于瞬移，而连续移动恰恰最需要阻尼。
 2. **HTTP 服务不能跑 MainActor**。菜单跟踪（nested runloop）或主线程弹窗会让服务假死。
    路由/加解密全在 `queue`（`com.verdent.pastehistory.websync`）；读用独立 SQLite 连接，写 `DispatchQueue.main.async`。
 3. **禁止用 `NSJSONSerialization` 序列化顶层 String**——会抛 ObjC 异常直接崩进程，用 `JSONEncoder`。
