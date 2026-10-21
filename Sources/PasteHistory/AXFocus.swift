@@ -32,12 +32,17 @@ enum AXFocus {
         return value as? String
     }
 
+    /// 元素角色（AXTextField / AXTextArea / AXWindow …），诊断用
+    static func role(of element: AXUIElement) -> String? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, "AXRole" as CFString, &value) == .success else { return nil }
+        return value as? String
+    }
+
     /// 只有真正的输入框才值得把面板贴过去：focusedElement 常常返回窗口 / 容器，
     /// 贴上去等于贴到半个屏幕
     static func isTextInput(_ element: AXUIElement) -> Bool {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, "AXRole" as CFString, &value) == .success,
-              let role = value as? String else { return false }
+        guard let role = role(of: element) else { return false }
         return ["AXTextField", "AXTextArea", "AXSecureTextField", "AXComboBox", "AXSearchField"]
             .contains(role)
     }

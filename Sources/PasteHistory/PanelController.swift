@@ -192,33 +192,44 @@ final class PanelController: NSObject, NSWindowDelegate {
         // 先问「输入框在哪」，再决定用哪块屏：
         // 多屏时鼠标常在另一块屏上，按鼠标屏去夹取会把面板贴到错的地方
         var anchor: (rect: CGRect, screen: NSScreen)?
-        if Settings.shared.anchorPanel,
-           let element,
-           AXFocus.isTextInput(element) {         // 窗口 / 容器不算输入框
-            // 优先贴光标：文本区可能半屏高，整框贴上去必挡正文；光标才是你在看的位置
+        let tracing = Self.traceURL != nil
+        if Settings.shared.anchorPanel, let element {
+            // 优先贴光标：文本区可能半屏高，整框贴上去必挡正文；光标才是你在看的位置。
+            // 能取到光标的一定是文本类元素（按钮、窗口没有 AXSelectedTextRange），
+            // 所以这一路不看角色——自绘控件的角色名字常常不在白名单里。
             let caret = AXFocus.caretFrame(of: element)
             let whole = AXFocus.frame(of: element)
-            if ProcessInfo.processInfo.arguments.contains("--trace-anchor") {
-                NSLog("[PH] anchor: probe caret=%@ frame=%@",
-                      caret.map { String(format: "(%.0f, %.0f, %.0fx%.0f)", $0.minX, $0.minY, $0.width, $0.height) } ?? "nil",
-                      whole.map { String(format: "(%.0f, %.0f, %.0fx%.0f)", $0.minX, $0.minY, $0.width, $0.height) } ?? "nil")
+            let role = AXFocus.role(of: element)
+            if tracing {
+                trace(String(format: "probe app=%@ role=%@ trusted=%@ caret=%@ frame=%@",
+                             AppTracker.targetApp()?.localizedName ?? "nil",
+                             role ?? "nil",
+                             PasteService.isTrusted() ? "yes" : "no",
+                             Self.fmt(caret), Self.fmt(whole)))
             }
             if let caret {
                 let center = NSPoint(x: caret.midX, y: axisHeight - caret.midY)
                 if let s = NSScreen.screens.first(where: { $0.frame.contains(center) }) {
                     anchor = (caret, s)
+                } else if tracing {
+                    trace("caret center not on any screen -> skip")
                 }
             }
-            // 拿不到光标（部分自绘控件）再退回整框，但高过半屏的一律当容器不贴
+            // 拿不到光标（部分自绘控件）再退回整框，但要认角色 + 尺寸像个输入框
             if anchor == nil,
+               AXFocus.isTextInput(element),      // 窗口 / 容器不算输入框
                let field = whole,
                field.width > 8, field.height > 8 {
                 let center = NSPoint(x: field.midX, y: axisHeight - field.midY)
                 if let s = NSScreen.screens.first(where: { $0.frame.contains(center) }),
                    field.height <= s.visibleFrame.height / 2 {
                     anchor = (field, s)
+                } else if tracing {
+                    trace("frame rejected (off-screen or taller than half screen)")
                 }
             }
+        } else if tracing {
+            trace("anchorPanel=\(Settings.shared.anchorPanel) element=\(element == nil ? "nil" : "有")")
         }
 
         let mouse = NSEvent.mouseLocation
@@ -233,16 +244,16 @@ final class PanelController: NSObject, NSWindowDelegate {
         let gap: CGFloat = 6      // 紧贴但不粘连，留一线
         let margin: CGFloat = 12  // 屏幕边缘留白
 
-        // --trace-anchor：真机验收时能看到面板到底贴到了哪、为什么这么贴
-        let tracing = ProcessInfo.processInfo.arguments.contains("--trace-anchor")
+        // --trace-anchor 时把每次定位都写进文件，这样用真快捷键（不是 Terminal 启动）
+        // 触发的场景也能复盘——从 Terminal 启动会把前台抢走，探针永远探不到真实输入框
         let apply: (NSPoint, String, CGRect?) -> Void = { origin, why, field in
             panel.setFrameOrigin(origin)
             guard tracing else { return }
-            NSLog("[PH] anchor: %@ panel=(%.0f, %.0f, %.0fx%.0f) visible=(%.0f, %.0f, %.0fx%.0f) field=%@",
-                  why,
-                  origin.x, origin.y, size.width, size.height,
-                  visible.minX, visible.minY, visible.width, visible.height,
-                  field.map { String(format: "(%.0f, %.0f, %.0fx%.0f)", $0.minX, $0.minY, $0.width, $0.height) } ?? "nil")
+            self.trace(String(format: "%@ panel=(%.0f, %.0f) visible=(%.0f, %.0f, %.0fx%.0f) anchor=%@",
+                              why,
+                              origin.x, origin.y,
+                              visible.minX, visible.minY, visible.width, visible.height,
+                              Self.fmt(field)))
         }
 
         if let (field, _) = anchor {
@@ -281,6 +292,33 @@ final class PanelController: NSObject, NSWindowDelegate {
         apply(NSPoint(x: x, y: max(y, visible.minY + 20)),
               Settings.shared.anchorPanel ? "fallback-center" : "anchoring-off",
               nil)
+    }
+
+    // MARK: - 定位诊断
+
+    /// --trace-anchor 时才有值。写文件而不是 NSLog：真快捷键触发的场景看不到 stdout
+    private static let traceURL: URL? = {
+        guard ProcessInfo.processInfo.arguments.contains("--trace-anchor") else { return nil }
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/PasteHistory/anchor_trace.log")
+    }()
+
+    private func trace(_ line: String) {
+        guard let url = Self.traceURL else { return }
+        let text = "\(ISO8601DateFormatter().string(from: Date())) \(line)\n"
+        guard let data = text.data(using: .utf8) else { return }
+        if let handle = try? FileHandle(forWritingTo: url) {
+            handle.seekToEndOfFile()
+            try? handle.write(contentsOf: data)
+            try? handle.close()
+        } else {
+            try? data.write(to: url)
+        }
+    }
+
+    private static func fmt(_ rect: CGRect?) -> String {
+        guard let r = rect else { return "nil" }
+        return String(format: "(%.0f, %.0f, %.0fx%.0f)", r.minX, r.minY, r.width, r.height)
     }
 
     // MARK: - 键盘（面板内快捷键）

@@ -36,6 +36,9 @@ enum L10n {
     static var iCloudUnsynced: String { value("iCloud 未同步", "iCloud 未同步", "iCloud Not Synced") }
     static var pauseRecording: String { value("暂停记录", "暫停記錄", "Pause Recording") }
     static var anchorPanelToInput: String { value("面板跟随输入框", "面板跟隨輸入框", "Anchor Panel to Input") }
+    static var anchorPanelNeedPermission: String {
+        value("面板跟随输入框（缺辅助功能权限）", "面板跟隨輸入框（缺少輔助功能權限）", "Anchor Panel to Input (needs Accessibility)")
+    }
     static var clearHistory: String { value("清空历史…", "清除歷史記錄…", "Clear History…") }
     static var quit: String { value("退出 PasteHistory", "結束 PasteHistory", "Quit PasteHistory") }
     static var clipboardHistoryAccessibility: String { value("剪贴板历史", "剪貼簿歷史", "Clipboard history") }

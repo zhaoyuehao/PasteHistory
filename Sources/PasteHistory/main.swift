@@ -197,6 +197,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let anchor = NSMenuItem(title: L10n.anchorPanelToInput, action: #selector(toggleAnchor(_:)), keyEquivalent: "")
         anchor.state = Settings.shared.anchorPanel ? .on : .off
         anchor.image = Self.menuIcon("rectangle.bottomthird.inset.filled")
+        anchor.tag = Self.anchorMenuItemTag
         menu.addItem(anchor)
 
         let pause = NSMenuItem(title: L10n.pauseRecording, action: #selector(togglePause(_:)), keyEquivalent: "")
@@ -229,6 +230,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private static let syncMenuItemTag = 9003
+    private static let anchorMenuItemTag = 9004
 
     @objc private func showQR() {
         QRPairPanel.shared.show()
@@ -253,6 +255,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func toggleAnchor(_ sender: NSMenuItem) {
         Settings.shared.anchorPanel.toggle()
         sender.state = Settings.shared.anchorPanel ? .on : .off
+        // 打开这个开关就是明确要「贴住输入框」，这时候要权限才合理。
+        // 拿不到权限时功能是隐形的（默默退回居中），不如当场问一次
+        if Settings.shared.anchorPanel, !PasteService.isTrusted() {
+            _ = PasteService.requestTrust()
+        }
     }
 
     @objc private func cyclePaste() {
@@ -282,6 +289,11 @@ extension AppDelegate: NSMenuDelegate {
         // 同步正常时这一项根本不存在；只有确实没同步上才开口
         if let syncItem = menu.item(withTag: Self.syncMenuItemTag) {
             syncItem.isHidden = !(Settings.shared.iCloudSync && !iCloudSync.shared.isActive)
+        }
+        // 开着跟随但没给辅助功能权限时，功能其实是隐形的——把话说出来
+        if let anchorItem = menu.item(withTag: Self.anchorMenuItemTag) {
+            let needsTrust = Settings.shared.anchorPanel && !PasteService.isTrusted()
+            anchorItem.title = needsTrust ? L10n.anchorPanelNeedPermission : L10n.anchorPanelToInput
         }
     }
 }
