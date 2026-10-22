@@ -197,6 +197,12 @@ struct HistoryView: View {
                     : Motion.selection
                 withAnimation(anim) { proxy.scrollTo(results[newValue].id) }
             }
+            .onChange(of: model.presentationTick) { _, _ in
+                // 滚轮/触控板滚动不改变 selection：上次滚到哪儿，重开面板就停在哪儿——
+                // 「Today」分组标题有时不在顶上就是它。打开 = 一次新的「找」，视口也回顶。
+                // 声明在 safeSelection 的 onChange 之后：同为 scrollTo 时后声明者生效
+                proxy.scrollTo(entries.first?.id, anchor: .top)
+            }
             .onChange(of: model.bounceTick) { _, _ in
                 // 弹簧还没停就再次撞墙（按住方向键的 key repeat）不再重新推——
                 // 每次都瞬间位移再回弹，动作永远叠不严，看起来就是抖。
