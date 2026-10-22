@@ -349,6 +349,8 @@ final class Settings {
         static let iCloudInitialExport = "iCloudInitialExportDone"
         static let machineId = "syncMachineId"
         static let anchorPanel = "anchorPanelToInput"
+        static let panelWidth = "panelWidth"
+        static let panelHeight = "panelHeight"
     }
 
     var maxItems: Int {
@@ -386,6 +388,18 @@ final class Settings {
     var anchorPanel: Bool {
         get { defaults.object(forKey: Key.anchorPanel) == nil ? true : defaults.bool(forKey: Key.anchorPanel) }
         set { defaults.set(newValue, forKey: Key.anchorPanel) }
+    }
+
+    /// 面板尺寸：用户拖边调整后的选择。未存过（0）→ φ 默认 400×647（与 Theme.Panel 一致）。
+    /// 读时夹回可调范围，防外部写入越界
+    var panelWidth: CGFloat {
+        get { let v = defaults.double(forKey: Key.panelWidth); return v <= 0 ? 400 : min(max(v, 340), 940) }
+        set { defaults.set(newValue, forKey: Key.panelWidth) }
+    }
+
+    var panelHeight: CGFloat {
+        get { let v = defaults.double(forKey: Key.panelHeight); return v <= 0 ? 647 : min(max(v, 360), 1200) }
+        set { defaults.set(newValue, forKey: Key.panelHeight) }
     }
 
     /// iCloud 同步开关（默认开；未登录 iCloud Drive 时自动无效）

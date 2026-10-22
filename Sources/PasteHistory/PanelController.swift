@@ -177,9 +177,9 @@ final class PanelController: NSObject, NSWindowDelegate {
         // 内容顶到窗口上缘：不要让 titlebar 的 safe area 白白吃掉顶部
         hosting.safeAreaRegions = []
         let panel = NSPanel(contentViewController: hosting)
-        // 400×647（黄金矩形，= 400×φ）固定，不可 resize：工具不是家具，不该让用户承担调尺寸的责任。
-        // 窗口尺寸不参与展开动画（高度固定），否则窗口动画与内容动画会打架
-        panel.styleMask = [.titled, .closable, .fullSizeContentView, .nonactivatingPanel]
+        // 默认 400×647（= 400×φ，黄金矩形）；可拖边调整并记住用户选择——
+        // 默认值给设计，自由度给用户。避让收缩只影响本次落位，不回写偏好
+        panel.styleMask = [.titled, .closable, .fullSizeContentView, .nonactivatingPanel, .resizable]
         panel.title = L10n.panelTitle
         panel.titlebarAppearsTransparent = true
         panel.titleVisibility = .hidden
@@ -194,10 +194,10 @@ final class PanelController: NSObject, NSWindowDelegate {
         panel.isMovableByWindowBackground = true
         panel.isReleasedWhenClosed = false
         panel.backgroundColor = NSColor.windowBackgroundColor
-        // 400 宽恒定；647（= 宽×φ）是放得下时的高度，贴着输入框放不下时收到 400~647 之间
+        // 宽 340~940、高 360~1200：下限是行内解剖与扫读的存活线，上限防呆
         panel.setContentSize(NSSize(width: Panel.width, height: Panel.maxHeight))
-        panel.minSize = NSSize(width: Panel.width, height: Panel.minHeight)
-        panel.maxSize = NSSize(width: Panel.width, height: Panel.maxHeight)
+        panel.minSize = NSSize(width: Panel.minWidth, height: Panel.minHeight)
+        panel.maxSize = NSSize(width: 940, height: 1200)
         panel.delegate = self
         self.panel = panel
     }
@@ -284,8 +284,8 @@ final class PanelController: NSObject, NSWindowDelegate {
             let x = min(max(alignX ?? a.minX, visible.minX + margin),
                         max(visible.minX + margin, visible.maxX - Panel.width - margin))
 
-            // 高度按可用空间收：放得下就 647，放不下就收到恰好塞进去，但不矮于 400
-            // （收缩区间 [400, 647] 两端成 φ）。收矮比夹到屏幕边上强——夹边必然
+            // 高度按可用空间收：放得下就用期望高度（用户选择或 φ 默认），放不下收到
+            // 恰好塞进去，但不矮于 360。收矮比夹到屏幕边上强——夹边必然
             // 压住输入框，收矮只是少显示几行
             func fit(_ space: CGFloat) -> CGFloat {
                 min(Panel.maxHeight, max(Panel.minHeight, space))
@@ -499,6 +499,14 @@ final class PanelController: NSObject, NSWindowDelegate {
     func togglePreview() { preview.toggle() }
 
     // MARK: - NSWindowDelegate
+
+    /// 用户拖边结束：记住选择。程序化的 setContentSize（避让收缩）不经过这里，
+    /// 所以临时收矮不会污染用户偏好
+    func windowDidEndLiveResize(_ notification: Notification) {
+        guard let panel, notification.object as? NSWindow === panel else { return }
+        Settings.shared.panelWidth = panel.frame.width
+        Settings.shared.panelHeight = panel.frame.height
+    }
 
     func windowDidResignKey(_ notification: Notification) {
         // 焦点的去向要等一拍才问得出（makeKey 交接有时序）：

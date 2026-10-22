@@ -84,7 +84,7 @@ struct HistoryView: View {
         }
         // 高度不写死：贴着输入框放不下时窗口会收，列表跟着滚。
         // 写死 647 的话，窗口被压小后 SwiftUI 会把内容裁掉而不是滚动
-        .frame(minWidth: Panel.width, maxWidth: Panel.width,
+        .frame(minWidth: Panel.minWidth, maxWidth: .infinity,
                minHeight: Panel.minHeight, maxHeight: .infinity)
         // 内容顶到窗口上缘，别让标题栏白白占 28pt
         .ignoresSafeArea()
