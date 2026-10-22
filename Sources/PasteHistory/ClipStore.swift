@@ -429,16 +429,15 @@ final class Settings {
         set { defaults.set(newValue, forKey: Key.panelViewCurtain) }
     }
 
-    /// 线签帘的外框记忆：签卡 ~170 宽 + 三层深度横向散布，400 宽挤成一团。
-    /// 默认 500×809 = 500×φ——与列表的 400×647（400×φ）同一 φ 外框族、大一号；
-    /// 独立记忆，⌘L 切换时窗口跟着换、互不覆盖
+    /// 许愿树的外框记忆：横向枝线结构要横向空间——默认 **809×500 = 500×φ 横过来**，
+    /// 与列表的 400×647（400×φ 竖版）同一 φ 外框族。独立记忆，⌘L 互不覆盖
     var curtainWidth: CGFloat {
-        get { let v = defaults.double(forKey: Key.curtainWidth); return v <= 0 ? 500 : min(max(v, 340), 940) }
+        get { let v = defaults.double(forKey: Key.curtainWidth); return v <= 0 ? 809 : min(max(v, 340), 1200) }
         set { defaults.set(newValue, forKey: Key.curtainWidth) }
     }
 
     var curtainHeight: CGFloat {
-        get { let v = defaults.double(forKey: Key.curtainHeight); return v <= 0 ? 809 : min(max(v, 360), 1200) }
+        get { let v = defaults.double(forKey: Key.curtainHeight); return v <= 0 ? 500 : min(max(v, 360), 940) }
         set { defaults.set(newValue, forKey: Key.curtainHeight) }
     }
 
