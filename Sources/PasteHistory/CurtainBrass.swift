@@ -126,6 +126,19 @@ private struct CurtainStageRepresentable: NSViewRepresentable {
     let width: CGFloat
     let height: CGFloat
 
+    /// 变化缓存：TimelineView 每帧都调 updateNSView，但雕塑只在
+    /// 生长/视差/尺寸变化时才需要动。之前每帧无条件重写全部属性，
+    /// SceneKit 有写就整场重渲（PBR+IBL+MSAA）——在原有 2D 管线上
+    /// 又叠了个 60fps 3D 循环，按住方向键时 CPU/GPU 双满，真机卡顿
+    /// 实锤。现在值没变就一个属性都不碰，方向键导航期间渲染循环归零。
+    final class Coordinator {
+        var growth: CGFloat = -1
+        var panX: CGFloat = .nan
+        var width: CGFloat = -1
+        var height: CGFloat = -1
+    }
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func makeNSView(context: Context) -> PassthroughSCNView {
         let view = PassthroughSCNView()
         view.scene = CurtainBrass.scene
@@ -137,13 +150,25 @@ private struct CurtainStageRepresentable: NSViewRepresentable {
     }
 
     func updateNSView(_ view: PassthroughSCNView, context: Context) {
+        let last = context.coordinator
+        let growthMoved = abs(growth - last.growth) > 0.002
+        let panMoved = abs(panX - last.panX) > 0.3
+        let resized = width != last.width || height != last.height
+        guard growthMoved || panMoved || resized else { return }
+        last.growth = growth
+        last.panX = panX
+        last.width = width
+        last.height = height
+
         guard let scene = view.scene,
               let group = scene.rootNode.childNode(withName: "brass", recursively: false),
               let cam = scene.rootNode.childNode(withName: "camera", recursively: false) else { return }
 
         // 相机：fov 贴面板高度，让 z=0 平面 1 world unit = 1pt；
         // 横向微移 = 视差（卡在深 40..280，雕塑自带 ±72 的真实纵深）
-        cam.camera?.fieldOfView = 2 * atan(height / 2 / Curtain.persp) * 180 / .pi
+        if resized {
+            cam.camera?.fieldOfView = 2 * atan(height / 2 / Curtain.persp) * 180 / .pi
+        }
         cam.position = SCNVector3(Float(-panX), 0, Float(Curtain.persp))
 
         let k = width * CurtainBrass.kRatio
