@@ -12,6 +12,10 @@ mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 
 cp ".build/release/PasteHistory" "$APP_DIR/Contents/MacOS/PasteHistory"
 cp "Resources/Info.plist" "$APP_DIR/Contents/Info.plist"
+# SwiftPM 资源 bundle（许愿树素材）：Bundle.module 从 app 的 Resources 里找
+if [ -d ".build/release/PasteHistory_PasteHistory.bundle" ]; then
+  cp -R ".build/release/PasteHistory_PasteHistory.bundle" "$APP_DIR/Contents/Resources/"
+fi
 
 # 签名身份优先级：Apple Development（稳定，TCC 授权跨重建保留）> 自签名 PasteHistory > ad-hoc
 # 说明：ad-hoc 签名没有稳定身份，TCC（辅助功能权限）按 cdhash 匹配，

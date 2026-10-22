@@ -8,6 +8,7 @@ let package = Package(
         .executableTarget(
             name: "PasteHistory",
             path: "Sources/PasteHistory",
+            resources: [.process("Resources")],
             swiftSettings: [.swiftLanguageMode(.v5)],
             linkerSettings: [
                 .linkedFramework("Carbon"),

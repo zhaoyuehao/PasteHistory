@@ -1,4 +1,5 @@
 import AppKit
+import CoreImage
 import SwiftUI
 
 // MARK: - 参数
@@ -122,6 +123,27 @@ enum Curtain {
 
     /// 冒烟：--view tags 强制许愿树（不写用户偏好）
     static var debugForce = false
+
+    /// 树素材的世界区域：树冠顶到根底
+    static let crownTopY: CGFloat = 21
+    static let rootBaseY: CGFloat = 433
+
+    /// 生成的树素材（AI 水墨树，黑底 RGB）：加载时把亮度转成透明度——
+    /// alpha = 0.75R + 1.5G + 0.25B（≈亮度×2.5，钳到 [0,1]），
+    /// 树身不透明、黑底全透。笔画树怎么调都「假」，素材自带枝干粗细
+    /// 变化与笔触（真机反馈：树有点假，能用模型搞个真些的吗）
+    static let treeImage: CGImage? = {
+        guard let url = Bundle.module.url(forResource: "tree", withExtension: "png"),
+              let ci = CIImage(contentsOf: url) else { return nil }
+        guard let matrix = CIFilter(name: "CIColorMatrix") else { return nil }
+        matrix.setValue(ci, forKey: kCIInputImageKey)
+        matrix.setValue(CIVector(x: 0.75, y: 1.5, z: 0.25, w: 0), forKey: "inputAVector")
+        guard let clamp = CIFilter(name: "CIColorClamp") else { return nil }
+        clamp.setValue(matrix.outputImage, forKey: kCIInputImageKey)
+        let context = CIContext()
+        guard let out = clamp.outputImage else { return nil }
+        return context.createCGImage(out, from: out.extent)
+    }()
 }
 
 // MARK: - 物理
@@ -646,74 +668,40 @@ struct TagCurtainView: View {
         ctx.fill(Path(ellipseIn: moonOuter), with: .color(Curtain.moon.opacity(0.07)))
     }
 
-    /// 树干（clip 从底部向上长）+ 斜枝（从树干伸向每个挂点，按进度伸展）
+    /// 生成的树素材（AI 水墨树）：替代笔画树——笔画怎么调都「假」，素材
+    /// 自带枝干粗细变化与笔触。生长 = clip 自底向上，根先立、冠后成
     private func drawTree(ctx: inout GraphicsContext, size: CGSize, cameraY: CGFloat, width: CGFloat) {
         let growth = sim.currentGrowth
         let count = min(max(items.count - sim.windowStart, 0), Curtain.maxBranches)
         let layoutWidth = sim.layoutWidth
-        let trunkX = Curtain.spineXRatio * layoutWidth
-        let crownY = Curtain.levelBaseY - 34
 
-        let trunkGrowth = min(1, growth / Curtain.trunkPhase)
-        if trunkGrowth > 0.01 {
-            let clipRect = CGRect(x: 0, y: size.height * (1 - trunkGrowth),
-                                  width: size.width, height: size.height * trunkGrowth)
-            ctx.clip(to: Path(clipRect))
-            let base = CGPoint(x: trunkX, y: Curtain.trunkBaseY - cameraY)
-            let top = CGPoint(x: trunkX, y: crownY - cameraY)
-            let mid = CGPoint(x: trunkX + 10, y: (Curtain.trunkBaseY + crownY) / 2 - cameraY)
-            var trunk = Path()
-            trunk.move(to: base)
-            trunk.addQuadCurve(to: top, control: mid)
-            ctx.stroke(trunk, with: .color(Curtain.inkBranch),
-                       style: StrokeStyle(lineWidth: 13, lineCap: .round))
-            // 浅芯一笔 = 受光的树皮，两笔出体积（13:5 均为 Fib）
-            ctx.stroke(trunk, with: .color(Curtain.barkHighlight),
-                       style: StrokeStyle(lineWidth: 5, lineCap: .round))
-            // 侧根两条：必须画在视口内——树要看得见「扎根」，不是悬空
-            // （之前画在 y530-590，视口只有 438 高，等于没画）
-            let rootY = min(377 - cameraY, size.height - 12)
-            var rootL = Path()
-            rootL.move(to: CGPoint(x: trunkX, y: rootY + 34))
-            rootL.addQuadCurve(to: CGPoint(x: trunkX - 44, y: rootY),
-                               control: CGPoint(x: trunkX - 26, y: rootY + 22))
-            ctx.stroke(rootL, with: .color(Curtain.inkBranch),
-                       style: StrokeStyle(lineWidth: 6, lineCap: .round))
-            var rootR = Path()
-            rootR.move(to: CGPoint(x: trunkX, y: rootY + 34))
-            rootR.addQuadCurve(to: CGPoint(x: trunkX + 38, y: rootY - 4),
-                               control: CGPoint(x: trunkX + 22, y: rootY + 20))
-            ctx.stroke(rootR, with: .color(Curtain.inkBranch),
-                       style: StrokeStyle(lineWidth: 5, lineCap: .round))
+        if let tree = Curtain.treeImage {
+            let trunkGrowth = min(1, growth / Curtain.trunkPhase)
+            if trunkGrowth > 0.01 {
+                let clipRect = CGRect(x: 0, y: size.height * (1 - trunkGrowth),
+                                      width: size.width, height: size.height * trunkGrowth)
+                ctx.clip(to: Path(clipRect))
+                // fit 高度：树冠顶/根底都完整，水平居中（素材 1.5:1，
+                // 场景区 809×412 → 树宽 ≈ 618，挂点 155..655 全落在树冠里）
+                let ih = CGFloat(tree.height)
+                let regionHeight = Curtain.rootBaseY - Curtain.crownTopY
+                let scale = regionHeight / ih
+                let dw = CGFloat(tree.width) * scale
+                let dest = CGRect(x: layoutWidth / 2 - dw / 2,
+                                  y: Curtain.crownTopY - cameraY,
+                                  width: dw,
+                                  height: regionHeight)
+                ctx.draw(GraphicsContext.Image(tree), in: dest)
+            }
         }
 
-        // 斜枝：每条枝从树干出发伸向挂点（着生点低于挂点，向上向外伸）。
-        // 外列的枝着生得更低 → 更陡，不横伸；按生长进度画部分曲线
+        // 挂点木结：枝线由素材承担，结标记绳的着生点
         for li in 0..<count {
             let b = sim.branchProgress(li, count: max(count, 1), growth: growth)
-            guard b > 0.01 else { continue }
-            let tipY = Curtain.tipY(li)
-            let drop = Curtain.columnDepth[Curtain.column(li)] > 100
-                ? Curtain.outerBranchDrop
-                : Curtain.innerBranchDrop
-            let sy = min(tipY + drop, Curtain.trunkBaseY - 40)
-            let start = CGPoint(x: trunkX, y: sy - cameraY)
-            let tip = CGPoint(x: Curtain.tipX(li, width: layoutWidth), y: tipY - cameraY)
-            let control = CGPoint(x: (start.x + tip.x) / 2, y: (start.y + tip.y) / 2 - 24)
-            let u = 1 - pow(1 - b, 2)
-            let mu = 1 - u
-            let end = CGPoint(x: mu * mu * start.x + 2 * mu * u * control.x + u * u * tip.x,
-                              y: mu * mu * start.y + 2 * mu * u * control.y + u * u * tip.y)
-            var branch = Path()
-            branch.move(to: start)
-            branch.addQuadCurve(to: end, control: control)
-            ctx.stroke(branch, with: .color(Curtain.inkBranch.opacity(min(1, b * 2))),
-                       style: StrokeStyle(lineWidth: max(3, 5 - (sy - tipY) / 60),
-                                          lineCap: .round))
-            if b > 0.9 {
-                let beadRect = CGRect(x: tip.x - 2.4, y: tip.y - 2.4, width: 4.8, height: 4.8)
-                ctx.fill(Path(ellipseIn: beadRect), with: .color(Curtain.bead))
-            }
+            guard b > 0.9 else { continue }
+            let tip = CGPoint(x: Curtain.tipX(li, width: layoutWidth), y: Curtain.tipY(li) - cameraY)
+            let beadRect = CGRect(x: tip.x - 2.4, y: tip.y - 2.4, width: 4.8, height: 4.8)
+            ctx.fill(Path(ellipseIn: beadRect), with: .color(Curtain.bead))
         }
     }
 
