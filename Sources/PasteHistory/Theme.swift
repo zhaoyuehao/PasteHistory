@@ -29,6 +29,25 @@ enum Icon {
     static let thumb: CGFloat = 15
 }
 
+// MARK: - 间距档
+
+/// 间距档位：Fibonacci 阶梯。相邻 Fib 数之比收敛于 φ（13/8=1.625、21/13=1.615），
+/// 且落在整数 pt 上——用整数近似拿到 φ 的模度。字号四档、图标三档之后的第三块拼图：
+/// 以前间距散着 2/3/5/8/10/12/14/16/18/20/22，现在统一回档，新界面有档可查。
+///
+/// 规则：回最近档，等距取小；行高 44 与控件高度（52/20）不进阶梯——
+/// 触达常数优先于模度。圆角 8:5 也是 Fib φ 对（「黄金圆」的整数近似）。
+/// 例外：QR 卡衬边 11 不是档位数，是 φ 精确点（198:320≈φ⁻¹），见 QRPairPanel 注释。
+enum Rhythm {
+    static let xs: CGFloat = 2
+    static let s: CGFloat = 3
+    static let m: CGFloat = 5
+    static let l: CGFloat = 8
+    static let xl: CGFloat = 13
+    static let xxl: CGFloat = 21
+    static let xxxl: CGFloat = 34
+}
+
 // MARK: - 面板尺寸
 
 /// 面板外框是一个黄金矩形：400 × 647（= 400 × φ）。
