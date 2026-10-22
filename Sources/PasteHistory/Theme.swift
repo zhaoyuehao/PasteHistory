@@ -75,16 +75,15 @@ enum Panel {
 
 /// 空格预览大窗。宽度恒定；高度按内容形态给，塞不下收到恰好放得下。
 ///
-/// 落位跟着面板走：右侧优先（间隙 12）→ 左侧 → 当前屏居中偏上，
-/// 绝不压住面板本体。
+/// 落位是「就地放大」：以面板为中心同心覆盖，从面板的几何长出来——
+/// 视线在哪里，预览就在哪里，绝不把视线拽到面板旁边。
 enum Preview {
     static let width: CGFloat = 640
     static let textHeight: CGFloat = 520
     static let imageHeight: CGFloat = 460
     static let filesHeight: CGFloat = 440
     static let minHeight: CGFloat = 300
-    /// 与面板的间隙 / 屏幕边缘留白
-    static let gap: CGFloat = 12
+    /// 屏幕边缘留白
     static let margin: CGFloat = 12
     /// 切换条目时新内容浮入的位移：有东西在移动，才谈得上阻尼感
     static let slideDistance: CGFloat = 16

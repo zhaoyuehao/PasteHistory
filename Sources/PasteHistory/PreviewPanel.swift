@@ -55,25 +55,24 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         closeGeneration += 1
         isClosing = false
         lastKind = item.kind
-        place(panel, for: item)
 
-        // 出现：与面板同款——opacity + scale 0.96→1，0.22s easeOut
-        panel.alphaValue = 0
-        if let view = panel.contentView {
-            view.wantsLayer = true
-            let scale = CABasicAnimation(keyPath: "transform.scale")
-            scale.fromValue = 0.96
-            scale.toValue = 1.0
-            scale.duration = 0.22
-            scale.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            view.layer?.add(scale, forKey: "previewAppear")
-            view.layer?.transform = CATransform3DIdentity
+        // 出现：从面板的几何长出来，就地把面板放大成预览——视线零移动。
+        // （侧边落位会把视线拽到面板旁边，用户明确不要）
+        // 「长出来」是幅度最大的动效：frame 插值本身就是那个在动的东西，
+        // 内容 scale 就不再叠加了，叠两层会过
+        let target = targetFrame(for: item)
+        if let anchor = owner?.previewAnchorFrame, anchor.width > 0 {
+            panel.setFrame(anchor, display: false)
+        } else {
+            panel.setFrame(target, display: false)
         }
+        panel.alphaValue = 0
         // 不 makeKey：键盘焦点始终留在面板，↑↓ 空格 Esc 全都照旧走面板
         panel.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.22
             ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().setFrame(target, display: true)
             panel.animator().alphaValue = 1
         }
     }
@@ -88,10 +87,15 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         if panel.isKeyWindow, let owner, owner.previewAnchorVisible {
             owner.makePanelKeyAgain()
         }
-        // 消失：与面板同款——只做 opacity，不缩放。缩小消失会读出「弹回」，廉价
+        // 消失：缩回面板的几何 + 渐隐——开窗是「长出来」，关窗就是「收回去」，
+        // 一来一回是同一趟旅程。普通的缩小消失会读出「弹回」很廉价，
+        // 但缩回「我出发的地方」有语义，跟 Finder Quick Look 收回图标同款
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.15
             ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            if let anchor = owner?.previewAnchorFrame, anchor.width > 0 {
+                panel.animator().setFrame(anchor, display: true)
+            }
             panel.animator().alphaValue = 0
         } completionHandler: { [weak self] in
             Task { @MainActor in
@@ -134,15 +138,17 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
 
     // MARK: - 落位
 
-    /// 面板右侧优先 → 塞不下翻左侧 → 两边都塞不下竖着叠（下优先）→ 实在没地方才居中偏上。
-    /// 绝不压住面板本体——视线还留在面板上扫，压住面板等于打断扫读。
-    /// 每次都按面板当前位置重算，不记忆上次落点
-    private func place(_ panel: NSPanel, for item: ClipItem, animated: Bool = false) {
+    /// 目标几何：**以面板为中心就地放大**——盖在面板上方，与面板同心。
+    /// 用户的视线就在面板上，侧边落位会把视线拽走（用户明确不要）。
+    /// 面板中心拿不到才退当前屏居中。屏幕放不下就收高，不挪中心。
+    private func targetFrame(for item: ClipItem) -> NSRect {
         let anchor = owner?.previewAnchorFrame
         let screen = anchor.flatMap { a in
             NSScreen.screens.first { $0.frame.intersects(a) }
         } ?? NSScreen.main ?? NSScreen.screens.first
-        guard let screen else { return }
+        guard let screen else {
+            return NSRect(x: 0, y: 0, width: Preview.width, height: Preview.textHeight)
+        }
         let visible = screen.visibleFrame
 
         // 窗高按内容形态给：文本 520，图片 460，文件 440；塞不下收到恰好放得下
@@ -153,56 +159,20 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         case .files: wanted = Preview.filesHeight
         }
         let available = visible.height - Preview.margin * 2
-        var height = min(wanted, max(Preview.minHeight, available))
+        let height = min(wanted, max(Preview.minHeight, available))
         let width = Preview.width
 
-        var x: CGFloat = 0
-        var y: CGFloat = 0
-        if let anchor {
-            let rightX = anchor.maxX + Preview.gap
-            let leftX = anchor.minX - Preview.gap - width
-            if rightX + width <= visible.maxX - Preview.margin {
-                x = rightX
-                y = anchor.midY - height / 2   // 垂直居中对齐面板
-            } else if leftX >= visible.minX + Preview.margin {
-                x = leftX
-                y = anchor.midY - height / 2
-            } else {
-                // 两边都塞不下（窄屏 / 面板居中）：竖着叠，也不许压住面板。
-                // 下方优先——面板是从输入框下拉的，视线顺着往下走
-                x = min(max(visible.midX - width / 2, visible.minX + Preview.margin),
-                        visible.maxX - Preview.margin - width)
-                let belowSpace = anchor.minY - Preview.gap - (visible.minY + Preview.margin)
-                let aboveSpace = (visible.maxY - Preview.margin) - (anchor.maxY + Preview.gap)
-                if belowSpace >= Preview.minHeight {
-                    height = min(wanted, max(Preview.minHeight, belowSpace))
-                    y = anchor.minY - Preview.gap - height
-                } else if aboveSpace >= Preview.minHeight {
-                    height = min(wanted, max(Preview.minHeight, aboveSpace))
-                    y = anchor.maxY + Preview.gap
-                } else {
-                    // 屏幕实在放不下第二扇窗：居中偏上，与面板的兜底同款
-                    y = visible.maxY - height - 60
-                }
-            }
-        } else {
-            x = visible.midX - width / 2
-            y = visible.midY - height / 2
-        }
+        // 同心：中心对中心，视线在面板的哪里，预览就在哪里
+        let cx = anchor.map { $0.midX } ?? visible.midX
+        let cy = anchor.map { $0.midY } ?? visible.midY
+        var x = cx - width / 2
+        var y = cy - height / 2
+        // 夹回屏幕内：挪的是边缘，不是中心
+        x = min(max(x, visible.minX + Preview.margin),
+                visible.maxX - Preview.margin - width)
         y = min(max(y, visible.minY + Preview.margin),
                 visible.maxY - Preview.margin - height)
-
-        let frame = NSRect(x: x, y: y, width: width, height: height)
-        if animated {
-            // 开着的状态下换形态：带弹簧挪过去，不是瞬移
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.2
-                ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                panel.animator().setFrame(frame, display: true)
-            }
-        } else {
-            panel.setFrame(frame, display: true)
-        }
+        return NSRect(x: x, y: y, width: width, height: height)
     }
 
     // MARK: - 跟随列表
@@ -214,9 +184,15 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
             return
         }
         if item.kind != lastKind {
-            // 形态变了换窗高：文本↔图片↔文件的合适高度不同
+            // 形态变了换窗高：文本↔图片↔文件的合适高度不同。
+            // 中心不变、只有高矮在动——带弹簧，不是瞬移
             lastKind = item.kind
-            place(panel, for: item, animated: true)
+            let target = targetFrame(for: item)
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.2
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                panel.animator().setFrame(target, display: true)
+            }
         }
     }
 
