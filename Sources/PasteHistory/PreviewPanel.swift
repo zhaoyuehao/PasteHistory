@@ -26,6 +26,14 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     private var isClosing = false
     /// 关窗动画的代际号：关到一半又开（连按空格）时，作废在排队的 orderOut
     private var closeGeneration = 0
+    /// 在途的程序化 frame 动画数。**animator().setFrame 会成对发 live-resize
+    /// 通知**（实测 WILL-START / DID-END 都会来，「程序化 setFrame 不经过
+    /// live resize」只对非动画版本成立），windowDidEndLiveResize 必须忽略它们：
+    /// 关窗缩回面板几何的那次动画会把 previewSize 记成「400 宽 × 面板当前高度」，
+    /// 下一次开窗的目标尺寸就跟着面板的避让收缩一起变——「预览窗口一会大
+    /// 一会小」的根因。连按空格时开/关动画重叠，用计数而不是布尔，
+    /// 全部动画落地后才重新接受用户拖边
+    private var frameAnimationsInFlight = 0
     /// 预览窗当前尺寸：默认 640×400（黄金矩形），用户拖边后记住（会话内）。
     /// 程序化 setFrame 不经过 live resize，关窗缩回锚点不会污染它
     private var previewSize = NSSize(width: Preview.width, height: Preview.height)
@@ -69,11 +77,17 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         panel.alphaValue = 0
         // 不 makeKey：键盘焦点始终留在面板，↑↓ 空格 Esc 全都照旧走面板
         panel.orderFrontRegardless()
+        frameAnimationsInFlight += 1
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.22
             ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().setFrame(target, display: true)
             panel.animator().alphaValue = 1
+        } completionHandler: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.frameAnimationsInFlight = max(0, self.frameAnimationsInFlight - 1)
+            }
         }
     }
 
@@ -90,6 +104,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         // 消失：缩回面板的几何 + 渐隐——开窗是「长出来」，关窗就是「收回去」，
         // 一来一回是同一趟旅程。普通的缩小消失会读出「弹回」很廉价，
         // 但缩回「我出发的地方」有语义，跟 Finder Quick Look 收回图标同款
+        frameAnimationsInFlight += 1
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.15
             ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
@@ -99,7 +114,9 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
             panel.animator().alphaValue = 0
         } completionHandler: { [weak self] in
             Task { @MainActor in
-                guard let self, self.closeGeneration == generation, let panel = self.panel else { return }
+                guard let self else { return }
+                self.frameAnimationsInFlight = max(0, self.frameAnimationsInFlight - 1)
+                guard self.closeGeneration == generation, let panel = self.panel else { return }
                 panel.orderOut(nil)
                 panel.alphaValue = 1
                 self.isClosing = false
@@ -187,9 +204,13 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
 
     // MARK: - NSWindowDelegate
 
-    /// 用户拖边结束：记住尺寸（会话内）。程序化 setFrame/setContentSize 不经过这里
+    /// 用户拖边结束：记住尺寸（会话内）。程序化 setFrame/setContentSize
+    /// 不经过这里；**但 animator().setFrame 会**（实测成对触发 WILL-START /
+    /// DID-END），所以还要看在途动画计数——开/关窗动画的终点帧不是用户选择，
+    /// 记下来 previewSize 就被面板几何污染（预览一会大一会小的根因）
     func windowDidEndLiveResize(_ notification: Notification) {
         guard let panel, notification.object as? NSWindow === panel else { return }
+        guard frameAnimationsInFlight == 0 else { return }
         previewSize = panel.frame.size
     }
 
