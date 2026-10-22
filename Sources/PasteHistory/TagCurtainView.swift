@@ -13,82 +13,80 @@ enum Curtain {
     // MARK: 物理
     static let persp: CGFloat = 900
     static let gravity: CGFloat = 1300
-    /// verlet 速度保留系数：真机反馈「抖动太厉害，不够物理」——
-    /// 0.985 振荡停不下来，压到 0.975 让摆动两三个来回就归位
-    static let verletDamping: CGFloat = 0.975
-    /// 环境微风：12 是「叶动」而不是「风灾」
-    static let windAmp: CGFloat = 12
+    /// verlet 速度保留系数：0.96 = 摆一两个来回就稳（真机：角一疯就废）
+    static let verletDamping: CGFloat = 0.96
+    /// 环境微风：8 = 签尖轻颤
+    static let windAmp: CGFloat = 8
     /// 每根绳的节点数（末端节点是签，重物）
     static let nodes = 6
     /// 距离约束迭代次数
     static let iterations = 3
 
-    // 冲量（px/帧）：真机反馈全面调柔——踢是「拨一下」不是「抽一鞭」
-    static let kick: CGFloat = 5
-    static let kickFast: CGFloat = 8
-    static let hoverKick: CGFloat = 2
-    static let wakeKick: CGFloat = 2.5
+    // 冲量（px/帧）：拨一下的量级
+    static let kick: CGFloat = 3
+    static let kickFast: CGFloat = 4
+    static let hoverKick: CGFloat = 1.5
+    static let wakeKick: CGFloat = 1.5
+
+    /// 摆角硬限位（度）：真许愿签是重物，摆幅天然有限、绳会绷住——
+    /// 冲量再大也不能翻上枝头。超过即把签拉回弧线并泄掉切向速度
+    static let maxSwingDeg: CGFloat = 22
+    /// 卡面转角系数：卡重、绳软，卡的转动只跟随绳角的六成
+    static let cardAngleFactor: CGFloat = 0.6
 
     static let cameraLerp: CGFloat = 0.12
     /// 鼠标视差：近签动多、远签动少。工具面板的 3D 是可感知不可操纵的
     static let parallax: CGFloat = 0.10
     /// 深度雾下限：外缘（更远）的签最淡到 0.55
     static let fogFloor: CGFloat = 0.55
-    /// 纸签卡宽（未缩放）
-    static let cardWidth: CGFloat = 150
+    /// 纸签卡宽（未缩放）：真机截图实锤 150 宽 + 110 高的图卡在 809×500 里
+    /// 一屏必然叠压——许愿签就该是签的尺度
+    static let cardWidth: CGFloat = 124
 
-    // MARK: 树布局（世界坐标：y 向下。**树是垂直的**——树干立着、枝斜伸
-    // （用户：「树哪有水平的」）；横向的是窗口（809×500），不是树）
-    /// 一屏最多 16 条 = 4 层 × 4 枝位；更早的滚轮/方向键翻枝
+    // MARK: 树布局（世界坐标：y 向下。四条**竖直列**——列内 ↓ 垂直向下、
+    // 列间互不漂移；上一版列在对角线上漂移 + 远端长枝近乎水平，真机
+    // 「完全不能看」。列固定 x，卡片横向留足间隙，枝短而向上）
+    /// 一屏最多 16 条 = 4 列 × 4 层；更早的滚轮/方向键翻枝
     static let maxBranches = 16
     /// 树干基座（世界 y）
-    static let trunkBaseY: CGFloat = 620
-    /// 最新一层的枝头高度：树冠 = 树最年轻的部分，最新在最顶上
-    static let bandBaseY: CGFloat = 95
-    /// 每旧一条下一层：层距 110（卡高 ~85 + 呼吸）
-    static let bandStep: CGFloat = 110
-    /// 树冠是梯形：最新层半宽 0.18，每深一层展宽 0.10——顶窄底宽，真树冠的形状
-    static let crownHalf: CGFloat = 0.18
-    static let spreadPerLevel: CGFloat = 0.10
-    /// 各枝位绳长：同层内错出对角节奏
-    static let laneRope: [CGFloat] = [85, 15, 100, 35]
-    /// 外侧枝位更深（远），内侧更近
-    static let depthSpread: CGFloat = 320
+    static let trunkBaseY: CGFloat = 560
+    /// 列的固定 x（比例）：中两列最新（顶芽在树冠正中），外两列更旧更深
+    static let columns: [CGFloat] = [0.19, 0.40, 0.60, 0.81]
+    /// 各列深度：外列更深更远更小（越旧越远）
+    static let columnDepth: [CGFloat] = [280, 40, 40, 280]
+    /// 各列的绳长（列内 4 层）：错出对角节奏
+    static let columnRope: [[CGFloat]] = [[15, 50, 25, 60],
+                                           [25, 60, 15, 50],
+                                           [60, 15, 50, 25],
+                                           [50, 25, 60, 15]]
+    /// 列内层距
+    static let levelBaseY: CGFloat = 78
+    static let levelStep: CGFloat = 92
+    /// 外列的枝在树干上着生得更低（枝更陡，不横伸）
+    static let outerBranchDrop: CGFloat = 130
+    static let innerBranchDrop: CGFloat = 90
     /// 场景内容底边（相机钳制用）
-    static let contentBottomY: CGFloat = 615
+    static let contentBottomY: CGFloat = 505
     /// 树干横向位置
     static let spineXRatio: CGFloat = 0.5
 
-    static func lane(_ i: Int) -> Int { columnOrder[i / 4] }
-    /// 列内第几层（往下）：↓ 连按时选中沿**一列垂直向下**（真机反馈：
-    /// 快速切换方向键时运动是水平的——行主序映射错了，列主序才对）
+    static func column(_ i: Int) -> Int { i / 4 }
+    /// 列内第几层（往下）：↓ 沿一列垂直向下
     static func level(_ i: Int) -> Int { i % 4 }
-    /// 列序：最新的 4 条在**中央两列**（顶芽 = 树最新的生长点），
-    /// 更旧的往两侧展开——外侧列更深更远，和「越旧越远」同构
-    static let columnOrder = [1, 2, 0, 3]
-
-    static func halfSpan(_ level: Int) -> CGFloat {
-        crownHalf + CGFloat(level) * spreadPerLevel
-    }
 
     static func tipX(_ i: Int, width: CGFloat) -> CGFloat {
-        let half = halfSpan(level(i))
-        let laneNorm = CGFloat(lane(i)) / 3
-        let jitter = 10 * sin(CGFloat(i) * 5.7)
-        let raw = width * (0.5 - half + laneNorm * 2 * half) + jitter
+        let jitter = 5 * sin(CGFloat(i) * 5.7)
+        let raw = width * columns[column(i)] + jitter
         let pad = cardWidth / 2 + 6
         return min(max(raw, pad), width - pad)
     }
 
-    /// 挂点 y：最新在第 0 层（最顶），满 4 条下一层
-    static func tipY(_ i: Int) -> CGFloat { bandBaseY + CGFloat(level(i)) * bandStep }
+    /// 挂点 y：列内自上而下等距
+    static func tipY(_ i: Int) -> CGFloat { levelBaseY + CGFloat(level(i)) * levelStep }
 
-    static func ropeLength(_ i: Int) -> CGFloat { laneRope[lane(i)] }
+    static func ropeLength(_ i: Int) -> CGFloat { columnRope[column(i)][level(i)] }
 
-    static func depth(_ i: Int) -> CGFloat {
-        let laneNorm = CGFloat(lane(i)) / 3
-        return 60 + abs(laneNorm - 0.5) * 2 * depthSpread
-    }
+    static func depth(_ i: Int) -> CGFloat { columnDepth[column(i)] }
 
     // MARK: 生长
     /// 整棵树长出来的总时长
@@ -189,8 +187,8 @@ final class CurtainSim {
     private var growthStart: Date?
     /// 树的世界宽度：宽度变化 >0.5pt 时整树重排（见 frame）
     private var treeWidth: CGFloat = 500
-    /// 窗口式挂枝：树上永远是 [windowStart, windowStart+16) 这一段。
-    /// 滚轮先滚相机（自然滚动），滚到底/顶再逐档翻枝换挂
+    /// 一棵树一屏：树上挂 [windowStart, windowStart+16) 这一段；
+    /// 翻到树的末尾 = **整棵换下一棵**（新树重新长出来 = 翻页动画）
     private(set) var windowStart = 0
     private var totalItems = 0
     private var scrollAccum: CGFloat = 0
@@ -200,42 +198,59 @@ final class CurtainSim {
 
     func setHover(_ x: CGFloat?) { hoverX = x }
 
-    /// 滚轮：先滚相机看完整棵树；相机到边后继续滚 = 翻枝（换一批挂）。
-    /// 新枝垂落本身就是翻页的物理反馈
+    /// 滚轮：整棵换树。相机只在面板被压矮时兜底；正常情况树一屏装下，
+    /// 滚轮 = 直接翻到上一棵/下一棵树（新树重新长出来 = 翻页动画）
     func scroll(by delta: CGFloat) {
         let maxCam = max(0, Curtain.contentBottomY - viewportH)
+        let step = Curtain.maxBranches
+        let maxStart = max(0, (max(totalItems - 1, 0) / step) * step)
         if delta < 0 {
             if cameraTargetY < maxCam - 1 {
                 cameraTargetY = min(maxCam, cameraTargetY - delta)
-            } else if totalItems > Curtain.maxBranches {
+            } else if windowStart < maxStart {
                 scrollAccum += delta
-                while scrollAccum <= -24 { windowStart += 1; scrollAccum += 24 }
-                clampWindow()
+                while scrollAccum <= -24, windowStart < maxStart {
+                    windowStart += step
+                    scrollAccum += 24
+                }
+                snapCamera()
+                beginGrowth()
             }
         } else if delta > 0 {
             if cameraTargetY > 1 {
                 cameraTargetY = max(0, cameraTargetY - delta)
             } else if windowStart > 0 {
                 scrollAccum += delta
-                while scrollAccum >= 24 { windowStart -= 1; scrollAccum -= 24 }
-                clampWindow()
+                while scrollAccum >= 24, windowStart > 0 {
+                    windowStart -= step
+                    scrollAccum -= 24
+                }
+                snapCamera()
+                beginGrowth()
             }
         }
     }
 
     private func clampWindow() {
-        let cap = min(totalItems, Curtain.maxBranches)
-        windowStart = min(max(0, windowStart), max(0, totalItems - cap))
+        let step = Curtain.maxBranches
+        let maxStart = max(0, (max(totalItems - 1, 0) / step) * step)
+        windowStart = min(max(0, windowStart), maxStart)
+        windowStart = (windowStart / step) * step
     }
 
-    /// 方向键选到窗口外：把窗口挪到选中项可见。返回选中项的局部索引
+    /// 方向键：选中的记录在哪棵树就把哪棵树挂上来（换树时重新长）。
+    /// 返回选中项的局部索引
     @discardableResult
     func ensureVisible(_ global: Int) -> Int {
-        let cap = min(totalItems, Curtain.maxBranches)
+        let step = Curtain.maxBranches
+        let cap = min(max(totalItems - windowStart, 0), step)
         guard cap > 0 else { return 0 }
-        if global < windowStart { windowStart = global }
-        else if global >= windowStart + cap { windowStart = global - cap + 1 }
-        clampWindow()
+        let treeStart = (global / step) * step
+        if treeStart != windowStart {
+            windowStart = treeStart
+            snapCamera()
+            beginGrowth()
+        }
         return min(max(global - windowStart, 0), cap - 1)
     }
 
@@ -305,7 +320,7 @@ final class CurtainSim {
         totalItems = items.count
         viewportH = height
         clampWindow()
-        let cap = min(items.count, Curtain.maxBranches)
+        let cap = min(max(items.count - windowStart, 0), Curtain.maxBranches)
         guard cap > 0 else {
             ropes.removeAll()
             return []
@@ -344,7 +359,7 @@ final class CurtainSim {
                branchProgress(li, count: cap, growth: growth) >= Curtain.hangAt {
                 rope.spawnedAt = date
                 if !Motion.reduceMotion {
-                    rope.nodes[rope.nodes.count - 1].px -= .random(in: -3...3)
+                    rope.nodes[rope.nodes.count - 1].px -= .random(in: -1...1)
                 }
             }
         }
@@ -367,7 +382,8 @@ final class CurtainSim {
             // 视口裁剪：卡高约 80/scale，上下留裕量
             if hang.y < -140 || hang.y > height + 180 { continue }
             let prev = project(rope.nodes[rope.nodes.count - 2])
-            let angle = atan2(hang.x - prev.x, hang.y - prev.y) * 180 / .pi
+            // 卡面转角只取绳角的六成：卡重绳软，卡的转动滞后于绳
+            let angle = atan2(hang.x - prev.x, hang.y - prev.y) * 180 / .pi * Curtain.cardAngleFactor
             // 挂稳程度：垂落后的前 0.25s 淡入
             let age = date.timeIntervalSince(spawned)
             let alpha = min(1, max(0, CGFloat(age / 0.25)))
@@ -388,7 +404,11 @@ final class CurtainSim {
     }
 
     /// verlet 积分 + 距离约束。约束的目标长度按垂落进度展开（0 → 全长）：
-    /// 绳从枝头「长」出来，重力把它拉直——这是生长动画的物理实现
+    /// 绳从枝头「长」出来，重力把它拉直——这是生长动画的物理实现。
+    /// 两条稳定器（真机截图实锤没有它们签会疯）：
+    /// 1. 垂落期间绳锁直在锚点正下方（风关、x 钉死）——散开的绳从收拢
+    ///    状态展开会甩成 S 形，永远回不到「挂稳」的初始印象
+    /// 2. 摆角硬限位 ±maxSwingDeg：超限把签拉回弧线并泄掉切向速度
     private func step(dt: TimeInterval, now: TimeInterval) {
         let dt2 = CGFloat(dt * dt)
         for rope in ropes.values {
@@ -397,6 +417,7 @@ final class CurtainSim {
             let u = CGFloat(min(1, max(0, age / Curtain.unrollDuration)))
             let segNow = rope.fullSeg * (1 - pow(1 - u, 3))
             guard segNow > 0.5 else { continue }
+            let unrolling = u < 0.7
 
             let n = rope.nodes
             var m = n
@@ -405,7 +426,7 @@ final class CurtainSim {
                 let vy = (m[j].y - m[j].py) * Curtain.verletDamping
                 m[j].px = m[j].x
                 m[j].py = m[j].y
-                let wind = Motion.reduceMotion ? 0
+                let wind = (Motion.reduceMotion || unrolling) ? 0
                     : Curtain.windAmp * CGFloat(sin(now * 0.55 + Double(rope.phase) + Double(j) / Double(Curtain.nodes)))
                 m[j].x += vx + wind * dt2
                 m[j].y += vy + Curtain.gravity * dt2
@@ -427,11 +448,30 @@ final class CurtainSim {
                     m[j].x -= dx * diff * wb
                     m[j].y -= dy * diff * wb
                 }
-                let a = rope.anchor
-                m[0].x = a.x
-                m[0].y = a.y
-                m[0].px = a.x
-                m[0].py = a.y
+                let a0 = rope.anchor
+                m[0].x = a0.x
+                m[0].y = a0.y
+                m[0].px = a0.x
+                m[0].py = a0.y
+            }
+            if unrolling {
+                // 垂落期间锁直：绳只会从枝头正下方展开
+                for j in m.indices.dropFirst() { m[j].x = rope.anchor.x }
+            } else {
+                // 摆角限位：超过 ±maxSwingDeg 拉回弧线 + 泄掉一半切向速度
+                let last = m.count - 1
+                let dx = m[last].x - rope.anchor.x
+                let dy = m[last].y - rope.anchor.y
+                let maxAng = Curtain.maxSwingDeg * .pi / 180
+                let ang = atan2(dx, dy)
+                if abs(ang) > maxAng, dy > 0 {
+                    let capped = max(-maxAng, min(maxAng, ang))
+                    let dist = (dx * dx + dy * dy).squareRoot()
+                    m[last].x = rope.anchor.x + sin(capped) * dist
+                    m[last].y = rope.anchor.y + cos(capped) * dist
+                    m[last].px = m[last].x - (m[last].x - m[last].px) * 0.5
+                    m[last].py = m[last].y - (m[last].y - m[last].py) * 0.5
+                }
             }
             rope.nodes = m
         }
@@ -569,7 +609,7 @@ struct TagCurtainView: View {
         let count = min(max(items.count - sim.windowStart, 0), Curtain.maxBranches)
         let layoutWidth = sim.layoutWidth
         let trunkX = Curtain.spineXRatio * layoutWidth
-        let crownY = Curtain.bandBaseY - 55
+        let crownY = Curtain.levelBaseY - 52
 
         let trunkGrowth = min(1, growth / Curtain.trunkPhase)
         if trunkGrowth > 0.01 {
@@ -583,7 +623,7 @@ struct TagCurtainView: View {
             trunk.move(to: base)
             trunk.addQuadCurve(to: top, control: mid)
             ctx.stroke(trunk, with: .color(Curtain.inkBranch),
-                       style: StrokeStyle(lineWidth: 13, lineCap: .round))
+                       style: StrokeStyle(lineWidth: 16, lineCap: .round))
             // 侧根一笔，树才站得住
             var root = Path()
             root.move(to: CGPoint(x: trunkX, y: Curtain.trunkBaseY - 30 - cameraY))
@@ -593,13 +633,16 @@ struct TagCurtainView: View {
                        style: StrokeStyle(lineWidth: 6, lineCap: .round))
         }
 
-        // 斜枝：每条枝从树干出发伸向挂点（枝在树干上的着生点低于挂点，
-        // 向上向外伸——真树枝的姿态），按生长进度画部分曲线
+        // 斜枝：每条枝从树干出发伸向挂点（着生点低于挂点，向上向外伸）。
+        // 外列的枝着生得更低 → 更陡，不横伸；按生长进度画部分曲线
         for li in 0..<count {
             let b = sim.branchProgress(li, count: max(count, 1), growth: growth)
             guard b > 0.01 else { continue }
             let tipY = Curtain.tipY(li)
-            let sy = min(tipY + 90, 470)
+            let drop = Curtain.columnDepth[Curtain.column(li)] > 100
+                ? Curtain.outerBranchDrop
+                : Curtain.innerBranchDrop
+            let sy = min(tipY + drop, Curtain.trunkBaseY - 40)
             let start = CGPoint(x: trunkX, y: sy - cameraY)
             let tip = CGPoint(x: Curtain.tipX(li, width: layoutWidth), y: tipY - cameraY)
             let control = CGPoint(x: (start.x + tip.x) / 2, y: (start.y + tip.y) / 2 - 24)
@@ -611,7 +654,7 @@ struct TagCurtainView: View {
             branch.move(to: start)
             branch.addQuadCurve(to: end, control: control)
             ctx.stroke(branch, with: .color(Curtain.inkBranch.opacity(min(1, b * 2))),
-                       style: StrokeStyle(lineWidth: max(1.6, 4.4 - (sy - tipY) / 60),
+                       style: StrokeStyle(lineWidth: max(2.2, 5.0 - (sy - tipY) / 60),
                                           lineCap: .round))
             if b > 0.9 {
                 let beadRect = CGRect(x: tip.x - 2.4, y: tip.y - 2.4, width: 4.8, height: 4.8)
@@ -713,16 +756,19 @@ private struct TagCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Rhythm.s) {
             if let thumb = item.thumbnail {
+                // 图片签 = 拍立得：缩略图本身就是摘要，不再叠文字行
                 Image(nsImage: thumb)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: Curtain.cardWidth - Rhythm.m * 2, height: 58)
-                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                    .frame(width: Curtain.cardWidth - Rhythm.m * 2, height: 32)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
             }
-            Text(item.summary)
-                .font(.system(size: Scale.body))
-                .lineLimit(2)
-                .truncationMode(.tail)
+            if item.thumbnail == nil {
+                Text(item.summary)
+                    .font(.system(size: Scale.body))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
             HStack(spacing: Rhythm.s) {
                 Image(systemName: symbol)
                     .font(.system(size: Icon.mark))

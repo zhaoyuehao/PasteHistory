@@ -62,7 +62,7 @@ enum L10n {
     /// 线签帘视图的右下角提示：视图可切，不是只有这一种看法
     static var curtainListHint: String { value("⌘L 列表视图", "⌘L 列表檢視", "⌘L List View") }
     /// 树是窗口式挂枝：还有更早的记录时给出去处
-    static var curtainOlderHint: String { value("滚轮或 ↓ 翻更早 · ⌘L 回列表", "滾輪或 ↓ 翻更早 · ⌘L 回列表", "Scroll or ↓ for older · ⌘L for list") }
+    static var curtainOlderHint: String { value("滚轮 / ↓ 到下一棵树 · ⌘L 回列表", "滾輪 / ↓ 到下一棵樹 · ⌘L 回列表", "Scroll / ↓ for the next tree · ⌘L for list") }
     /// ⌘1–9 角标的读屏名字。「⌘1」念出来没有人听得懂
     static func quickPaste(_ n: Int) -> String {
         value("快速粘贴第 \(n) 条", "快速貼上第 \(n) 筆", "Paste item \(n)")
