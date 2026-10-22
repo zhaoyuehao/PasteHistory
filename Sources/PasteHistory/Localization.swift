@@ -72,7 +72,6 @@ enum L10n {
     static var waitingForNetwork: String { value("等待网络", "等待網路", "Waiting for network") }
     static var encrypted: String { value("端到端加密 · AES-256-GCM", "端對端加密 · AES-256-GCM", "End-to-end encrypted · AES-256-GCM") }
     static var refreshQRCode: String { value("刷新二维码", "重新整理 QR Code", "Refresh QR Code") }
-    static var close: String { value("关闭", "關閉", "Close") }
     static var noNetworkAddress: String { value("未找到局域网地址，请确认 Wi-Fi", "找不到區域網路位址，請確認 Wi-Fi", "No local network address. Check Wi-Fi.") }
 
     static var firstRunTitle: String { value("PasteHistory 已在菜单栏运行", "PasteHistory 已在選單列執行", "PasteHistory is running in the menu bar") }

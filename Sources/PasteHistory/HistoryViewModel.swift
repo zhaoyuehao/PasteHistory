@@ -30,6 +30,12 @@ final class HistoryViewModel: ObservableObject {
     /// 撞顶时往上蹿会把第一行更狠地推出视口，看起来像故障而不是反馈
     @Published private(set) var bounceDirection: Int = 1
 
+    /// 打开面板的次数。滚轮滚动不改变 selection，重开面板时
+    /// 「回到第一条」的 onChange 不会触发，视口会停在上次滚到的位置——
+    /// 分组标题（Today 等）「有时在顶上有时不在」就是它。视图监听这个
+    /// tick 在每次打开时把视口强制带回最顶
+    @Published private(set) var presentationTick = 0
+
     var lastMoveAt = Date.distantPast
 
     init(store: ClipStore) {
@@ -67,9 +73,10 @@ final class HistoryViewModel: ObservableObject {
         withAnimation(Motion.selection) { selection = min(max(index, 0), results.count - 1) }
     }
 
-    /// 每次打开面板都是一次新的「找」：回到第一条
+    /// 每次打开面板都是一次新的「找」：回到第一条，视口也回顶
     func resetForPresentation() {
         selection = 0
+        presentationTick += 1
     }
 
     /// 换搜索词：结果集变了，重新扫
