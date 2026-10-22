@@ -19,8 +19,15 @@ enum Toast {
         let height = max(fitting.height + 24, 44)
         position(panel, size: NSSize(width: width, height: height))
         panel.setContentSize(NSSize(width: width, height: height))
-        panel.alphaValue = 1
+        // 出场也要淡入（规范 6.4）：HUD 瞬现是最后剩下的直接切换。降级到淡入淡出
+        // 本身就合规，「减少动态效果」无需特殊处理
+        panel.alphaValue = 0
         panel.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.25
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().alphaValue = 1
+        }
 
         let work = DispatchWorkItem { [weak panel] in
             NSAnimationContext.runAnimationGroup { ctx in

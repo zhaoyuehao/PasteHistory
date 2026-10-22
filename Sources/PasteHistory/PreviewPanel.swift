@@ -69,7 +69,8 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         // 「长出来」是幅度最大的动效：frame 插值本身就是那个在动的东西，
         // 内容 scale 就不再叠加了，叠两层会过
         let target = targetFrame()
-        if let anchor = owner?.previewAnchorFrame, anchor.width > 0 {
+        // 「减少动态效果」开启时跳过 frame 插值：直接就位 + 淡入（规范 5.5）
+        if let anchor = owner?.previewAnchorFrame, anchor.width > 0, !Motion.reduceMotion {
             panel.setFrame(anchor, display: false)
         } else {
             panel.setFrame(target, display: false)
@@ -81,7 +82,9 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.22
             ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            panel.animator().setFrame(target, display: true)
+            if !Motion.reduceMotion {
+                panel.animator().setFrame(target, display: true)
+            }
             panel.animator().alphaValue = 1
         } completionHandler: { [weak self] in
             Task { @MainActor in
@@ -108,7 +111,8 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.15
             ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            if let anchor = owner?.previewAnchorFrame, anchor.width > 0 {
+            // 「减少动态效果」开启时跳过缩回插值，只保留渐隐
+            if let anchor = owner?.previewAnchorFrame, anchor.width > 0, !Motion.reduceMotion {
                 panel.animator().setFrame(anchor, display: true)
             }
             panel.animator().alphaValue = 0
@@ -290,9 +294,9 @@ struct PreviewContentView: View {
                 await step(to: model.current)
             }
             .onChange(of: model.bounceTick) { _, _ in
-                // 与 HistoryView 同一套规则：弹簧没停稳不叠推；
-                // 先瞬间推出去，再让弹簧拉回来
-                guard bounceOffset == 0 else { return }
+                // 与 HistoryView 同一套规则：弹簧没停稳不叠推；「减少动态效果」
+                // 开启时整段推送跳过。先瞬间推出去，再让弹簧拉回来
+                guard !Motion.reduceMotion, bounceOffset == 0 else { return }
                 bounceOffset = CGFloat(model.bounceDirection) * Motion.bounceDistance
                 withAnimation(Motion.bounce) { bounceOffset = 0 }
             }
@@ -583,7 +587,7 @@ struct PreviewContentView: View {
                     .padding(Rhythm.xxl)
             } else {
                 Image(systemName: "photo")
-                    .font(.system(size: 28))   // 与文件行图标同档，消灭 28/32 两个体系外尺寸
+                    .font(.system(size: 34))   // Fib 档（与主列表缩略图同档），体系外尺寸归零
                     .foregroundStyle(.secondary)
             }
         }
@@ -653,7 +657,7 @@ private struct PreviewFileRow: View {
                     .padding(.vertical, 2)
                     .background(
                         RoundedRectangle(cornerRadius: 5)
-                            .fill(Color.primary.opacity(0.06))
+                            .fill(Color.primary.opacity(0.09))   // 静态块 = chip 档
                     )
                     .fixedSize()
             }
@@ -662,7 +666,7 @@ private struct PreviewFileRow: View {
         .padding(.vertical, Rhythm.l)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color.primary.opacity(hovered ? 0.06 : 0))
+                .fill(Color.primary.opacity(hovered ? 0.10 : 0))   // 悬停 = 承诺，比静态 chip（0.09）深一档
         )
         .opacity(exists ? 1 : 0.55)
         .animation(Motion.hover, value: hovered)
@@ -675,10 +679,10 @@ private struct PreviewFileRow: View {
         if let icon {
             Image(nsImage: icon)
                 .resizable()
-                .frame(width: 28, height: 28)
+                .frame(width: 34, height: 34)   // Fib 档，与主列表缩略图同档
         } else {
             Color.clear
-                .frame(width: 28, height: 28)
+                .frame(width: 34, height: 34)
         }
     }
 
