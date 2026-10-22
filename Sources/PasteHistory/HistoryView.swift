@@ -5,14 +5,15 @@ import SwiftUI
 
 private enum Spec {
     static let searchHeight: CGFloat = 52
-    static let searchPadding: CGFloat = 18
+    static let searchPadding: CGFloat = Rhythm.xxl
 
     static let listPadding: CGFloat = 8
     static let rowSpacing: CGFloat = 2
 
-    static let rowPadding: CGFloat = 12
+    static let rowPadding: CGFloat = Rhythm.xl
     static let thumb: CGFloat = 34
 
+    // 8:5 = Fibonacci φ 对（「黄金圆」的整数近似）
     static let corner: CGFloat = 8
     static let badgeCorner: CGFloat = 5
 
@@ -82,7 +83,7 @@ struct HistoryView: View {
             content
         }
         // 高度不写死：贴着输入框放不下时窗口会收，列表跟着滚。
-        // 写死 540 的话，窗口被压小后 SwiftUI 会把内容裁掉而不是滚动
+        // 写死 647 的话，窗口被压小后 SwiftUI 会把内容裁掉而不是滚动
         .frame(minWidth: Panel.width, maxWidth: Panel.width,
                minHeight: Panel.minHeight, maxHeight: .infinity)
         // 内容顶到窗口上缘，别让标题栏白白占 28pt
@@ -126,7 +127,7 @@ struct HistoryView: View {
     // MARK: - 搜索
 
     private var searchBar: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: Rhythm.l) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: Icon.action))
                 // 聚焦时点亮，未聚焦时也不该淡到看不见——图标是位置的承诺
@@ -259,7 +260,7 @@ struct HistoryView: View {
                 .foregroundStyle(Palette.meta)
         }
         .multilineTextAlignment(.center)
-        .padding(.horizontal, 24)
+        .padding(.horizontal, Rhythm.xxl)
     }
 }
 
@@ -275,8 +276,8 @@ private struct SectionHeader: View {
                 .foregroundStyle(Palette.meta)
             Spacer()
         }
-        .padding(.horizontal, Spec.listPadding + 6)
-        .padding(.vertical, 7)
+        .padding(.horizontal, Spec.listPadding + Rhythm.m)
+        .padding(.vertical, Rhythm.l)
         // 不透明底：标题滚过缩略图行时文字不能透出底下内容
         .background(Color(NSColor.windowBackgroundColor))
     }
@@ -297,7 +298,7 @@ struct RowView: View {
     @State private var hovered = false
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Rhythm.xl) {
             thumbnail
 
             VStack(alignment: .leading, spacing: 2) {

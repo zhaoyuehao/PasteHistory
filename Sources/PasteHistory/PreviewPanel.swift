@@ -26,8 +26,6 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     private var isClosing = false
     /// 关窗动画的代际号：关到一半又开（连按空格）时，作废在排队的 orderOut
     private var closeGeneration = 0
-    /// 上一次布局时的内容形态：文本↔图片↔文件切换要跟着换窗高
-    private var lastKind: ClipKind?
     private var sink: Any?
 
     var window: NSPanel? { panel }
@@ -54,7 +52,6 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         guard let panel else { return }
         closeGeneration += 1
         isClosing = false
-        lastKind = item.kind
 
         // 出现：从面板的几何长出来，就地把面板放大成预览——视线零移动。
         // （侧边落位会把视线拽到面板旁边，用户明确不要）
@@ -131,7 +128,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         panel.isMovableByWindowBackground = true
         panel.isReleasedWhenClosed = false
         panel.backgroundColor = NSColor.windowBackgroundColor
-        panel.setContentSize(NSSize(width: Preview.width, height: Preview.textHeight))
+        panel.setContentSize(NSSize(width: Preview.width, height: Preview.height))
         panel.delegate = self
         self.panel = panel
     }
@@ -147,17 +144,12 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
             NSScreen.screens.first { $0.frame.intersects(a) }
         } ?? NSScreen.main ?? NSScreen.screens.first
         guard let screen else {
-            return NSRect(x: 0, y: 0, width: Preview.width, height: Preview.textHeight)
+            return NSRect(x: 0, y: 0, width: Preview.width, height: Preview.height)
         }
         let visible = screen.visibleFrame
 
-        // 窗高按内容形态给：文本 520，图片 460，文件 440；塞不下收到恰好放得下
-        let wanted: CGFloat
-        switch item.kind {
-        case .text: wanted = Preview.textHeight
-        case .image: wanted = Preview.imageHeight
-        case .files: wanted = Preview.filesHeight
-        }
+        // 窗高恒为 640×400（黄金矩形），不随内容形态切换；塞不下收到恰好放得下
+        let wanted = Preview.height
         let available = visible.height - Preview.margin * 2
         let height = min(wanted, max(Preview.minHeight, available))
         let width = Preview.width
@@ -179,21 +171,12 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
 
     private func syncAfterModelChange() {
         guard let panel, panel.isVisible, !isClosing else { return }
-        guard let item = model.current else {
+        guard model.current != nil else {
             close()   // 列表被删空 / 过滤后无结果：预览不孤儿化
             return
         }
-        if item.kind != lastKind {
-            // 形态变了换窗高：文本↔图片↔文件的合适高度不同。
-            // 中心不变、只有高矮在动——带弹簧，不是瞬移
-            lastKind = item.kind
-            let target = targetFrame(for: item)
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.2
-                ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                panel.animator().setFrame(target, display: true)
-            }
-        }
+        // 窗高恒为黄金矩形（640×400），不随内容形态切换——
+        // 条目增删后预览跟随下一条，列表空了收窗，窗体几何稳定
     }
 
     // MARK: - NSWindowDelegate
@@ -382,7 +365,7 @@ struct PreviewContentView: View {
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Rhythm.xl)
         .frame(height: 44)
         .background(Color(NSColor.controlBackgroundColor))
     }
@@ -450,7 +433,7 @@ struct PreviewContentView: View {
                 .font(.system(size: Scale.body))
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(22)
+                .padding(Rhythm.xxl)
         }
         .overlay(alignment: .bottom) {
             if isTruncated { truncatedBar }
@@ -465,14 +448,14 @@ struct PreviewContentView: View {
                 .font(.system(size: Scale.meta))
         }
         .foregroundStyle(Palette.meta)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 9)
+        .padding(.horizontal, Rhythm.xl)
+        .padding(.vertical, Rhythm.l)
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color(NSColor.controlBackgroundColor))
                 .shadow(color: .black.opacity(0.12), radius: 5, y: 1)
         )
-        .padding(.bottom, 14)
+        .padding(.bottom, Rhythm.xl)
     }
 
     private func imageContent(_ item: ClipItem) -> some View {
@@ -487,9 +470,10 @@ struct PreviewContentView: View {
                         .font(.system(size: Scale.body))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(16)
+                        .padding(Rhythm.xl)
                 }
-                .frame(maxHeight: 140)
+                // 递归 φ 分割：说明区 153 = 400×0.382，图区 247 ≈ 153×φ，整窗 ≈ 153×φ²
+                .frame(maxHeight: Preview.captionHeight)
             }
         }
     }
@@ -516,7 +500,7 @@ struct PreviewContentView: View {
                         PreviewFileRow(path: path)
                     }
                 }
-                .padding(12)
+                .padding(Rhythm.xl)
             }
         }
     }
@@ -527,7 +511,7 @@ struct PreviewContentView: View {
                 Image(nsImage: image)
                     .resizable()
                     .scaledToFit()
-                    .padding(20)
+                    .padding(Rhythm.xxl)
             } else {
                 Image(systemName: "photo")
                     .font(.system(size: 32))
@@ -563,7 +547,7 @@ private struct PreviewFileRow: View {
     private var exists: Bool { FileManager.default.fileExists(atPath: path) }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Rhythm.xl) {
             Image(nsImage: NSWorkspace.shared.icon(forFile: path))
                 .resizable()
                 .frame(width: 28, height: 28)
@@ -572,7 +556,7 @@ private struct PreviewFileRow: View {
                     .font(.system(size: Scale.body))
                     .lineLimit(1)
                     .truncationMode(.middle)
-                HStack(spacing: 6) {
+                HStack(spacing: Rhythm.m) {
                     if exists {
                         if let size = Self.fileSize(path) {
                             Text(size)
@@ -602,8 +586,8 @@ private struct PreviewFileRow: View {
                     .fixedSize()
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
+        .padding(.horizontal, Rhythm.l)
+        .padding(.vertical, Rhythm.l)
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color.primary.opacity(hovered ? 0.06 : 0))

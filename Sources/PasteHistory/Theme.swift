@@ -73,18 +73,25 @@ enum Panel {
 
 // MARK: - 预览窗尺寸
 
-/// 空格预览大窗。宽度恒定；高度按内容形态给，塞不下收到恰好放得下。
+/// 空格预览大窗：恒为黄金矩形 640×400（= 8:5，Fibonacci 黄金近似对），
+/// 不再按内容形态换高——文本滚、图片 fit、文件列表滚，高度统一。
+/// 收缩区间 [247, 400] 两端也成 φ（247 ≈ 400÷φ），与主面板同一条纪律。
+///
+/// 图文记录做递归 φ 分割：说明区 153 ≈ 400×0.382、图区 247 ≈ 153×φ、
+/// 整窗 400 ≈ 153×φ²——大块套小块，自相似的黄金分割。
 ///
 /// 落位是「就地放大」：以面板为中心同心覆盖，从面板的几何长出来——
 /// 视线在哪里，预览就在哪里，绝不把视线拽到面板旁边。
 enum Preview {
     static let width: CGFloat = 640
-    static let textHeight: CGFloat = 520
-    static let imageHeight: CGFloat = 460
-    static let filesHeight: CGFloat = 440
-    static let minHeight: CGFloat = 300
+    /// 640:400 = 8:5（Fib 对，φ 的整数近似）；恒定，不随内容形态切换
+    static let height: CGFloat = 400
+    /// 收缩下限 ≈ 400÷φ：区间 [247, 400] 两端成 φ
+    static let minHeight: CGFloat = 247
+    /// 图文记录说明区上限 = 400×0.382（黄金分割点），图区 247 与其成 φ
+    static let captionHeight: CGFloat = 153
     /// 屏幕边缘留白
-    static let margin: CGFloat = 12
+    static let margin: CGFloat = Rhythm.xl
     /// 切换条目时新内容浮入的位移：有东西在移动，才谈得上阻尼感
     static let slideDistance: CGFloat = 16
     /// 原图解码的最大边长：预览窗就 640 宽，8000px 整图进内存是风扇测试

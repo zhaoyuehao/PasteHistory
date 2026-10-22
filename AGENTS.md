@@ -85,7 +85,7 @@ PasteHistory.app/Contents/MacOS/PasteHistory --restore-images   # 从 iCloud 恢
 | `PanelController.swift` | ⇧⌘C 面板（NSHostingController 承载 SwiftUI）、键监视器（空格/⌘Y 预览开关在此分发） |
 | `HistoryView.swift` | 面板 UI（搜索 / 列表 / 键盘导航） |
 | `PreviewPanel.swift` | 空格/⌘Y 预览大窗：不夺焦点的 NSPanel（贴面板右侧）+ 三类内容视图，随面板选中联动 |
-| `Theme.swift` | 字号 / 图标档位与语义色（`Palette.meta` / `.warning` 按 WCAG AA 反解） |
+| `Theme.swift` | 字号 / 图标 / 间距档位（Scale / Icon / Rhythm）与语义色（`Palette.meta` / `.warning` 按 WCAG AA 反解） |
 | `Motion.swift` | 动效令牌（选中 / 连按 / 边界回弹 / 悬停），View 与 ViewModel 共用 |
 | `PasteService.swift` / `AXFocus.swift` | 回写剪贴板、AX 权限、捕获并还原聚焦输入框、模拟 ⌘V |
 | `PasteCycler.swift` | ⇧⌘V 循环粘贴：不开面板，⌘Z 撤回上一条再贴更早一条 |
