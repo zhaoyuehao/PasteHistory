@@ -1,5 +1,4 @@
 import AppKit
-import CoreImage
 import SwiftUI
 
 // MARK: - 参数
@@ -123,27 +122,136 @@ enum Curtain {
 
     /// 冒烟：--view tags 强制许愿树（不写用户偏好）
     static var debugForce = false
+}
 
-    /// 树素材的世界区域：树冠顶到根底
-    static let crownTopY: CGFloat = 21
-    static let rootBaseY: CGFloat = 433
+// MARK: - 树建模（程序化，无图片素材）
 
-    /// 生成的树素材（AI 水墨树，黑底 RGB）：加载时把亮度转成透明度——
-    /// alpha = 0.75R + 1.5G + 0.25B（≈亮度×2.5，钳到 [0,1]），
-    /// 树身不透明、黑底全透。笔画树怎么调都「假」，素材自带枝干粗细
-    /// 变化与笔触（真机反馈：树有点假，能用模型搞个真些的吗）
-    static let treeImage: CGImage? = {
-        guard let url = Bundle.module.url(forResource: "tree", withExtension: "png"),
-              let ci = CIImage(contentsOf: url) else { return nil }
-        guard let matrix = CIFilter(name: "CIColorMatrix") else { return nil }
-        matrix.setValue(ci, forKey: kCIInputImageKey)
-        matrix.setValue(CIVector(x: 0.75, y: 1.5, z: 0.25, w: 0), forKey: "inputAVector")
-        guard let clamp = CIFilter(name: "CIColorClamp") else { return nil }
-        clamp.setValue(matrix.outputImage, forKey: kCIInputImageKey)
-        let context = CIContext()
-        guard let out = clamp.outputImage else { return nil }
-        return context.createCGImage(out, from: out.extent)
-    }()
+/// 一条「枝条」：折线骨架 + 各点宽度（世界坐标，y 向下）。
+/// 树 = 干/根 + 枝 + 小枝的列表，每条都带锥度——画的时候按生长进度
+/// 沿折线截断描（不是整段淡入），「长出来」是真的有一截在伸。
+/// AI 水墨素材被撤（纸底盖掉夜色 + 用户点名不要图片）：全部由几何生成。
+struct CurtainLimb {
+    /// -1 = 树干/根（跟 trunkGrowth）；其余 = 枝的局部索引（跟 branchProgress）
+    let branch: Int
+    /// 出场阈值（0..1）：主枝 0；小枝 = 它在主枝上的着生位置
+    let at: CGFloat
+    let pts: [CGPoint]
+    let ws: [CGFloat]
+    /// 深度雾：外列更远更淡
+    let alpha: CGFloat
+}
+
+enum CurtainTree {
+    /// 确定性哈希（0..1）：同一宽度永远得到同一棵树
+    private static func hash(_ a: CGFloat) -> CGFloat {
+        let v = sin(a * 12.9898) * 43758.5453
+        return v - v.rounded(.down)
+    }
+
+    private static func cubic(_ p0: CGPoint, _ c1: CGPoint,
+                              _ c2: CGPoint, _ p1: CGPoint, _ t: CGFloat) -> CGPoint {
+        let u = 1 - t
+        return CGPoint(x: u*u*u*p0.x + 3*u*u*t*c1.x + 3*u*t*t*c2.x + t*t*t*p1.x,
+                       y: u*u*u*p0.y + 3*u*u*t*c1.y + 3*u*t*t*c2.y + t*t*t*p1.y)
+    }
+
+    private static func tangent(_ p0: CGPoint, _ c1: CGPoint,
+                                _ c2: CGPoint, _ p1: CGPoint, _ t: CGFloat) -> CGPoint {
+        let u = 1 - t
+        return CGPoint(x: 3*u*u*(c1.x - p0.x) + 6*u*t*(c2.x - c1.x) + 3*t*t*(p1.x - c2.x),
+                       y: 3*u*u*(c1.y - p0.y) + 6*u*t*(c2.y - c1.y) + 3*t*t*(p1.y - c2.y))
+    }
+
+    /// 三次贝塞尔采样成折线，宽度沿程 w0 → w1（easeOut：根部粗得慢、梢部细得快）
+    private static func limb(from p0: CGPoint, _ c1: CGPoint, _ c2: CGPoint,
+                             to p1: CGPoint, w0: CGFloat, w1: CGFloat,
+                             samples: Int, branch: Int, at: CGFloat,
+                             alpha: CGFloat) -> CurtainLimb {
+        var pts: [CGPoint] = []
+        var ws: [CGFloat] = []
+        for i in 0...samples {
+            let t = CGFloat(i) / CGFloat(samples)
+            pts.append(cubic(p0, c1, c2, p1, t))
+            let e = 1 - pow(1 - t, 2)
+            ws.append(w0 + (w1 - w0) * e)
+        }
+        return CurtainLimb(branch: branch, at: at, pts: pts, ws: ws, alpha: alpha)
+    }
+
+    /// 建一棵树：干沉到 contentBottomY 之下（树从画框底长出来，不用画地平线），
+    /// 16 条主枝各停在一个挂点上——绳永远挂在真枝尖，不悬空
+    static func build(width: CGFloat) -> [CurtainLimb] {
+        var limbs: [CurtainLimb] = []
+        let spineX = Curtain.spineXRatio * width
+        let crownY = Curtain.levelBaseY - 30
+        let h = Curtain.trunkBaseY - crownY
+
+        // 树干：微 S 的三次曲线，向光微倾，15 → 7 锥度（Fib 相邻）
+        let lean = width * (0.016 + 0.008 * hash(1))
+        let base = CGPoint(x: spineX, y: Curtain.trunkBaseY)
+        let top = CGPoint(x: spineX + lean, y: crownY)
+        limbs.append(limb(from: base,
+                          CGPoint(x: spineX - lean * 0.7, y: Curtain.trunkBaseY - h * 0.42),
+                          CGPoint(x: spineX + lean, y: crownY + h * 0.30),
+                          to: top, w0: 15, w1: 7, samples: 14,
+                          branch: -1, at: 0, alpha: 1))
+
+        // 根冠三笔：多数时候沉在画框外，滚到底 / 面板更高时才看全
+        for (ri, dir) in [CGFloat(-1), 1, -0.5].enumerated() {
+            let spread = 30 + 14 * hash(CGFloat(ri) * 7 + 2)
+            let r1 = CGPoint(x: spineX + dir * spread,
+                             y: Curtain.trunkBaseY + 4 + 10 * hash(CGFloat(ri) * 3 + 5))
+            limbs.append(limb(from: CGPoint(x: spineX + dir * 4, y: Curtain.trunkBaseY - 6),
+                              CGPoint(x: spineX + dir * spread * 0.4, y: Curtain.trunkBaseY - 4),
+                              r1,
+                              to: r1, w0: 6, w1: 2, samples: 6,
+                              branch: -1, at: 0, alpha: 1))
+        }
+
+        // 主枝：树干着生点 → 挂点。外列着生更低（枝更陡），控制点抬升 +
+        // 确定性抖动，每条枝有自己的弓向；宽度按透视缩（远枝细）
+        for li in 0..<Curtain.maxBranches {
+            let tipY = Curtain.tipY(li)
+            let outer = Curtain.columnDepth[Curtain.column(li)] > 100
+            let sy = min(tipY + (outer ? Curtain.outerBranchDrop : Curtain.innerBranchDrop),
+                         Curtain.trunkBaseY - 40)
+            let start = CGPoint(x: spineX + (hash(CGFloat(li) * 3.3) - 0.5) * 10, y: sy)
+            let tip = CGPoint(x: Curtain.tipX(li, width: width), y: tipY)
+            let span = tip.x - start.x
+            let lift = 14 + 22 * hash(CGFloat(li) * 9.1)
+            let sway = (hash(CGFloat(li) * 5.7) - 0.5) * 30
+            let s = Curtain.persp / (Curtain.persp + Curtain.depth(li))
+            let alpha = Curtain.fogFloor + (1 - Curtain.fogFloor) * s
+            let c1 = CGPoint(x: start.x + span * 0.35 + sway, y: start.y - lift)
+            let c2 = CGPoint(x: start.x + span * 0.78, y: tip.y - 5)
+            limbs.append(limb(from: start, c1, c2, to: tip,
+                              w0: 5.0 * s, w1: 1.3 * s, samples: 10,
+                              branch: li, at: 0, alpha: alpha))
+
+            // 小枝两根：长在主枝中后段，方向交错，枝不像钢丝
+            for k in 0..<2 {
+                let t = 0.42 + 0.32 * CGFloat(k) + 0.08 * hash(CGFloat(li) * 13 + CGFloat(k) * 3)
+                let org = cubic(start, c1, c2, tip, t)
+                let tan = tangent(start, c1, c2, tip, t)
+                let len = hypot(tan.x, tan.y)
+                guard len > 0.001 else { continue }
+                // 切向旋转 ±(28..42)°，符号由哈希定
+                let sign: CGFloat = hash(CGFloat(li) * 17 + CGFloat(k) * 7 + 1) > 0.5 ? 1 : -1
+                let ang = (28 + 14 * hash(CGFloat(li) * 19 + CGFloat(k))) * .pi / 180 * sign
+                let cosA = cos(ang), sinA = sin(ang)
+                let dir = CGPoint(x: (tan.x * cosA - tan.y * sinA) / len,
+                                  y: (tan.x * sinA + tan.y * cosA) / len)
+                let twigLen = 18 + 16 * hash(CGFloat(li) * 23 + CGFloat(k) * 5)
+                let end = CGPoint(x: org.x + dir.x * twigLen, y: org.y + dir.y * twigLen)
+                let mid = CGPoint(x: org.x + dir.x * twigLen * 0.6 - dir.y * 4,
+                                  y: org.y + dir.y * twigLen * 0.6 + dir.x * 4)
+                limbs.append(limb(from: org, org, mid, to: end,
+                                  w0: 1.5 * s, w1: 0.5 * s, samples: 3,
+                                  branch: li, at: t, alpha: alpha))
+            }
+        }
+        return limbs
+    }
 }
 
 // MARK: - 物理
@@ -214,6 +322,17 @@ final class CurtainSim {
     private var growthStart: Date?
     /// 树的世界宽度：宽度变化 >0.5pt 时整树重排（见 frame）
     private var treeWidth: CGFloat = 500
+    /// 建模缓存：同一宽度只建一次骨架（Canvas 每帧都画，建模不能每帧都算）
+    private var limbsCache: [CurtainLimb] = []
+    private var limbsCacheWidth: CGFloat = -1
+    /// 当前宽度的树骨架
+    func limbs(width: CGFloat) -> [CurtainLimb] {
+        if limbsCacheWidth != width {
+            limbsCache = CurtainTree.build(width: width)
+            limbsCacheWidth = width
+        }
+        return limbsCache
+    }
     /// 一棵树一屏：树上挂 [windowStart, windowStart+16) 这一段；
     /// 翻到树的末尾 = **整棵换下一棵**（新树重新长出来 = 翻页动画）
     private(set) var windowStart = 0
@@ -668,40 +787,81 @@ struct TagCurtainView: View {
         ctx.fill(Path(ellipseIn: moonOuter), with: .color(Curtain.moon.opacity(0.07)))
     }
 
-    /// 生成的树素材（AI 水墨树）：替代笔画树——笔画怎么调都「假」，素材
-    /// 自带枝干粗细变化与笔触。生长 = clip 自底向上，根先立、冠后成
+    /// 程序化建模树：干/根先立（trunkGrowth 沿折线自底向上截），枝按
+    /// 新→旧依次伸向挂点，长过小枝着生点后小枝跟着冒——「长出来」
+    /// 是每条 limb 真有一截在伸，不是整段淡入
     private func drawTree(ctx: inout GraphicsContext, size: CGSize, cameraY: CGFloat, width: CGFloat) {
         let growth = sim.currentGrowth
         let count = min(max(items.count - sim.windowStart, 0), Curtain.maxBranches)
-        let layoutWidth = sim.layoutWidth
+        let limbs = sim.limbs(width: sim.layoutWidth)
 
-        if let tree = Curtain.treeImage {
-            let trunkGrowth = min(1, growth / Curtain.trunkPhase)
-            if trunkGrowth > 0.01 {
-                let clipRect = CGRect(x: 0, y: size.height * (1 - trunkGrowth),
-                                      width: size.width, height: size.height * trunkGrowth)
-                ctx.clip(to: Path(clipRect))
-                // fit 高度：树冠顶/根底都完整，水平居中（素材 1.5:1，
-                // 场景区 809×412 → 树宽 ≈ 618，挂点 155..655 全落在树冠里）
-                let ih = CGFloat(tree.height)
-                let regionHeight = Curtain.rootBaseY - Curtain.crownTopY
-                let scale = regionHeight / ih
-                let dw = CGFloat(tree.width) * scale
-                let dest = CGRect(x: layoutWidth / 2 - dw / 2,
-                                  y: Curtain.crownTopY - cameraY,
-                                  width: dw,
-                                  height: regionHeight)
-                ctx.draw(GraphicsContext.Image(tree), in: dest)
+        let trunkGrowth = min(1, growth / Curtain.trunkPhase)
+        let trunkFrac = 1 - pow(1 - trunkGrowth, 3)
+        for limb in limbs {
+            let frac: CGFloat
+            var alpha = limb.alpha
+            if limb.branch < 0 {
+                frac = trunkFrac
+            } else {
+                let b = sim.branchProgress(limb.branch, count: max(count, 1), growth: growth)
+                guard b > limb.at else { continue }
+                let u = min(1, (b - limb.at) / max(0.2, 1 - limb.at))
+                frac = 1 - pow(1 - u, 2)
+                alpha *= min(1, (b - limb.at) * 2.5)
             }
+            guard frac > 0.02 else { continue }
+            drawLimb(ctx: &ctx, limb: limb, frac: frac, alpha: alpha, cameraY: cameraY)
         }
 
-        // 挂点木结：枝线由素材承担，结标记绳的着生点
+        // 挂点木结：枝线由建模承担，结标记绳的着生点
         for li in 0..<count {
             let b = sim.branchProgress(li, count: max(count, 1), growth: growth)
             guard b > 0.9 else { continue }
-            let tip = CGPoint(x: Curtain.tipX(li, width: layoutWidth), y: Curtain.tipY(li) - cameraY)
+            let tip = CGPoint(x: Curtain.tipX(li, width: sim.layoutWidth), y: Curtain.tipY(li) - cameraY)
             let beadRect = CGRect(x: tip.x - 2.4, y: tip.y - 2.4, width: 4.8, height: 4.8)
             ctx.fill(Path(ellipseIn: beadRect), with: .color(Curtain.bead))
+        }
+    }
+
+    /// 沿折线按 frac 截断描：每段自己的宽度（锥度），round cap 让段与段
+    /// 圆润相接。主干额外叠一笔浅芯高光——两笔出体积
+    private func drawLimb(ctx: inout GraphicsContext, limb: CurtainLimb,
+                          frac: CGFloat, alpha: CGFloat, cameraY: CGFloat) {
+        let pts = limb.pts
+        guard pts.count > 1 else { return }
+        var lens: [CGFloat] = []
+        var total: CGFloat = 0
+        for i in 1..<pts.count {
+            let l = hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y)
+            lens.append(l)
+            total += l
+        }
+        var remain = total * frac
+        var last = pts[0]
+        for i in 1..<pts.count {
+            guard remain > 0.001 else { break }
+            let segEnd: CGPoint
+            if lens[i - 1] <= remain {
+                segEnd = pts[i]
+                remain -= lens[i - 1]
+            } else {
+                let t = remain / lens[i - 1]
+                segEnd = CGPoint(x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t,
+                                 y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t)
+                remain = 0
+            }
+            let w = max(0.8, (limb.ws[i - 1] + limb.ws[i]) / 2)
+            var seg = Path()
+            seg.move(to: CGPoint(x: last.x, y: last.y - cameraY))
+            seg.addLine(to: CGPoint(x: segEnd.x, y: segEnd.y - cameraY))
+            ctx.stroke(seg, with: .color(Curtain.inkBranch.opacity(alpha)),
+                       style: StrokeStyle(lineWidth: w, lineCap: .round))
+            if limb.branch < 0 {
+                // 树皮高光：浅芯一笔，宽约主干三分之一
+                ctx.stroke(seg, with: .color(Curtain.barkHighlight.opacity(alpha * 0.7)),
+                           style: StrokeStyle(lineWidth: w * 0.34, lineCap: .round))
+            }
+            last = segEnd
         }
     }
 
