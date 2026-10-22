@@ -104,8 +104,10 @@ enum Curtain {
 
     // MARK: 夜色（许愿树是一个「场景」，不随系统外观切换）
     static let nightBg = Color(red: 0.098, green: 0.075, blue: 0.035)
-    static let inkBranch = Color(red: 0.180, green: 0.137, blue: 0.094)
-    static let bead = Color(red: 0.290, green: 0.220, blue: 0.165)
+    // 枝干要在夜色里**看得见**：真机截图实锤 #2E2318 与夜底几乎同色、树隐形。
+    // 提到暖棕中调，剪影式浮出（比夜底亮约一倍亮度）
+    static let inkBranch = Color(red: 0.478, green: 0.361, blue: 0.243)
+    static let bead = Color(red: 0.659, green: 0.498, blue: 0.333)
     static let ropeRed = Color(red: 0.753, green: 0.224, blue: 0.169)
     static let ropeRedSelected = Color(red: 0.910, green: 0.333, blue: 0.247)
     static let paperBg = Color(red: 0.961, green: 0.914, blue: 0.812)

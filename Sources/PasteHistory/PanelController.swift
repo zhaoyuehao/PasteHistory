@@ -554,6 +554,8 @@ final class PanelController: NSObject, NSWindowDelegate {
     }
 
     func windowDidResignKey(_ notification: Notification) {
+        // 冒烟 --no-auto-hide：截图自检用（面板失焦不收起，仅供脚本核验画面）
+        if ProcessInfo.processInfo.arguments.contains("--no-auto-hide") { return }
         // 焦点的去向要等一拍才问得出（makeKey 交接有时序）：
         // 交给自己的预览窗（点选里面的文字）不算离开，真去了别的应用再收
         DispatchQueue.main.async { [weak self] in
