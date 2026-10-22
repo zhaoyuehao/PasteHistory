@@ -766,8 +766,28 @@ struct TagCurtainView: View {
     /// 看起来就是「系在枝上」而不是「绕到枝后」
     private func ropeCanvas(snapshot: [CurtainPlacement], selectedId: UUID?) -> some View {
         Canvas { ctx, _ in
+            drawCardShadows(ctx: ctx, snapshot: snapshot)
             drawBeads(ctx: ctx, cameraY: sim.cameraOffset)
             drawRopes(ctx: ctx, snapshot: snapshot, selectedId: selectedId)
+        }
+    }
+
+    /// 纸签的「托起来」软影：径向渐变一次填充，替代每张卡的 CALayer
+    /// 模糊阴影（卡在风里每帧转，CA 阴影跟着每帧重算，16 张 × 60fps 的
+    /// blur 是连按方向键卡顿的合成器大头——in-process sample 采不到）
+    private func drawCardShadows(ctx: GraphicsContext, snapshot: [CurtainPlacement]) {
+        for p in snapshot where p.alpha > 0.01 {
+            let s = p.scale
+            var c = ctx
+            // 压扁的径向渐变铺在卡底下：中心跟挂点走、深度近大远小
+            c.translateBy(x: p.hang.x, y: p.hang.y + 26 * s)
+            c.scaleBy(x: 1, y: 0.24)
+            let r = 60 * s
+            c.fill(Path(ellipseIn: CGRect(x: -r, y: -r, width: r * 2, height: r * 2)),
+                   with: .radialGradient(Gradient(colors: [
+                       Color.black.opacity(0.32 * p.alpha),
+                       Color.black.opacity(0)
+                   ]), center: .zero, startRadius: 0, endRadius: r))
         }
     }
 
@@ -1010,15 +1030,19 @@ private struct TagCard: View {
                 .fill(Curtain.paperBg)
         )
         // 无边框：纸签靠暖纸色和夜色拉开，不靠描边（真机反馈「边框就别要了」）。
-        // 选中态是唯一保留的描边——红线 + 红描边一起构成最强信号
+        // 选中态描边：红线 + 红描边一起构成最强信号
         .overlay(
             RoundedRectangle(cornerRadius: 8)
                 .strokeBorder(Curtain.ropeRedSelected, lineWidth: 1.5)
                 .opacity(selected ? 1 : 0)
         )
-        // 投影把签从夜空里托起来；选中 = 灯笼光（暖晕，不是白光）
-        .shadow(color: selected ? Curtain.glow.opacity(0.45) : Color.black.opacity(0.30),
-                radius: selected ? 9 : 5,
+        // 只有选中卡保留 CALayer 阴影（灯笼光晕，一张卡的开销）。
+        // 15 张未选中卡的「托起来」改由 ropeCanvas 里的径向渐变软影承担：
+        // CA 模糊阴影跟着卡每帧的 rotationEffect 重算，16 张 × 60fps 的 blur
+        // 在真机连按方向键时把合成器 GPU 挤爆（3D 层又加了一块全窗
+        // Metal 混合）——Canvas 里一次渐变填充便宜两个数量级
+        .shadow(color: selected ? Curtain.glow.opacity(0.45) : .clear,
+                radius: 9,
                 y: 2)
     }
 }
