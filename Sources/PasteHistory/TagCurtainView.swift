@@ -43,28 +43,30 @@ enum Curtain {
     static let tipBaseY: CGFloat = 420
     /// 每老一条，枝头升高 30
     static let tipStep: CGFloat = 30
-    /// 树干在宽度上的位置（比例）
-    static let spineXRatio: CGFloat = 0.34
-    /// 枝头横向散布半径（比例）：黄金角散布，越靠边越深（z 越大）
-    static let spreadRatio: CGFloat = 0.30
-    static let depthSpread: CGFloat = 380
+    /// 树干居中：枝向两侧伸
+    static let spineXRatio: CGFloat = 0.5
+    /// 四条「枝位」：真机截图实锤随机散布必叠（卡 150 宽，黄金角落点挤在
+    /// 上半区）。分 lane + 绳长交错：相邻索引换位，同位隔 4 条才重现
+    /// （枝头距 4×30=120 > 卡高），相邻 lane 的绳长差 ≥90，纵横向都分开
+    static let lanes: [CGFloat] = [0.14, 0.38, 0.62, 0.86]
+    static let laneRope: [CGFloat] = [130, 30, 160, 60]
+    /// 外侧枝位更深（远），内侧更近
+    static let depthSpread: CGFloat = 320
 
-    /// 绳长：确定性伪随机（26 + (i·67) mod 130），疏密错落
-    static func ropeLength(_ i: Int) -> CGFloat { 26 + CGFloat((i * 67) % 130) }
+    static func lane(_ i: Int) -> Int { i % lanes.count }
 
-    /// 枝头挂点（黄金角叶序：相邻索引的枝头不挨在一起）
     static func tipX(_ i: Int, width: CGFloat) -> CGFloat {
-        let g = CGFloat(i) * 2.399963
-        let raw = width * (spineXRatio + spreadRatio * sin(g) + 0.03 * sin(CGFloat(i) * 5.7))
-        let pad = cardWidth / 2 + 8
-        return min(max(raw, pad), width - pad)
+        let jitter = 12 * sin(CGFloat(i) * 5.7)
+        let pad = cardWidth / 2 + 6
+        return min(max(width * lanes[lane(i)] + jitter, pad), width - pad)
     }
 
     static func tipY(_ i: Int) -> CGFloat { tipBaseY - CGFloat(i) * tipStep }
 
-    /// 深度：横向散布越远越深（|sin(golden)| × depthSpread）
+    static func ropeLength(_ i: Int) -> CGFloat { laneRope[lane(i)] }
+
     static func depth(_ i: Int) -> CGFloat {
-        abs(sin(CGFloat(i) * 2.399963)) * depthSpread
+        60 + abs(lanes[lane(i)] - 0.5) * 2 * depthSpread
     }
 
     // MARK: 生长
@@ -626,10 +628,12 @@ private struct TagCard: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(Curtain.paperBg)
         )
+        // 无边框：纸签靠暖纸色和夜色拉开，不靠描边（真机反馈「边框就别要了」）。
+        // 选中态是唯一保留的描边——红线 + 红描边一起构成最强信号
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(selected ? Curtain.ropeRedSelected : Curtain.paperBorder,
-                              lineWidth: selected ? 1.5 : 0.5)
+                .strokeBorder(Curtain.ropeRedSelected, lineWidth: 1.5)
+                .opacity(selected ? 1 : 0)
         )
     }
 }
