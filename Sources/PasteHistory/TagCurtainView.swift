@@ -13,20 +13,21 @@ enum Curtain {
     // MARK: 物理
     static let persp: CGFloat = 900
     static let gravity: CGFloat = 1300
-    /// verlet 速度保留系数（<1 即阻尼）
-    static let verletDamping: CGFloat = 0.985
-    /// 环境微风：签常年轻微摆动，树才是活的
-    static let windAmp: CGFloat = 30
+    /// verlet 速度保留系数：真机反馈「抖动太厉害，不够物理」——
+    /// 0.985 振荡停不下来，压到 0.975 让摆动两三个来回就归位
+    static let verletDamping: CGFloat = 0.975
+    /// 环境微风：12 是「叶动」而不是「风灾」
+    static let windAmp: CGFloat = 12
     /// 每根绳的节点数（末端节点是签，重物）
     static let nodes = 6
     /// 距离约束迭代次数
     static let iterations = 3
 
-    // 冲量（px/帧）：换签 / 连按 / 悬停 / 余波
-    static let kick: CGFloat = 9
-    static let kickFast: CGFloat = 15
-    static let hoverKick: CGFloat = 3
-    static let wakeKick: CGFloat = 4
+    // 冲量（px/帧）：真机反馈全面调柔——踢是「拨一下」不是「抽一鞭」
+    static let kick: CGFloat = 5
+    static let kickFast: CGFloat = 8
+    static let hoverKick: CGFloat = 2
+    static let wakeKick: CGFloat = 2.5
 
     static let cameraLerp: CGFloat = 0.12
     /// 鼠标视差：近签动多、远签动少。工具面板的 3D 是可感知不可操纵的
@@ -37,24 +38,27 @@ enum Curtain {
     static let cardWidth: CGFloat = 150
 
     // MARK: 树布局（世界坐标：y 向下，与视口尺寸无关）
-    /// 树只挂最近 16 条：一屏装得下、树冠可见（真机反馈「头也看不见」）。
-    /// 更早的记录走搜索或 ⌘L 列表——树是「最近的记忆」，不是全量历史
+    /// 一屏最多挂 16 条；更早的靠滚轮/方向键翻枝（窗口式换挂）。
+    /// 树是「最近的记忆」，不是全量历史
     static let maxBranches = 16
     /// 树干基座（世界 y；相机 0 时在视口底部之下）
     static let trunkBaseY: CGFloat = 820
-    /// i=0（最新）的枝头：低枝在眼前
-    static let tipBaseY: CGFloat = 480
-    /// 每老一条，枝头升高 28（16 条 = 树冠到树脚一屏装下）
+    /// i=0（最新）的枝头在**树冠**（真机反馈「最新的在最顶上」）：
+    /// 树冠是树最年轻的部分，最新挂冠、越旧越靠近树脚，植物学也成立
+    static let tipTopY: CGFloat = 95
+    /// 每旧一条，枝头下降 28
     static let tipStep: CGFloat = 28
     /// 树干居中：枝向两侧伸
     static let spineXRatio: CGFloat = 0.5
     /// 四条「枝位」：真机截图实锤随机散布必叠（卡 150 宽，黄金角落点挤在
     /// 上半区）。分 lane + 绳长交错：相邻索引换位，同位隔 4 条才重现
-    /// （枝头距 4×30=120 > 卡高），相邻 lane 的绳长差 ≥90，纵横向都分开
+    /// （枝头距 4×28=112 > 卡高），相邻 lane 的绳长差 ≥90，纵横向都分开
     static let lanes: [CGFloat] = [0.14, 0.38, 0.62, 0.86]
     static let laneRope: [CGFloat] = [130, 30, 160, 60]
     /// 外侧枝位更深（远），内侧更近
     static let depthSpread: CGFloat = 320
+    /// 树的内容底边（相机钳制用）：最深枝 + 最长绳 + 卡高
+    static let contentBottomY: CGFloat = 780
 
     static func lane(_ i: Int) -> Int { i % lanes.count }
 
@@ -64,7 +68,8 @@ enum Curtain {
         return min(max(width * lanes[lane(i)] + jitter, pad), width - pad)
     }
 
-    static func tipY(_ i: Int) -> CGFloat { tipBaseY - CGFloat(i) * tipStep }
+    /// 局部索引（窗口内 0..<16）：最新在顶，越旧越低
+    static func tipY(_ i: Int) -> CGFloat { tipTopY + CGFloat(i) * tipStep }
 
     static func ropeLength(_ i: Int) -> CGFloat { laneRope[lane(i)] }
 
@@ -161,7 +166,7 @@ final class CurtainSim {
 
     private var ropes: [UUID: Rope] = [:]
     private var lastDate: Date?
-    /// 相机纵向位置（世界坐标）：≤0，选中高处旧签时向上滚
+    /// 相机纵向位置（世界坐标）：最新在顶、内容向下延伸，正 = 向下滚
     private var cameraY: CGFloat = 0
     private var cameraTargetY: CGFloat = 0
     /// 相机横向平移（视差）
@@ -169,12 +174,50 @@ final class CurtainSim {
     private var hoverX: CGFloat?
     /// 生长：nil = 还没开始长（首帧不是「长成的树闪一下再重长」）
     private var growthStart: Date?
-    /// 树的世界宽度：首次挂枝时定死，拖宽窗口不重排（树是种好的，不是橡皮泥）
+    /// 树的世界宽度：宽度变化 >0.5pt 时整树重排（见 frame）
     private var treeWidth: CGFloat = 500
+    /// 窗口式挂枝：树上永远是 [windowStart, windowStart+16) 这一段。
+    /// 滚轮/方向键翻页 = 换一批枝挂（新枝垂落、旧枝解绳）
+    private(set) var windowStart = 0
+    private var totalItems = 0
+    private var scrollAccum: CGFloat = 0
 
     // MARK: 外部输入
 
     func setHover(_ x: CGFloat?) { hoverX = x }
+
+    /// 滚轮：dy < 0（自然滚动向上划）= 翻更早的枝。逐档换挂，
+    /// 新来的枝垂落本身就是翻页的物理反馈
+    func scroll(by delta: CGFloat) {
+        guard totalItems > Curtain.maxBranches else { return }
+        scrollAccum += delta
+        let step: CGFloat = 16
+        while scrollAccum <= -step {
+            windowStart += 1
+            scrollAccum += step
+        }
+        while scrollAccum >= step {
+            windowStart -= 1
+            scrollAccum -= step
+        }
+        clampWindow()
+    }
+
+    private func clampWindow() {
+        let cap = min(totalItems, Curtain.maxBranches)
+        windowStart = min(max(0, windowStart), max(0, totalItems - cap))
+    }
+
+    /// 方向键选到窗口外：把窗口挪到选中项可见。返回选中项的局部索引
+    @discardableResult
+    func ensureVisible(_ global: Int) -> Int {
+        let cap = min(totalItems, Curtain.maxBranches)
+        guard cap > 0 else { return 0 }
+        if global < windowStart { windowStart = global }
+        else if global >= windowStart + cap { windowStart = global - cap + 1 }
+        clampWindow()
+        return min(max(global - windowStart, 0), cap - 1)
+    }
 
     /// 踢一下绳末端（速度冲量，px/帧）。选中 / 悬停都走这里
     func kick(id: UUID, _ velocity: CGFloat) {
@@ -182,16 +225,19 @@ final class CurtainSim {
         rope.nodes[last].px -= velocity
     }
 
-    /// 相机跟到选中签：签落在视口 38% 高的位置
+    /// 相机跟到选中签（局部索引）：签落在视口 38% 高的位置，
+    /// 上不越过树冠、下不露出树脚以下
     func updateCamera(index: Int, height: CGFloat) {
-        let target = Curtain.tipY(index) + Curtain.ropeLength(index) - height * 0.38
-        cameraTargetY = min(0, target)
+        let raw = Curtain.tipY(index) + Curtain.ropeLength(index) - height * 0.38
+        let maxCam = max(0, Curtain.contentBottomY - height)
+        cameraTargetY = min(max(0, raw), maxCam)
     }
 
-    /// 回到树脚（换搜索词 = 一次新的「找」）
+    /// 回到树冠（换搜索词 / 重开面板 = 一次新的「找」）：相机和挂枝窗口都回顶
     func snapCamera() {
         cameraTargetY = 0
         cameraY = 0
+        windowStart = 0
     }
 
     /// 树重新长一遍：每次打开面板都是一次「长出来」
@@ -236,21 +282,29 @@ final class CurtainSim {
         let dt = min(0.05, lastDate.map { date.timeIntervalSince($0) } ?? 1 / 60)
         lastDate = date
         let growth = growth(at: date)
+        totalItems = items.count
+        clampWindow()
+        let cap = min(items.count, Curtain.maxBranches)
+        guard cap > 0 else {
+            ropes.removeAll()
+            return []
+        }
+        let window = Array(items[windowStart..<(windowStart + cap)])
 
-        // 对账：树只挂最近 maxBranches 条；窗口宽度变了整树重排
+        // 对账：树上只挂窗口内这 16 条；宽度变了整树重排
         // （只挪锚点不解绳——node0 被钉在新枝位，绳会荡过去，不闪不重播）
-        let treeIds = Set(items.prefix(Curtain.maxBranches).map(\.id))
+        let treeIds = Set(window.map(\.id))
         let stale = ropes.keys.filter { !treeIds.contains($0) }
         stale.forEach { ropes.removeValue(forKey: $0) }
         if ropes.isEmpty { treeWidth = width }
         let relayout = abs(width - treeWidth) > 0.5
         if relayout { treeWidth = width }
-        for (i, item) in items.enumerated() where i < Curtain.maxBranches {
-            let want = CGPoint(x: Curtain.tipX(i, width: treeWidth), y: Curtain.tipY(i))
+        for (li, item) in window.enumerated() {
+            let want = CGPoint(x: Curtain.tipX(li, width: treeWidth), y: Curtain.tipY(li))
             if let rope = ropes[item.id] {
                 if relayout || rope.anchor != want { rope.anchor = want }
             } else {
-                ropes[item.id] = Rope(index: i, width: treeWidth)
+                ropes[item.id] = Rope(index: li, width: treeWidth)
             }
         }
 
@@ -264,10 +318,9 @@ final class CurtainSim {
         panX += (panTarget - panX) * 0.1
 
         // 枝头长到六成 → 绳开始垂落
-        let count = min(items.count, Curtain.maxBranches)
-        for (i, item) in items.enumerated() where i < Curtain.maxBranches {
+        for (li, item) in window.enumerated() {
             if let rope = ropes[item.id], rope.spawnedAt == nil,
-               branchProgress(i, count: count, growth: growth) >= Curtain.hangAt {
+               branchProgress(li, count: cap, growth: growth) >= Curtain.hangAt {
                 rope.spawnedAt = date
                 if !Motion.reduceMotion {
                     rope.nodes[rope.nodes.count - 1].px -= .random(in: -3...3)
@@ -279,9 +332,9 @@ final class CurtainSim {
 
         var tags: [CurtainPlacement] = []
         let cx = width / 2
-        for (i, item) in items.enumerated() where i < Curtain.maxBranches {
+        for (li, item) in window.enumerated() {
             guard let rope = ropes[item.id], let spawned = rope.spawnedAt else { continue }
-            let z = Curtain.depth(i)
+            let z = Curtain.depth(li)
             let s = Curtain.persp / (Curtain.persp + z)
             let panX = self.panX
             let cameraY = self.cameraY
@@ -299,7 +352,7 @@ final class CurtainSim {
             let alpha = min(1, max(0, CGFloat(age / 0.25)))
             tags.append(CurtainPlacement(
                 id: item.id,
-                index: i,
+                index: windowStart + li,
                 depth: z,
                 scale: s,
                 fog: Curtain.fogFloor + (1 - Curtain.fogFloor) * s,
@@ -424,6 +477,7 @@ struct TagCurtainView: View {
                 case .ended: sim.setHover(nil)
                 }
             }
+            .background(ScrollCatcher { delta in sim.scroll(by: delta) })
             .overlay(alignment: .bottomTrailing) {
                 Text(L10n.curtainListHint)
                     .font(.system(size: Scale.meta))
@@ -434,8 +488,8 @@ struct TagCurtainView: View {
                 if items.isEmpty { emptyState }
             }
             .overlay(alignment: .bottom) {
-                // 树只挂最近 16 条：选到更早的记录时给出去处
-                if model.safeSelection >= Curtain.maxBranches {
+                // 树是窗口式挂枝：还有更早的记录时给出去处
+                if sim.windowStart + Curtain.maxBranches < items.count {
                     Text(L10n.curtainOlderHint)
                         .font(.system(size: Scale.meta))
                         .foregroundStyle(Curtain.moon.opacity(0.7))
@@ -498,7 +552,7 @@ struct TagCurtainView: View {
     /// 树干（clip 从底部向上长）+ 枝（按各自进度伸展）
     private func drawTree(ctx: inout GraphicsContext, size: CGSize, cameraY: CGFloat, width: CGFloat) {
         let growth = sim.currentGrowth
-        let count = min(items.count, Curtain.maxBranches)
+        let count = min(max(items.count - sim.windowStart, 0), Curtain.maxBranches)
         let layoutWidth = sim.layoutWidth
         let trunkTop = Curtain.tipY(count - 1) - 40
         let trunkX = Curtain.spineXRatio * layoutWidth
@@ -574,6 +628,8 @@ struct TagCurtainView: View {
         guard !items.isEmpty else { return }
         let clamped = min(max(new, 0), items.count - 1)
         guard clamped >= 0, clamped < items.count else { return }
+        // 方向键选到窗口外：先换枝（选中项进窗），再踢绳、跟相机
+        let local = sim.ensureVisible(clamped)
         let fast = Date().timeIntervalSince(model.lastMoveAt) < Motion.repeatThreshold
         let dir: CGFloat = new >= old ? 1 : -1
         // 旧签被反向带一下：视线离开的地方也要有余波
@@ -581,7 +637,7 @@ struct TagCurtainView: View {
             sim.kick(id: items[old].id, -dir * Curtain.wakeKick)
         }
         sim.kick(id: items[clamped].id, dir * (fast ? Curtain.kickFast : Curtain.kick))
-        sim.updateCamera(index: min(clamped, Curtain.maxBranches - 1), height: height)
+        sim.updateCamera(index: local, height: height)
         if clamped >= items.count - 8 { store.loadMore() }
     }
 
@@ -596,6 +652,33 @@ struct TagCurtainView: View {
         }
         .multilineTextAlignment(.center)
         .padding(.horizontal, Rhythm.xxl)
+    }
+}
+
+// MARK: - 滚轮
+
+/// 捕获滚轮的透明垫层：SwiftUI 在 macOS 14 没有滚轮修饰符，
+/// 靠一个不响应点击、只转发 scrollWheel 的 NSView 铺在树后面
+private struct ScrollCatcher: NSViewRepresentable {
+    let onScroll: (CGFloat) -> Void
+
+    func makeNSView(context: Context) -> WheelView {
+        let view = WheelView()
+        view.onScroll = onScroll
+        return view
+    }
+
+    func updateNSView(_ view: WheelView, context: Context) {
+        view.onScroll = onScroll
+    }
+
+    final class WheelView: NSView {
+        var onScroll: ((CGFloat) -> Void)?
+
+        override func scrollWheel(with event: NSEvent) {
+            onScroll?(event.scrollingDeltaY)
+            // 不调 super：滚动全部归树，不透给底层窗口
+        }
     }
 }
 
