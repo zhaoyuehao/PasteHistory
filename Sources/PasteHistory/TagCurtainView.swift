@@ -39,9 +39,8 @@ enum Curtain {
     static let parallax: CGFloat = 0.10
     /// 深度雾下限：外缘（更远）的签最淡到 0.62（0.55 太洗白，远签失读）
     static let fogFloor: CGFloat = 0.62
-    /// 纸签卡宽（未缩放）：真机截图实锤 150 宽 + 110 高的图卡在 809×500 里
-    /// 一屏必然叠压——许愿签就该是签的尺度
-    static let cardWidth: CGFloat = 124
+    /// 纸签卡宽 = 144（Fibonacci）。外框 809×500 = 500×φ，卡宽回 Fib 阶梯
+    static let cardWidth: CGFloat = 144
 
     // MARK: 树布局（世界坐标：y 向下。四条**竖直列**——列内 ↓ 垂直向下、
     // 列间互不漂移；上一版列在对角线上漂移 + 远端长枝近乎水平，真机
@@ -68,14 +67,14 @@ enum Curtain {
     /// 场景内容底边（相机钳制用）
     static let contentBottomY: CGFloat = 505
     /// 树干横向位置
-    static let spineXRatio: CGFloat = 0.47
+    static let spineXRatio: CGFloat = 0.5
 
     static func column(_ i: Int) -> Int { i / 4 }
     /// 列内第几层（往下）：↓ 沿一列垂直向下
     static func level(_ i: Int) -> Int { i % 4 }
 
     static func tipX(_ i: Int, width: CGFloat) -> CGFloat {
-        let jitter = 5 * sin(CGFloat(i) * 5.7)
+        let jitter = 3 * sin(CGFloat(i) * 5.7)
         let raw = width * columns[column(i)] + jitter
         let pad = cardWidth / 2 + 6
         return min(max(raw, pad), width - pad)
@@ -637,10 +636,10 @@ struct TagCurtainView: View {
             let rect = CGRect(x: sx, y: sy, width: starSize, height: starSize)
             ctx.fill(Path(ellipseIn: rect), with: .color(Curtain.moon.opacity(base * twinkle)))
         }
-        let glowY = 190 - cameraY
+        let glowY = 144 - cameraY
         let glowRect = CGRect(x: width * 0.5 - 210, y: glowY - 210, width: 420, height: 420)
         ctx.fill(Path(ellipseIn: glowRect), with: .color(Curtain.glow.opacity(0.06)))
-        let moonY = 30 - cameraY
+        let moonY = 21 - cameraY
         let moonInner = CGRect(x: width * 0.9 - 15, y: moonY - 15, width: 30, height: 30)
         ctx.fill(Path(ellipseIn: moonInner), with: .color(Curtain.moon.opacity(0.14)))
         let moonOuter = CGRect(x: width * 0.9 - 25, y: moonY - 25, width: 50, height: 50)
@@ -653,7 +652,7 @@ struct TagCurtainView: View {
         let count = min(max(items.count - sim.windowStart, 0), Curtain.maxBranches)
         let layoutWidth = sim.layoutWidth
         let trunkX = Curtain.spineXRatio * layoutWidth
-        let crownY = Curtain.levelBaseY - 52
+        let crownY = Curtain.levelBaseY - 34
 
         let trunkGrowth = min(1, growth / Curtain.trunkPhase)
         if trunkGrowth > 0.01 {
@@ -667,13 +666,13 @@ struct TagCurtainView: View {
             trunk.move(to: base)
             trunk.addQuadCurve(to: top, control: mid)
             ctx.stroke(trunk, with: .color(Curtain.inkBranch),
-                       style: StrokeStyle(lineWidth: 16, lineCap: .round))
-            // 浅芯一笔 = 受光的树皮，两笔出体积
+                       style: StrokeStyle(lineWidth: 13, lineCap: .round))
+            // 浅芯一笔 = 受光的树皮，两笔出体积（13:5 均为 Fib）
             ctx.stroke(trunk, with: .color(Curtain.barkHighlight),
                        style: StrokeStyle(lineWidth: 5, lineCap: .round))
             // 侧根两条：必须画在视口内——树要看得见「扎根」，不是悬空
             // （之前画在 y530-590，视口只有 438 高，等于没画）
-            let rootY = min(415 - cameraY, size.height - 12)
+            let rootY = min(377 - cameraY, size.height - 12)
             var rootL = Path()
             rootL.move(to: CGPoint(x: trunkX, y: rootY + 34))
             rootL.addQuadCurve(to: CGPoint(x: trunkX - 44, y: rootY),
@@ -709,7 +708,7 @@ struct TagCurtainView: View {
             branch.move(to: start)
             branch.addQuadCurve(to: end, control: control)
             ctx.stroke(branch, with: .color(Curtain.inkBranch.opacity(min(1, b * 2))),
-                       style: StrokeStyle(lineWidth: max(2.2, 5.0 - (sy - tipY) / 60),
+                       style: StrokeStyle(lineWidth: max(3, 5 - (sy - tipY) / 60),
                                           lineCap: .round))
             if b > 0.9 {
                 let beadRect = CGRect(x: tip.x - 2.4, y: tip.y - 2.4, width: 4.8, height: 4.8)
