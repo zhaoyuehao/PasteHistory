@@ -272,11 +272,19 @@ final class CurtainSim {
         cameraTargetY = min(max(0, raw), maxCam)
     }
 
-    /// 回到树冠（换搜索词 / 重开面板 = 一次新的「找」）：相机和挂枝窗口都回顶
+    /// 回到树冠：**只动相机**。（这里曾藏着 windowStart = 0——ensureVisible
+    /// 换树后紧跟的 snapCamera 把刚设好的窗口清回第一棵树，导致跨树边界后
+    /// 每按一次方向键 treeStart ≠ windowStart 恒成立、整棵树每按必重长，
+    /// 真机 bug 两轮才抓到。窗口归零从此只走 resetToFirstTree）
     func snapCamera() {
         cameraTargetY = 0
         cameraY = 0
+    }
+
+    /// 回到第一棵树（重开面板 / 换搜索词 = 一次新的「找」）
+    func resetToFirstTree() {
         windowStart = 0
+        snapCamera()
     }
 
     /// 树重新长一遍：每次打开面板都是一次「长出来」
@@ -577,12 +585,12 @@ struct TagCurtainView: View {
                 handleSelectionChange(old: old, new: new, height: geo.size.height)
             }
             .onChange(of: model.presentationTick) { _, _ in
-                sim.snapCamera()
+                sim.resetToFirstTree()
                 sim.beginGrowth()
             }
             .onChange(of: store.query) { _, _ in
                 model.resetSelection()
-                sim.snapCamera()
+                sim.resetToFirstTree()
             }
         }
     }
