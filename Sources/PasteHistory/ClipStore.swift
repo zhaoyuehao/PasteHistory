@@ -65,14 +65,32 @@ final class ClipStore: ObservableObject {
         displayed = syncDatabase.list(query: query, filter: filter, limit: pageSize, offset: 0)
     }
 
-    /// 滚动接近底部时加载下一页
+    /// 加载下一页时是否已有一次在途请求
+    private var loadingMore = false
+
+    /// 滚动接近底部时加载下一页。
+    /// 查询放后台再回主线程追加：以前在主线程 `queue.sync` 同步等 DB 队列
+    /// （LIKE 无索引全表扫 + 每行 JSON/blob 解码），滚到底那一下正好有
+    /// 滚动动画在跑，主线程卡几毫秒就是肉眼可见的顿
     func loadMore() {
-        guard displayed.count < matchCount else { return }
-        let next = syncDatabase.list(query: query, filter: filter, limit: pageSize, offset: displayed.count)
-        guard !next.isEmpty else { return }
-        // 去掉可能与当前页重叠的 id（同步导入期间的并发变化）
-        let known = Set(displayed.map { $0.id })
-        displayed.append(contentsOf: next.filter { !known.contains($0.id) })
+        guard !loadingMore, displayed.count < matchCount else { return }
+        loadingMore = true
+        let query = self.query
+        let filter = self.filter
+        let offset = displayed.count
+        let limit = pageSize
+        let database = syncDatabase
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let next = database.list(query: query, filter: filter, limit: limit, offset: offset)
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.loadingMore = false
+                guard !next.isEmpty else { return }
+                // 去掉可能与当前页重叠的 id（同步导入期间的并发变化）
+                let known = Set(self.displayed.map { $0.id })
+                self.displayed.append(contentsOf: next.filter { !known.contains($0.id) })
+            }
+        }
     }
 
     func recent(_ n: Int) -> [ClipItem] {

@@ -246,6 +246,7 @@ struct HistoryView: View {
                 selectionSpace: selectionSpace,
                 onPin: { model.togglePin(at: index) },
                 onDelete: { model.delete(at: index) })
+            .equatable()
             .id(item.id)
             .contentShape(Rectangle())
             .onTapGesture(count: 2) { onPaste(item) }
@@ -439,6 +440,21 @@ struct RowView: View {
             if searchRange.isEmpty { break }
         }
         return attr
+    }
+}
+
+/// 判等：selection 变化会让 HistoryView 整个 body 重算，row() 里
+/// onPin/onDelete 闭包每次都是新值，SwiftUI 无法判等 → 以前每按一次方向键，
+/// **所有**可见行都重跑 body（每行一个 DateFormatter、图片行再解一遍 PNG）。
+/// 判等只看真正影响渲染的输入；闭包与 namespace 是身份性的，不参与。
+/// 纯上下移动时 `ordered` 不会被重建，ClipItem 是同一实例，== 走指针短路；
+/// 真正逐字段比较只发生在 rebuild（拷贝新记录进来）时
+extension RowView: Equatable {
+    static func == (lhs: RowView, rhs: RowView) -> Bool {
+        lhs.item == rhs.item
+            && lhs.index == rhs.index
+            && lhs.query == rhs.query
+            && lhs.selected == rhs.selected
     }
 }
 
