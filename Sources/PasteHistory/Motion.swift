@@ -31,6 +31,9 @@ enum Motion {
     /// 悬停：比选中快一档，不然手感发木
     static let hover = Animation.easeOut(duration: 0.12)
 
+    /// 撞墙位移：列表与预览大窗共用。8pt 够看见、又不至于糊成一片
+    static let bounceDistance: CGFloat = 8
+
     /// 连按判定：间隔小于这个值就用 selectionFast
     static let repeatThreshold: TimeInterval = 0.2
 }

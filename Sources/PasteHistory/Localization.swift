@@ -52,6 +52,11 @@ enum L10n {
     static var attachedText: String { value("附带文字", "附帶文字", "Attached text") }
     static var imageText: String { value("图内文字", "圖中文字", "Text in image") }
     static var fileMissing: String { value("原文件已不存在", "原始檔案已不存在", "Original file is missing") }
+    static var previewTruncated: String { value("已显示前 100,000 字符 · 完整内容可粘贴后查看", "已顯示前 100,000 字元 · 完整內容可黏貼後查看", "Showing the first 100,000 characters. Paste to see the rest.") }
+    static var previewTitle: String { value("预览", "預覽", "Preview") }
+    static func charCount(_ n: Int) -> String { value("\(n) 字", "\(n) 字", "\(n) characters") }
+    static func fileCount(_ n: Int) -> String { value("\(n) 个文件", "\(n) 個檔案", "\(n) files") }
+    static func pixelSize(_ w: Int, _ h: Int) -> String { value("\(w)×\(h)", "\(w)×\(h)", "\(w)×\(h)") }
     static var pinItem: String { value("置顶", "置頂", "Pin") }
     static var deleteItem: String { value("删除", "刪除", "Delete") }
     /// ⌘1–9 角标的读屏名字。「⌘1」念出来没有人听得懂

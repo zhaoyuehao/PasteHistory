@@ -30,6 +30,7 @@ PasteHistory.app/Contents/MacOS/PasteHistory --show-pair       # 启动即打开
 PasteHistory.app/Contents/MacOS/PasteHistory --print-ax         # 把辅助功能授权状态写到 ax_status.txt
 PasteHistory.app/Contents/MacOS/PasteHistory --paste-latest     # 对最新记录走完整粘贴流程
 PasteHistory.app/Contents/MacOS/PasteHistory --smoke-panel-paste # 复现真实路径：开面板 → 选一条 → 回车粘贴（需前台有聚焦输入框）
+PasteHistory.app/Contents/MacOS/PasteHistory --smoke-preview  # 开面板 → 空格路径开预览 → ↓切换跟随 → 再空格收，日志断言（历史需 ≥2 条）
 PasteHistory.app/Contents/MacOS/PasteHistory --purge-ids a,b    # 清除指定记录（DB + iCloud + 墓碑）
 PasteHistory.app/Contents/MacOS/PasteHistory --restore-images   # 从 iCloud 恢复本地缺失的原图
 ```
@@ -80,8 +81,9 @@ PasteHistory.app/Contents/MacOS/PasteHistory --restore-images   # 从 iCloud 恢
 | `ClipboardMonitor.swift` | NSPasteboard changeCount 轮询，接力/保密类型识别 |
 | `HistoryDatabase.swift` | SQLite3 C API（WAL、分页、串行队列） |
 | `ClipStore.swift` | 分页门面、Settings（UserDefaults） |
-| `PanelController.swift` | ⇧⌘C 面板（NSHostingController 承载 SwiftUI） |
+| `PanelController.swift` | ⇧⌘C 面板（NSHostingController 承载 SwiftUI）、键监视器（空格/⌘Y 预览开关在此分发） |
 | `HistoryView.swift` | 面板 UI（搜索 / 列表 / 键盘导航） |
+| `PreviewPanel.swift` | 空格/⌘Y 预览大窗：不夺焦点的 NSPanel（贴面板右侧）+ 三类内容视图，随面板选中联动 |
 | `Theme.swift` | 字号 / 图标档位与语义色（`Palette.meta` / `.warning` 按 WCAG AA 反解） |
 | `Motion.swift` | 动效令牌（选中 / 连按 / 边界回弹 / 悬停），View 与 ViewModel 共用 |
 | `PasteService.swift` / `AXFocus.swift` | 回写剪贴板、AX 权限、捕获并还原聚焦输入框、模拟 ⌘V |

@@ -137,6 +137,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+
+        // 冒烟：--smoke-preview 走空格同款路径（开面板 → 预览开 → ↓跟随 → 预览收），
+        // 全程打日志断言；历史里至少要有 2 条记录才能验证「切换跟随」
+        if args.contains("--smoke-preview") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                PanelController.shared.show()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                    PanelController.shared.togglePreview()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                        let opened = PanelController.shared.isPreviewVisible
+                        NotificationCenter.default.post(name: .phMoveDown, object: nil)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                            let moved = PanelController.shared.isPreviewVisible
+                            PanelController.shared.togglePreview()
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                let closed = !PanelController.shared.isPreviewVisible
+                                NSLog("[PH] smoke-preview: open=%@ switch-follow=%@ close=%@",
+                                      opened ? "OK" : "FAIL",
+                                      moved ? "OK" : "FAIL",
+                                      closed ? "OK" : "FAIL")
+                                PanelController.shared.hide()
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
