@@ -370,6 +370,8 @@ final class Settings {
         static let panelWidth = "panelWidth"
         static let panelHeight = "panelHeight"
         static let panelViewCurtain = "panelViewCurtain"
+        static let curtainWidth = "curtainWidth"
+        static let curtainHeight = "curtainHeight"
     }
 
     var maxItems: Int {
@@ -425,6 +427,19 @@ final class Settings {
     var curtainView: Bool {
         get { defaults.bool(forKey: Key.panelViewCurtain) }
         set { defaults.set(newValue, forKey: Key.panelViewCurtain) }
+    }
+
+    /// 线签帘的外框记忆：签卡 ~170 宽 + 三层深度横向散布，400 宽挤成一团。
+    /// 默认 500×809 = 500×φ——与列表的 400×647（400×φ）同一 φ 外框族、大一号；
+    /// 独立记忆，⌘L 切换时窗口跟着换、互不覆盖
+    var curtainWidth: CGFloat {
+        get { let v = defaults.double(forKey: Key.curtainWidth); return v <= 0 ? 500 : min(max(v, 340), 940) }
+        set { defaults.set(newValue, forKey: Key.curtainWidth) }
+    }
+
+    var curtainHeight: CGFloat {
+        get { let v = defaults.double(forKey: Key.curtainHeight); return v <= 0 ? 809 : min(max(v, 360), 1200) }
+        set { defaults.set(newValue, forKey: Key.curtainHeight) }
     }
 
     /// iCloud 同步开关（默认开；未登录 iCloud Drive 时自动无效）

@@ -40,8 +40,15 @@ enum Curtain {
     static let parallax: CGFloat = 0.06
     /// 深度雾下限：后排签最淡到 0.5
     static let fogFloor: CGFloat = 0.5
-    /// 纸签卡宽（未缩放）
-    static let cardWidth: CGFloat = 176
+    /// 纸签卡宽（未缩放）：8×21 = 168，Fibonacci 对的乘积，不上不下时不发明新数
+    static let cardWidth: CGFloat = 168
+
+    // 线宽：真机反馈「线和图片的比例太悬殊」——发丝线压不住签卡。
+    // 粗细直接用 Rhythm 的 Fib 档（3 与 5，不再另立数）；选中的红线同宽靠色出跳
+    static let ropeWidth: CGFloat = 5
+    static let ropeWidthMin: CGFloat = 3
+    static let ropeWidthSelected: CGFloat = 5
+    static let railWidth: CGFloat = 3
 
     /// 冒烟：--view tags 强制线签帘（不写用户偏好）
     static var debugForce = false
@@ -374,10 +381,14 @@ struct TagCurtainView: View {
                 var rope = Path()
                 rope.move(to: tag.path[0])
                 for point in tag.path.dropFirst() { rope.addLine(to: point) }
-                let color: Color = tag.id == selectedId
+                let selected = tag.id == selectedId
+                let color: Color = selected
                     ? .accentColor
                     : Color(NSColor.separatorColor).opacity(0.9)
-                ctx.stroke(rope, with: .color(color), lineWidth: max(0.8, 1.5 * tag.scale))
+                let width = selected
+                    ? Curtain.ropeWidthSelected
+                    : max(Curtain.ropeWidthMin, Curtain.ropeWidth * tag.scale)
+                ctx.stroke(rope, with: .color(color), lineWidth: width)
             }
 
             // 轨道：相机下移后随世界滚出视口
@@ -386,7 +397,7 @@ struct TagCurtainView: View {
                 var rail = Path()
                 rail.move(to: CGPoint(x: 0, y: railY))
                 rail.addLine(to: CGPoint(x: size.width, y: railY))
-                ctx.stroke(rail, with: .color(Color(NSColor.labelColor).opacity(0.7)), lineWidth: 2)
+                ctx.stroke(rail, with: .color(Color(NSColor.labelColor).opacity(0.7)), lineWidth: Curtain.railWidth)
             }
         }
     }

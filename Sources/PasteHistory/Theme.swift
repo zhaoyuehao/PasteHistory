@@ -62,10 +62,18 @@ enum Panel {
     /// 冒烟参数 `--panel-size 520,540`：临时换成指定外框对比（真机 A/B 用），不影响默认值
     static var debugSize: NSSize?
 
-    /// 默认 400（= 400×φ 的黄金矩形宽）；用户拖边调整后记住其选择
-    static var width: CGFloat { debugSize?.width ?? Settings.shared.panelWidth }
+    /// 线签帘视图激活中（⌘L 状态或冒烟 --view tags）：外框走线签帘自己的偏好
+    static var isCurtain: Bool { Settings.shared.curtainView || Curtain.debugForce }
+
+    /// 默认 400（= 400×φ 的黄金矩形宽）；用户拖边调整后记住其选择。
+    /// 线签帘激活时改读 curtainWidth/Height（默认 560×800），两套记忆互不覆盖
+    static var width: CGFloat {
+        debugSize?.width ?? (isCurtain ? Settings.shared.curtainWidth : Settings.shared.panelWidth)
+    }
     /// 期望高度：φ 默认 647 或用户选择；贴输入框放不下时在 [minHeight, 期望] 内收
-    static var maxHeight: CGFloat { debugSize?.height ?? Settings.shared.panelHeight }
+    static var maxHeight: CGFloat {
+        debugSize?.height ?? (isCurtain ? Settings.shared.curtainHeight : Settings.shared.panelHeight)
+    }
     /// 可调下限：行内解剖可存活的最小宽度 + 扫读可存活的最小高度
     static let minWidth: CGFloat = 340
     static let minHeight: CGFloat = 360
