@@ -3,80 +3,99 @@ import SwiftUI
 
 // MARK: - 参数
 
-/// 线签帘（Tag Curtain）参数：每条剪贴记录是一张挂在顶部轨道上的纸签，
-/// 新签挂得高、旧签沉下去；深度用透视投影表达，摆动由 verlet 绳物理驱动。
+/// 许愿树（Wishing Tree）参数：每条剪贴记录是一张挂在枝头的许愿签。
+/// 夜色 + 墨色枝干 + 朱红绳。树是**长出来的**——树干先升、枝条按新→旧
+/// 依次伸展、枝头长到六成时绳从那里垂落展开（verlet 物理，不是动画曲线）。
 ///
-/// 设计原则与列表一致：阻尼感不是加出来的动画，是这个世界的物理——
-/// 选中 = 踢一下绳末端（波沿绳传播），换签 = 相邻绳被反向带一下。
-/// 「减少动态效果」时风与冲量关闭，绳静止垂直，但视图照常可用（降级不是关掉）。
+/// 时间语义：最新的签挂低枝（眼前），越旧挂得越高——翻历史 = 爬树。
+/// 「减少动态效果」时生长跳过、绳瞬间挂满，功能不受影响（降级不是关掉）。
 enum Curtain {
-    /// 透视焦距：深度 z 处的签缩放为 persp/(persp+z)，z ∈ [0, depthMax)
+    // MARK: 物理
     static let persp: CGFloat = 900
-    /// 深度散布范围。真机反馈「3D 感呢」：缩放 + 雾是人眼最弱的两个深度线索，
-    /// 空间感主要靠下面 facing / depthLift / parallax 三个强线索
-    static let depthMax: CGFloat = 600
     static let gravity: CGFloat = 1300
     /// verlet 速度保留系数（<1 即阻尼）
     static let verletDamping: CGFloat = 0.985
-    /// 环境微风：绳常年轻微摆动，世界才是活的
-    static let windAmp: CGFloat = 26
+    /// 环境微风：签常年轻微摆动，树才是活的
+    static let windAmp: CGFloat = 30
     /// 每根绳的节点数（末端节点是签，重物）
-    static let nodes = 7
+    static let nodes = 6
     /// 距离约束迭代次数
     static let iterations = 3
 
-    // 冲量（单位：px/帧）
+    // 冲量（px/帧）：换签 / 连按 / 悬停 / 余波
     static let kick: CGFloat = 9
-    /// 连按方向键：冲量加大——连续移动恰恰最需要阻尼，不是关掉
     static let kickFast: CGFloat = 15
-    static let hoverKick: CGFloat = 3.2
-    /// 换签时旧签被反向带一下的余波
+    static let hoverKick: CGFloat = 3
     static let wakeKick: CGFloat = 4
 
-    /// 绳长随索引递增：时间维度 = 挂得越低。相机跟随选中项向下走
-    static let lengthBase: CGFloat = 44
-    static let lengthStep: CGFloat = 40
-    /// 相机跟随（每帧 lerp）
     static let cameraLerp: CGFloat = 0.12
-    /// 鼠标视差：近签动多、远签动少，深度才读得出来。工具面板的 3D 是
-    /// 可感知但不可操纵的——要空间感，不要游戏相机
-    static let parallax: CGFloat = 0.12
-    /// 深度雾下限：后排签最淡到 0.55
+    /// 鼠标视差：近签动多、远签动少。工具面板的 3D 是可感知不可操纵的
+    static let parallax: CGFloat = 0.10
+    /// 深度雾下限：外缘（更远）的签最淡到 0.55
     static let fogFloor: CGFloat = 0.55
-    /// 朝向旋转（度）：签按偏离画面中心的横向位置绕竖轴面向灭点——
-    /// 左边的签右肩朝前、右边的签左肩朝前。物体有「面」才有体积感，
-    /// 这是最强的静态 3D 线索
-    static let facing: CGFloat = 8
-    /// 纵深抬升：后排签整体向地平线（灭点）抬高收拢。所有签挂同一条
-    /// 水平线 = 正对一面墙，怎么缩放都是平的
-    static let depthLift: CGFloat = 34
-    /// 纸签卡宽（未缩放）：8×21 = 168，Fibonacci 对的乘积，不上不下时不发明新数
-    static let cardWidth: CGFloat = 168
+    /// 纸签卡宽（未缩放）
+    static let cardWidth: CGFloat = 150
 
-    // 线宽：真机反馈「线和图片的比例太悬殊」——发丝线压不住签卡。
-    // 粗细直接用 Rhythm 的 Fib 档（3 与 5，不再另立数）；选中的红线同宽靠色出跳
-    static let ropeWidth: CGFloat = 5
-    static let ropeWidthMin: CGFloat = 3
-    static let ropeWidthSelected: CGFloat = 5
-    static let railWidth: CGFloat = 3
+    // MARK: 树布局（世界坐标：y 向下，与视口尺寸无关）
+    /// 树干基座（世界 y；相机 0 时在视口底部之下）
+    static let trunkBaseY: CGFloat = 820
+    /// i=0（最新）的枝头：低枝在眼前
+    static let tipBaseY: CGFloat = 420
+    /// 每老一条，枝头升高 30
+    static let tipStep: CGFloat = 30
+    /// 树干在宽度上的位置（比例）
+    static let spineXRatio: CGFloat = 0.34
+    /// 枝头横向散布半径（比例）：黄金角散布，越靠边越深（z 越大）
+    static let spreadRatio: CGFloat = 0.30
+    static let depthSpread: CGFloat = 380
 
-    /// 冒烟：--view tags 强制线签帘（不写用户偏好）
+    /// 绳长：确定性伪随机（26 + (i·67) mod 130），疏密错落
+    static func ropeLength(_ i: Int) -> CGFloat { 26 + CGFloat((i * 67) % 130) }
+
+    /// 枝头挂点（黄金角叶序：相邻索引的枝头不挨在一起）
+    static func tipX(_ i: Int, width: CGFloat) -> CGFloat {
+        let g = CGFloat(i) * 2.399963
+        let raw = width * (spineXRatio + spreadRatio * sin(g) + 0.03 * sin(CGFloat(i) * 5.7))
+        let pad = cardWidth / 2 + 8
+        return min(max(raw, pad), width - pad)
+    }
+
+    static func tipY(_ i: Int) -> CGFloat { tipBaseY - CGFloat(i) * tipStep }
+
+    /// 深度：横向散布越远越深（|sin(golden)| × depthSpread）
+    static func depth(_ i: Int) -> CGFloat {
+        abs(sin(CGFloat(i) * 2.399963)) * depthSpread
+    }
+
+    // MARK: 生长
+    /// 整棵树长出来的总时长
+    static let growDuration: TimeInterval = 1.15
+    /// 树干先长：growth 的前 45% 都是树干
+    static let trunkPhase: CGFloat = 0.45
+    /// 枝的出场：i=0 在 0.30 开始伸，最后一条在 0.78，每条伸 0.22
+    static let branchStartBase: CGFloat = 0.30
+    static let branchStagger: CGFloat = 0.48
+    static let branchWindow: CGFloat = 0.22
+    /// 枝长到六成时，绳开始从枝头垂落
+    static let hangAt: CGFloat = 0.6
+    /// 绳垂落（约束目标长度展开到全长）的时长
+    static let unrollDuration: TimeInterval = 0.45
+
+    // MARK: 夜色（许愿树是一个「场景」，不随系统外观切换）
+    static let nightBg = Color(red: 0.098, green: 0.075, blue: 0.035)
+    static let inkBranch = Color(red: 0.180, green: 0.137, blue: 0.094)
+    static let bead = Color(red: 0.290, green: 0.220, blue: 0.165)
+    static let ropeRed = Color(red: 0.753, green: 0.224, blue: 0.169)
+    static let ropeRedSelected = Color(red: 0.910, green: 0.333, blue: 0.247)
+    static let paperBg = Color(red: 0.961, green: 0.914, blue: 0.812)
+    static let paperBorder = Color(red: 0.851, green: 0.722, blue: 0.467)
+    static let paperText = Color(red: 0.173, green: 0.141, blue: 0.094)
+    static let paperMeta = Color(red: 0.541, green: 0.435, blue: 0.302)
+    static let glow = Color(red: 1.0, green: 0.745, blue: 0.431)
+    static let moon = Color(red: 0.910, green: 0.835, blue: 0.659)
+
+    /// 冒烟：--view tags 强制许愿树（不写用户偏好）
     static var debugForce = false
-
-    /// 深度：按索引确定性伪随机散布（137 = 质数步长，散点均匀不聚堆）
-    static func depth(_ index: Int) -> CGFloat {
-        CGFloat((index * 137 + 31) % Int(depthMax))
-    }
-
-    /// 挂点 x：黄金角叶序散布，相邻索引的签不挨在一起
-    static func anchorX(_ index: Int, width: CGFloat) -> CGFloat {
-        let raw = width * (0.5 + 0.40 * sin(CGFloat(index) * 2.399963))
-        return min(max(raw, 70), width - 70)
-    }
-
-    static func ropeLength(_ index: Int) -> CGFloat {
-        lengthBase + CGFloat(index) * lengthStep
-    }
 }
 
 // MARK: - 物理
@@ -91,59 +110,62 @@ struct CurtainPlacement: Identifiable {
     let fog: CGFloat
     /// 绳末端与竖直方向的夹角（度）
     let angle: CGFloat
-    /// 朝向灭点的绕竖轴转角（度）：签在画面中心的正值转向右、负值转向左
-    let facing: CGFloat
     /// 挂签点（屏幕坐标，卡片的 top-center 对齐到这里）
     let hang: CGPoint
     /// 绳的投影折线（Canvas 画线用）
     let path: [CGPoint]
+    /// 生长淡入（0 = 绳刚从枝头垂下，1 = 挂稳）
+    let alpha: CGFloat
 }
 
-struct CurtainWire: Identifiable {
-    let id: String
-    let title: String
-    let y: CGFloat
-}
-
-/// 线签帘物理与投影。只在 SwiftUI 渲染线程（main）被 View 调用，
+/// 许愿树物理与投影。只在 SwiftUI 渲染线程（main）被 View 调用，
 /// 不标 @MainActor 是因为 @State 默认值在 View 的非隔离 init 里创建
 final class CurtainSim {
     struct Node { var x: CGFloat; var y: CGFloat; var px: CGFloat; var py: CGFloat }
 
     private final class Rope {
-        let anchorX: CGFloat
-        let segLen: CGFloat
+        let anchor: CGPoint
+        let fullSeg: CGFloat
         var nodes: [Node]
         let phase: CGFloat
+        /// 枝头长到六成时置为当前时间：绳开始垂落
+        var spawnedAt: Date?
 
         init(index: Int, width: CGFloat) {
-            anchorX = Curtain.anchorX(index, width: width)
-            let length = Curtain.ropeLength(index)
-            segLen = length / CGFloat(Curtain.nodes)
+            anchor = CGPoint(x: Curtain.tipX(index, width: width), y: Curtain.tipY(index))
+            fullSeg = Curtain.ropeLength(index) / CGFloat(Curtain.nodes)
+            // 出生姿态：所有节点收拢在枝头附近（垂落靠约束目标长度逐步展开）
             var ns: [Node] = []
             for j in 0..<Curtain.nodes {
-                let y = CGFloat(j) * segLen
-                ns.append(Node(x: anchorX, y: y, px: anchorX, py: y))
+                let y = anchor.y + CGFloat(j) * 3
+                ns.append(Node(x: anchor.x, y: y, px: anchor.x, py: y))
             }
             nodes = ns
             phase = CGFloat.random(in: 0..<(2 * .pi))
-            // 出生即带一点初速度：整片帘一打开就是活的，不是静止后再被触发
-            if !Motion.reduceMotion, let last = ns.indices.last {
-                ns[last].px -= .random(in: -3...3)
+        }
+
+        /// 重新收拢回枝头（每次打开面板，树重新长一遍）
+        func restack() {
+            spawnedAt = nil
+            for j in nodes.indices {
+                nodes[j] = Node(x: anchor.x, y: anchor.y + CGFloat(j) * 3,
+                                px: anchor.x, py: anchor.y + CGFloat(j) * 3)
             }
-            nodes = ns
         }
     }
 
     private var ropes: [UUID: Rope] = [:]
     private var lastDate: Date?
-    /// 相机纵向位置（世界坐标）：跟随选中签下移
+    /// 相机纵向位置（世界坐标）：≤0，选中高处旧签时向上滚
     private var cameraY: CGFloat = 0
     private var cameraTargetY: CGFloat = 0
     /// 相机横向平移（视差）
     private var panX: CGFloat = 0
     private var hoverX: CGFloat?
-    private let railY: CGFloat = 10
+    /// 生长：nil = 还没开始长（首帧不是「长成的树闪一下再重长」）
+    private var growthStart: Date?
+    /// 树的世界宽度：首次挂枝时定死，拖宽窗口不重排（树是种好的，不是橡皮泥）
+    private var treeWidth: CGFloat = 500
 
     // MARK: 外部输入
 
@@ -155,36 +177,67 @@ final class CurtainSim {
         rope.nodes[last].px -= velocity
     }
 
-    func updateCamera(index: Int) {
-        cameraTargetY = max(0, Curtain.ropeLength(index) - 150)
+    /// 相机跟到选中签：签落在视口 38% 高的位置
+    func updateCamera(index: Int, height: CGFloat) {
+        let target = Curtain.tipY(index) + Curtain.ropeLength(index) - height * 0.38
+        cameraTargetY = min(0, target)
     }
 
-    /// 轨道线的纵向位置（Canvas 画轨道用；其余投影都在 frame() 里）
-    var railScreenY: CGFloat { railY - cameraY }
-
-    /// 回到帘顶（打开面板 / 换搜索词 = 一次新的「找」）
+    /// 回到树脚（换搜索词 = 一次新的「找」）
     func snapCamera() {
         cameraTargetY = 0
         cameraY = 0
     }
 
+    /// 树重新长一遍：每次打开面板都是一次「长出来」
+    func beginGrowth() {
+        if Motion.reduceMotion {
+            growthStart = .distantPast
+            for rope in ropes.values { rope.spawnedAt = .distantPast }
+        } else {
+            growthStart = Date()
+            for rope in ropes.values { rope.restack() }
+        }
+    }
+
+    /// Canvas 画树干/枝/光用的相机偏移
+    var cameraOffset: CGFloat { cameraY }
+    /// Canvas 画枝用的世界宽度
+    var layoutWidth: CGFloat { treeWidth }
+    /// Canvas 用的即时生长进度
+    var currentGrowth: CGFloat { growth(at: Date()) }
+
+    /// 生长进度（easeOutCubic，0 = 光秃秃 / 还没开始，1 = 长成）
+    private func growth(at date: Date) -> CGFloat {
+        guard let start = growthStart else { return 0 }
+        let t = date.timeIntervalSince(start) / Curtain.growDuration
+        guard t < 1 else { return 1 }
+        let u = CGFloat(max(0, t))
+        return 1 - pow(1 - u, 3)
+    }
+
+    /// 第 i 条枝的生长进度（0 = 还没冒头，1 = 伸完）
+    func branchProgress(_ i: Int, count: Int, growth: CGFloat) -> CGFloat {
+        let start = Curtain.branchStartBase
+            + Curtain.branchStagger * CGFloat(i) / CGFloat(max(count, 1))
+        return min(1, max(0, (growth - start) / Curtain.branchWindow))
+    }
+
     // MARK: 每帧
 
-    /// 对账（新记录挂新绳、消失的记录解绳）→ 物理步进 → 透视投影。
+    /// 对账（新记录挂新枝、消失的记录解绳）→ 物理步进 → 投影。
     /// 由 TimelineView(.animation) 每帧调用一次
-    func frame(date: Date,
-               items: [ClipItem],
-               width: CGFloat,
-               height: CGFloat,
-               sectionStarts: [(index: Int, title: String)]) -> (tags: [CurtainPlacement], wires: [CurtainWire]) {
+    func frame(date: Date, items: [ClipItem], width: CGFloat, height: CGFloat) -> [CurtainPlacement] {
         let dt = min(0.05, lastDate.map { date.timeIntervalSince($0) } ?? 1 / 60)
         lastDate = date
+        let growth = growth(at: date)
 
         let ids = Set(items.map(\.id))
         let stale = ropes.keys.filter { !ids.contains($0) }
         stale.forEach { ropes.removeValue(forKey: $0) }
+        if ropes.isEmpty { treeWidth = width }
         for (i, item) in items.enumerated() where ropes[item.id] == nil {
-            ropes[item.id] = Rope(index: i, width: width)
+            ropes[item.id] = Rope(index: i, width: treeWidth)
         }
 
         cameraY += (cameraTargetY - cameraY) * Curtain.cameraLerp
@@ -196,31 +249,40 @@ final class CurtainSim {
         }
         panX += (panTarget - panX) * 0.1
 
+        // 枝头长到六成 → 绳开始垂落
+        let count = items.count
+        for (i, item) in items.enumerated() {
+            if let rope = ropes[item.id], rope.spawnedAt == nil,
+               branchProgress(i, count: count, growth: growth) >= Curtain.hangAt {
+                rope.spawnedAt = date
+                if !Motion.reduceMotion {
+                    rope.nodes[rope.nodes.count - 1].px -= .random(in: -3...3)
+                }
+            }
+        }
+
         step(dt: dt, now: date.timeIntervalSinceReferenceDate)
 
         var tags: [CurtainPlacement] = []
         let cx = width / 2
         for (i, item) in items.enumerated() {
-            guard let rope = ropes[item.id] else { continue }
+            guard let rope = ropes[item.id], let spawned = rope.spawnedAt else { continue }
             let z = Curtain.depth(i)
             let s = Curtain.persp / (Curtain.persp + z)
-            // 纵深抬升：远排向地平线收（世界 → 屏幕：横向以画布中心为灭点收敛，
-            // 纵向先抬升再扣相机位移）
-            let lift = z / Curtain.depthMax * Curtain.depthLift
             let panX = self.panX
             let cameraY = self.cameraY
-            let railY = self.railY
             let project: (Node) -> CGPoint = { n in
                 CGPoint(x: cx + (n.x - cx) * s + panX * s,
-                        y: railY - lift + (n.y - cameraY) * s)
+                        y: (n.y - cameraY) * s)
             }
             let hang = project(rope.nodes[rope.nodes.count - 1])
             // 视口裁剪：卡高约 80/scale，上下留裕量
             if hang.y < -140 || hang.y > height + 180 { continue }
             let prev = project(rope.nodes[rope.nodes.count - 2])
             let angle = atan2(hang.x - prev.x, hang.y - prev.y) * 180 / .pi
-            // 朝向旋转：偏离中心越远转角越大，面向灭点
-            let facing = width > 40 ? (hang.x - cx) / (width / 2) * Curtain.facing : 0
+            // 挂稳程度：垂落后的前 0.25s 淡入
+            let age = date.timeIntervalSince(spawned)
+            let alpha = min(1, max(0, CGFloat(age / 0.25)))
             tags.append(CurtainPlacement(
                 id: item.id,
                 index: i,
@@ -228,68 +290,69 @@ final class CurtainSim {
                 scale: s,
                 fog: Curtain.fogFloor + (1 - Curtain.fogFloor) * s,
                 angle: angle,
-                facing: facing,
                 hang: hang,
-                path: rope.nodes.map(project)))
+                path: rope.nodes.map(project),
+                alpha: alpha))
         }
-        // 深的先画（在底下），浅的后画（盖上来）；选中项的 zIndex 在 View 里单独给
+        // 深的先画（在底下），浅的后画（盖上来）；选中项的 zIndex 在 View 里给
         tags.sort { $0.depth > $1.depth }
-
-        var wires: [CurtainWire] = []
-        for section in sectionStarts {
-            let sy = railY + (Curtain.ropeLength(section.index) - 26) - cameraY
-            if sy > 18, sy < height - 8 {
-                wires.append(CurtainWire(id: section.title, title: section.title, y: sy))
-            }
-        }
-        return (tags, wires)
+        return tags
     }
 
-    /// verlet 积分 + 距离约束。末端节点是签（重物）：约束松弛时
-    /// 绳节点让位 85%、签只让 15%——绳弯得起来，签才甩得出去
+    /// verlet 积分 + 距离约束。约束的目标长度按垂落进度展开（0 → 全长）：
+    /// 绳从枝头「长」出来，重力把它拉直——这是生长动画的物理实现
     private func step(dt: TimeInterval, now: TimeInterval) {
         let dt2 = CGFloat(dt * dt)
         for rope in ropes.values {
-            var n = rope.nodes
-            for j in n.indices.dropFirst() {
-                let vx = (n[j].x - n[j].px) * Curtain.verletDamping
-                let vy = (n[j].y - n[j].py) * Curtain.verletDamping
-                n[j].px = n[j].x
-                n[j].py = n[j].y
+            guard let spawned = rope.spawnedAt else { continue }
+            let age = now - spawned.timeIntervalSinceReferenceDate
+            let u = CGFloat(min(1, max(0, age / Curtain.unrollDuration)))
+            let segNow = rope.fullSeg * (1 - pow(1 - u, 3))
+            guard segNow > 0.5 else { continue }
+
+            let n = rope.nodes
+            var m = n
+            for j in m.indices.dropFirst() {
+                let vx = (m[j].x - m[j].px) * Curtain.verletDamping
+                let vy = (m[j].y - m[j].py) * Curtain.verletDamping
+                m[j].px = m[j].x
+                m[j].py = m[j].y
                 let wind = Motion.reduceMotion ? 0
-                    : Curtain.windAmp * CGFloat(sin(now * 0.6 + Double(rope.phase) + Double(j) / Double(Curtain.nodes)))
-                n[j].x += vx + wind * dt2
-                n[j].y += vy + Curtain.gravity * dt2
+                    : Curtain.windAmp * CGFloat(sin(now * 0.55 + Double(rope.phase) + Double(j) / Double(Curtain.nodes)))
+                m[j].x += vx + wind * dt2
+                m[j].y += vy + Curtain.gravity * dt2
             }
             for _ in 0..<Curtain.iterations {
-                for j in n.indices.dropFirst() {
-                    let dx = n[j].x - n[j - 1].x
-                    let dy = n[j].y - n[j - 1].y
+                for j in m.indices.dropFirst() {
+                    let dx = m[j].x - m[j - 1].x
+                    let dy = m[j].y - m[j - 1].y
                     let dist = (dx * dx + dy * dy).squareRoot()
                     guard dist > 0.0001 else { continue }
-                    let diff = (dist - rope.segLen) / dist
+                    let diff = (dist - segNow) / dist
                     let wa: CGFloat
                     let wb: CGFloat
-                    if j == n.count - 1 { wa = 0.85; wb = 0.15 }
+                    if j == m.count - 1 { wa = 0.85; wb = 0.15 }   // 末端是签：重物几乎不动，绳让位
                     else if j == 1 { wa = 0; wb = 1 }
                     else { wa = 0.5; wb = 0.5 }
-                    n[j - 1].x += dx * diff * wa
-                    n[j - 1].y += dy * diff * wa
-                    n[j].x -= dx * diff * wb
-                    n[j].y -= dy * diff * wb
+                    m[j - 1].x += dx * diff * wa
+                    m[j - 1].y += dy * diff * wa
+                    m[j].x -= dx * diff * wb
+                    m[j].y -= dy * diff * wb
                 }
-                n[0].x = rope.anchorX
-                n[0].y = 0
-                n[0].px = rope.anchorX
-                n[0].py = 0
+                let a = rope.anchor
+                m[0].x = a.x
+                m[0].y = a.y
+                m[0].px = a.x
+                m[0].py = a.y
             }
+            rope.nodes = m
         }
     }
 }
 
 // MARK: - 视图
 
-/// 剪贴历史的 3D「线签帘」视图：列表的兄弟视图（⌘L 互切），共享同一个
+/// 剪贴历史的「许愿树」视图：列表的兄弟视图（⌘L 互切），共享同一个
 /// HistoryViewModel——键盘导航、⌘N、空格预览、置顶、删除全部原样可用。
 struct TagCurtainView: View {
     @ObservedObject var store: ClipStore
@@ -307,40 +370,28 @@ struct TagCurtainView: View {
 
     private var items: [ClipItem] { model.results }
 
-    /// 分组细线：除第一组外每个分组的起始条目（今天 / 昨天 / 更早 / 置顶）
-    private var sectionStarts: [(index: Int, title: String)] {
-        var out: [(index: Int, title: String)] = []
-        for (i, section) in model.sections.enumerated() {
-            if i > 0, let first = section.items.first {
-                out.append((first.index, section.title))
-            }
-        }
-        return out
-    }
-
     var body: some View {
         GeometryReader { geo in
             TimelineView(.animation) { timeline in
                 let snapshot = sim.frame(date: timeline.date,
                                          items: items,
                                          width: geo.size.width,
-                                         height: geo.size.height,
-                                         sectionStarts: sectionStarts)
+                                         height: geo.size.height)
                 let byId = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
                 let selectedId = model.current?.id
                 ZStack(alignment: .topLeading) {
-                    curtainCanvas(snapshot: snapshot, selectedId: selectedId, height: geo.size.height)
-                    ForEach(snapshot.tags) { p in
+                    treeCanvas(snapshot: snapshot,
+                               selectedId: selectedId,
+                               width: geo.size.width,
+                               height: geo.size.height)
+                    ForEach(snapshot) { p in
                         if let item = byId[p.id] {
                             TagCard(item: item, selected: p.id == selectedId)
                                 .scaleEffect(p.scale, anchor: .top)
                                 .rotationEffect(.degrees(p.angle), anchor: .top)
-                                .rotation3DEffect(.degrees(p.facing),
-                                                  axis: (x: 0, y: 1, z: 0),
-                                                  anchor: .top,
-                                                  perspective: 1)
                                 .offset(x: p.hang.x - Curtain.cardWidth / 2, y: p.hang.y)
                                 .zIndex(p.id == selectedId ? 2000 : 1000 - p.depth)
+                                .opacity(p.alpha)
                                 .contentShape(Rectangle())
                                 .onTapGesture(count: 2) { onPaste(item) }
                                 .simultaneousGesture(TapGesture().onEnded { model.select(p.index) })
@@ -362,16 +413,23 @@ struct TagCurtainView: View {
             .overlay(alignment: .bottomTrailing) {
                 Text(L10n.curtainListHint)
                     .font(.system(size: Scale.meta))
-                    .foregroundStyle(Palette.meta)
+                    .foregroundStyle(Curtain.moon.opacity(0.7))
                     .padding(Rhythm.m)
             }
             .overlay(alignment: .center) {
                 if items.isEmpty { emptyState }
             }
-            .onChange(of: model.safeSelection) { old, new in
-                handleSelectionChange(old: old, new: new)
+            .onAppear {
+                model.resetSelection()
+                sim.beginGrowth()
             }
-            .onChange(of: model.presentationTick) { _, _ in sim.snapCamera() }
+            .onChange(of: model.safeSelection) { old, new in
+                handleSelectionChange(old: old, new: new, height: geo.size.height)
+            }
+            .onChange(of: model.presentationTick) { _, _ in
+                sim.snapCamera()
+                sim.beginGrowth()
+            }
             .onChange(of: store.query) { _, _ in
                 model.resetSelection()
                 sim.snapCamera()
@@ -379,53 +437,117 @@ struct TagCurtainView: View {
         }
     }
 
-    // MARK: Canvas（绳 / 轨道 / 分组线）
+    // MARK: Canvas（夜色 / 树 / 绳）
 
-    private func curtainCanvas(snapshot: (tags: [CurtainPlacement], wires: [CurtainWire]),
-                               selectedId: UUID?,
-                               height: CGFloat) -> some View {
+    /// 贝塞尔取部分曲线（枝按进度伸展）
+    private static func quadPoint(_ p0: CGPoint, _ c: CGPoint, _ p1: CGPoint, _ u: CGFloat) -> CGPoint {
+        let mu = 1 - u
+        return CGPoint(x: mu * mu * p0.x + 2 * mu * u * c.x + u * u * p1.x,
+                       y: mu * mu * p0.y + 2 * mu * u * c.y + u * u * p1.y)
+    }
+
+    private func treeCanvas(snapshot: [CurtainPlacement],
+                            selectedId: UUID?,
+                            width: CGFloat,
+                            height: CGFloat) -> some View {
         Canvas { ctx, size in
-            let wireStyle = StrokeStyle(lineWidth: 0.5, dash: [2, 3])
-            for wire in snapshot.wires {
-                var line = Path()
-                line.move(to: CGPoint(x: 0, y: wire.y))
-                line.addLine(to: CGPoint(x: size.width, y: wire.y))
-                ctx.stroke(line, with: .color(Palette.meta.opacity(0.5)), style: wireStyle)
-                ctx.draw(Text(wire.title)
-                    .font(.system(size: Scale.meta))
-                    .foregroundStyle(Palette.meta),
-                    at: CGPoint(x: 24, y: wire.y - 8))
+            drawSky(ctx: ctx, size: size, cameraY: sim.cameraOffset, width: width)
+            if !items.isEmpty {
+                drawTree(ctx: &ctx, size: size, cameraY: sim.cameraOffset, width: width)
             }
+            drawRopes(ctx: ctx, snapshot: snapshot, selectedId: selectedId)
+        }
+    }
 
-            for tag in snapshot.tags {
-                guard tag.path.count > 1 else { continue }
-                var rope = Path()
-                rope.move(to: tag.path[0])
-                for point in tag.path.dropFirst() { rope.addLine(to: point) }
-                let selected = tag.id == selectedId
-                let color: Color = selected
-                    ? .accentColor
-                    : Color(NSColor.separatorColor).opacity(0.9)
-                let width = selected
-                    ? Curtain.ropeWidthSelected
-                    : max(Curtain.ropeWidthMin, Curtain.ropeWidth * tag.scale)
-                ctx.stroke(rope, with: .color(color), lineWidth: width)
-            }
+    /// 夜色 + 树冠暖光 + 月（世界坐标，随相机滚动）
+    private func drawSky(ctx: GraphicsContext, size: CGSize, cameraY: CGFloat, width: CGFloat) {
+        ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Curtain.nightBg))
+        let glowY = 190 - cameraY
+        let glowRect = CGRect(x: width * 0.5 - 210, y: glowY - 210, width: 420, height: 420)
+        ctx.fill(Path(ellipseIn: glowRect), with: .color(Curtain.glow.opacity(0.05)))
+        let moonY = 70 - cameraY
+        let moonInner = CGRect(x: width * 0.85 - 17, y: moonY - 17, width: 34, height: 34)
+        ctx.fill(Path(ellipseIn: moonInner), with: .color(Curtain.moon.opacity(0.10)))
+        let moonOuter = CGRect(x: width * 0.85 - 26, y: moonY - 26, width: 52, height: 52)
+        ctx.fill(Path(ellipseIn: moonOuter), with: .color(Curtain.moon.opacity(0.05)))
+    }
 
-            // 轨道：相机下移后随世界滚出视口
-            let railY = sim.railScreenY
-            if railY > -2 && railY < height + 2 {
-                var rail = Path()
-                rail.move(to: CGPoint(x: 0, y: railY))
-                rail.addLine(to: CGPoint(x: size.width, y: railY))
-                ctx.stroke(rail, with: .color(Color(NSColor.labelColor).opacity(0.7)), lineWidth: Curtain.railWidth)
+    /// 树干（clip 从底部向上长）+ 枝（按各自进度伸展）
+    private func drawTree(ctx: inout GraphicsContext, size: CGSize, cameraY: CGFloat, width: CGFloat) {
+        let growth = sim.currentGrowth
+        let count = items.count
+        let layoutWidth = sim.layoutWidth
+        let trunkTop = Curtain.tipY(count - 1) - 40
+        let trunkX = Curtain.spineXRatio * layoutWidth
+
+        let trunkGrowth = min(1, growth / Curtain.trunkPhase)
+        if trunkGrowth > 0.01 {
+            let clipRect = CGRect(x: 0, y: size.height * (1 - trunkGrowth),
+                                  width: size.width, height: size.height * trunkGrowth)
+            ctx.clip(to: Path(clipRect))
+            let baseX = trunkX + sin(1.2 * (1 - 850.0 / Curtain.trunkBaseY)) * 10
+            let base = CGPoint(x: baseX, y: 850 - cameraY)
+            let topX = trunkX + sin((Curtain.trunkBaseY - trunkTop) / Curtain.trunkBaseY * 1.2) * 10
+            let top = CGPoint(x: topX, y: trunkTop - cameraY)
+            let midY = (Curtain.trunkBaseY + trunkTop) / 2
+            let mid = CGPoint(x: trunkX + sin((Curtain.trunkBaseY - midY - 40) / Curtain.trunkBaseY * 1.2) * 10,
+                              y: midY - cameraY)
+            var trunk = Path()
+            trunk.move(to: base)
+            trunk.addQuadCurve(to: top, control: mid)
+            ctx.stroke(trunk, with: .color(Curtain.inkBranch),
+                       style: StrokeStyle(lineWidth: 14, lineCap: .round))
+            let rootFrom = CGPoint(x: trunkX + sin((Curtain.trunkBaseY - 760) / Curtain.trunkBaseY * 1.2) * 10,
+                                   y: 760 - cameraY)
+            let rootTo = CGPoint(x: trunkX - 34, y: 690 - cameraY)
+            let rootCtl = CGPoint(x: trunkX - 20, y: 726 - cameraY)
+            var root = Path()
+            root.move(to: rootFrom)
+            root.addQuadCurve(to: rootTo, control: rootCtl)
+            ctx.stroke(root, with: .color(Curtain.inkBranch),
+                       style: StrokeStyle(lineWidth: 6, lineCap: .round))
+        }
+
+        for i in 0..<count {
+            let b = sim.branchProgress(i, count: count, growth: growth)
+            guard b > 0.01 else { continue }
+            let tipY = Curtain.tipY(i)
+            let sy = min(max(tipY + 110, trunkTop + 30), 560)
+            let sx = trunkX + sin((Curtain.trunkBaseY - sy) / Curtain.trunkBaseY * 1.2) * 10
+            let start = CGPoint(x: sx, y: sy - cameraY)
+            let tip = CGPoint(x: Curtain.tipX(i, width: layoutWidth), y: tipY - cameraY)
+            let control = CGPoint(x: (start.x + tip.x) / 2, y: (start.y + tip.y) / 2 - 26)
+            let end = Self.quadPoint(start, control, tip, 1 - pow(1 - b, 2))
+            var branch = Path()
+            branch.move(to: start)
+            branch.addQuadCurve(to: end, control: control)
+            let width = max(1.6, 4.6 - (sy - tipY) / 60)
+            ctx.stroke(branch, with: .color(Curtain.inkBranch.opacity(min(1, b * 2))),
+                       style: StrokeStyle(lineWidth: width, lineCap: .round))
+            if b > 0.9 {
+                let beadRect = CGRect(x: tip.x - 2.4, y: tip.y - 2.4, width: 4.8, height: 4.8)
+                ctx.fill(Path(ellipseIn: beadRect), with: .color(Curtain.bead))
             }
+        }
+    }
+
+    /// 朱红绳
+    private func drawRopes(ctx: GraphicsContext, snapshot: [CurtainPlacement], selectedId: UUID?) {
+        for tag in snapshot {
+            guard tag.path.count > 1 else { continue }
+            var rope = Path()
+            rope.move(to: tag.path[0])
+            for point in tag.path.dropFirst() { rope.addLine(to: point) }
+            let selected = tag.id == selectedId
+            ctx.stroke(rope,
+                       with: .color(selected ? Curtain.ropeRedSelected : Curtain.ropeRed),
+                       lineWidth: selected ? 3 : max(1.6, 2.4 * tag.scale))
         }
     }
 
     // MARK: 交互
 
-    private func handleSelectionChange(old: Int, new: Int) {
+    private func handleSelectionChange(old: Int, new: Int, height: CGFloat) {
         guard !items.isEmpty else { return }
         let clamped = min(max(new, 0), items.count - 1)
         guard clamped >= 0, clamped < items.count else { return }
@@ -436,7 +558,7 @@ struct TagCurtainView: View {
             sim.kick(id: items[old].id, -dir * Curtain.wakeKick)
         }
         sim.kick(id: items[clamped].id, dir * (fast ? Curtain.kickFast : Curtain.kick))
-        sim.updateCamera(index: clamped)
+        sim.updateCamera(index: clamped, height: height)
         if clamped >= items.count - 8 { store.loadMore() }
     }
 
@@ -444,19 +566,20 @@ struct TagCurtainView: View {
         VStack(spacing: Rhythm.l) {
             Text(store.totalCount == 0 ? L10n.noHistory : L10n.noMatch)
                 .font(.system(size: Scale.field, weight: .medium))
+                .foregroundStyle(Curtain.moon)
             Text(store.totalCount == 0 ? L10n.copySomething : L10n.tryAnother)
                 .font(.system(size: Scale.body))
-                .foregroundStyle(Palette.meta)
+                .foregroundStyle(Curtain.moon.opacity(0.7))
         }
         .multilineTextAlignment(.center)
         .padding(.horizontal, Rhythm.xxl)
     }
 }
 
-// MARK: - 纸签卡
+// MARK: - 许愿签
 
-/// 挂在绳末端的纸签：形状即类型（图片带缩略图、代码/文本/文件共用图标角标）。
-/// 轻量是硬要求——TimelineView 每帧重建 ZStack，卡片的 body 必须便宜
+/// 挂在枝头的许愿签：暖纸底 + 深棕字。轻量是硬要求——
+/// TimelineView 每帧重建 ZStack，卡片的 body 必须便宜
 private struct TagCard: View {
     let item: ClipItem
     let selected: Bool
@@ -475,7 +598,7 @@ private struct TagCard: View {
                 Image(nsImage: thumb)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: Curtain.cardWidth - Rhythm.m * 2, height: 64)
+                    .frame(width: Curtain.cardWidth - Rhythm.m * 2, height: 58)
                     .clipShape(RoundedRectangle(cornerRadius: 5))
             }
             Text(item.summary)
@@ -485,21 +608,15 @@ private struct TagCard: View {
             HStack(spacing: Rhythm.s) {
                 Image(systemName: symbol)
                     .font(.system(size: Icon.mark))
-                    .foregroundStyle(Palette.meta)
+                    .foregroundStyle(Curtain.paperMeta)
                 if item.pinned {
                     Image(systemName: "pin.fill")
                         .font(.system(size: Icon.mark))
-                        .foregroundStyle(Palette.meta)
-                }
-                if let app = item.sourceApp {
-                    Text(app)
-                        .font(.system(size: Scale.meta))
-                        .foregroundStyle(Palette.meta)
-                        .lineLimit(1)
+                        .foregroundStyle(Curtain.paperMeta)
                 }
                 Text(RelativeTime.string(from: item.createdAt))
                     .font(.system(size: Scale.meta))
-                    .foregroundStyle(Palette.meta)
+                    .foregroundStyle(Curtain.paperMeta)
                 Spacer(minLength: 0)
             }
         }
@@ -507,11 +624,11 @@ private struct TagCard: View {
         .frame(width: Curtain.cardWidth, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color(NSColor.controlBackgroundColor))
+                .fill(Curtain.paperBg)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(selected ? Color.accentColor : Color(NSColor.separatorColor),
+                .strokeBorder(selected ? Curtain.ropeRedSelected : Curtain.paperBorder,
                               lineWidth: selected ? 1.5 : 0.5)
         )
     }
