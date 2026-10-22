@@ -514,7 +514,7 @@ struct PreviewContentView: View {
                     .padding(Rhythm.xxl)
             } else {
                 Image(systemName: "photo")
-                    .font(.system(size: 32))
+                    .font(.system(size: 28))   // 与文件行图标同档，消灭 28/32 两个体系外尺寸
                     .foregroundStyle(.secondary)
             }
         }

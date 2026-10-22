@@ -23,7 +23,7 @@ private enum Spec {
     // 配色：一切「块」都用 primary 的透明度表达，不用 controlBackgroundColor
     // （后者在深色下是一块脏浅灰，跟窗口底色打架）
     static let selectFill: Double = 0.24   // 深色底上 8% 等于没选中，必须够重
-    static let hoverFill: Double = 0.06
+    static let hoverFill: Double = 0.10    // 悬停是「这里可以按」的承诺，不能比静态角标底（0.09）还浅
     static let chipFill: Double = 0.09     // 角标 / 缩略图占位
 }
 

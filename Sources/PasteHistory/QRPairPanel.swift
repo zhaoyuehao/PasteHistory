@@ -1,5 +1,6 @@
 import AppKit
 import CoreImage.CIFilterBuiltins
+import QuartzCore
 import SwiftUI
 
 /// Phone sync panel: displays the QR code and address.
@@ -9,6 +10,8 @@ final class QRPairPanel {
 
     private var panel: NSPanel?
     private var model = PairModel()
+    /// Esc 关闭：红绿灯已藏，键盘退出走这里
+    private var escMonitor: Any?
 
     func show() {
         WebSyncServer.shared.start()
@@ -17,26 +20,91 @@ final class QRPairPanel {
 
         model.refresh()
         panel.center()
-        panel.makeKeyAndOrderFront(nil)
+        // 出场与主面板同一套语言：0.22s easeOut 淡入 + scale 0.96→1——三张卡片同一张脸。
+        // 以前这里是瞬现，是全项目唯一没有阻尼感的窗口
+        panel.alphaValue = 0
+        if let view = panel.contentView {
+            view.wantsLayer = true
+            let scale = CABasicAnimation(keyPath: "transform.scale")
+            scale.fromValue = 0.96
+            scale.toValue = 1.0
+            scale.duration = 0.22
+            scale.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            view.layer?.add(scale, forKey: "pairPanelAppear")
+            view.layer?.transform = CATransform3DIdentity
+        }
+        panel.orderFrontRegardless()
+        panel.makeKey()
         NSApp.activate()
+        installEscMonitor()
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.22
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().alphaValue = 1
+        }
+    }
+
+    /// 收场与主面板同款：0.15s easeIn 只淡出不缩小——缩小消失会读出「弹回」，廉价
+    func close() {
+        guard let panel, panel.isVisible else { return }
+        removeEscMonitor()
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.15
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            panel.animator().alphaValue = 0
+        } completionHandler: {
+            Task { @MainActor in
+                panel.orderOut(nil)
+                panel.alphaValue = 1
+            }
+        }
+    }
+
+    // MARK: - Esc 关闭
+
+    private func installEscMonitor() {
+        removeEscMonitor()
+        escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, Int(event.keyCode) == 53 else { return event }
+            self.close()
+            return nil
+        }
+    }
+
+    private func removeEscMonitor() {
+        if let escMonitor {
+            NSEvent.removeMonitor(escMonitor)
+            self.escMonitor = nil
+        }
     }
 
     private func buildPanel() {
-        let hosting = NSHostingController(rootView: PairPanelView(model: model) {
-            Task { @MainActor in
-                WebSyncServer.shared.refreshPairingCode()
-                Self.shared.model.refresh()
+        let hosting = NSHostingController(rootView: PairPanelView(
+            model: model,
+            onRefresh: {
+                Task { @MainActor in
+                    WebSyncServer.shared.refreshPairingCode()
+                    Self.shared.model.refresh()
+                }
+            },
+            onClose: { [weak self] in
+                self?.close()
             }
-        })
+        ))
         let panel = NSPanel(contentViewController: hosting)
-        panel.styleMask = [.titled, .closable, .fullSizeContentView]
+        // 卡片三件套对齐主面板/预览：nonactivating + 藏红绿灯 + 可拖背景——一张卡片，不是一扇窗户
+        panel.styleMask = [.titled, .closable, .fullSizeContentView, .nonactivatingPanel]
         panel.title = L10n.phoneSync
         panel.titlebarAppearsTransparent = true
         panel.titleVisibility = .hidden
+        panel.standardWindowButton(.closeButton)?.isHidden = true
+        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        panel.standardWindowButton(.zoomButton)?.isHidden = true
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces]
         panel.hidesOnDeactivate = false
+        panel.isMovableByWindowBackground = true
         panel.isReleasedWhenClosed = false
         panel.setContentSize(NSSize(width: 320, height: 360))
         panel.center()
@@ -79,6 +147,7 @@ final class PairModel: ObservableObject {
 private struct PairPanelView: View {
     @ObservedObject var model: PairModel
     var onRefresh: () -> Void
+    var onClose: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -109,6 +178,18 @@ private struct PairPanelView: View {
                     .contentShape(Rectangle())
                     .help(L10n.refreshQRCode)
                     .accessibilityLabel(L10n.refreshQRCode)
+                    Button {
+                        onClose()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: Icon.action, weight: .medium))
+                            .frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(Palette.meta)
+                    .contentShape(Rectangle())
+                    .help(L10n.close)
+                    .accessibilityLabel(L10n.close)
                 }
             }
             .padding(.top, Rhythm.xl)
