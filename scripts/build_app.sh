@@ -59,12 +59,13 @@ fi
 codesign --force --deep --sign "$SIGN_IDENTITY" "$APP_DIR"
 echo "==> 已用稳定身份签名: $SIGN_IDENTITY"
 
-# 校验：designated requirement 里出现 certificate leaf = H"..." 才算身份稳定；
-# 只有 cdhash 的话重建后 TCC 授权照样失效
+# 校验：designated requirement 里带证书哈希（自签时是 certificate root，链式证书是
+# certificate leaf）才算身份稳定；只有 cdhash 说明还是 ad-hoc，重建后 TCC 授权照样失效
 codesign --verify --strict "$APP_DIR"
 DR=$(codesign -d -r- "$APP_DIR" 2>&1 | grep -E '^designated' || true)
+echo "==> ${DR:-designated requirement 读取失败}"
 case "$DR" in
-    *"certificate leaf"*) ;;
+    *"certificate leaf"*|*"certificate root"*) ;;
     *) echo "(!) designated requirement 不含证书哈希，重建后辅助功能授权仍会失效" >&2 ;;
 esac
 

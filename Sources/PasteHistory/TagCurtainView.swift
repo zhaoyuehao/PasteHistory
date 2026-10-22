@@ -446,6 +446,8 @@ final class CurtainSim {
     var layoutWidth: CGFloat { treeWidth }
     /// Canvas 用的即时生长进度
     var currentGrowth: CGFloat { growth(at: Date()) }
+    /// 3D 雕塑舞台用的横向视差（卡在动，雕塑也要动）
+    var parallaxPan: CGFloat { panX }
 
     /// 生长进度（easeOutCubic，0 = 光秃秃 / 还没开始，1 = 长成）
     private func growth(at date: Date) -> CGFloat {
@@ -663,10 +665,14 @@ struct TagCurtainView: View {
                 let byId = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
                 let selectedId = model.current?.id
                 ZStack(alignment: .topLeading) {
-                    treeCanvas(snapshot: snapshot,
-                               selectedId: selectedId,
-                               width: geo.size.width,
-                               height: geo.size.height)
+                    treeCanvas(width: geo.size.width, height: geo.size.height)
+                    if CurtainBrass.scene != nil {
+                        CurtainStage(growth: sim.currentGrowth,
+                                     panX: sim.parallaxPan,
+                                     width: geo.size.width,
+                                     height: geo.size.height)
+                    }
+                    ropeCanvas(snapshot: snapshot, selectedId: selectedId)
                     ForEach(snapshot) { p in
                         if let item = byId[p.id] {
                             TagCard(item: item, selected: p.id == selectedId)
@@ -744,18 +750,37 @@ struct TagCurtainView: View {
         }
     }
 
-    // MARK: Canvas（夜色 / 树 / 绳）
+    // MARK: Canvas（夜色 / 雕塑 / 绳）
 
-    private func treeCanvas(snapshot: [CurtainPlacement],
-                            selectedId: UUID?,
-                            width: CGFloat,
-                            height: CGFloat) -> some View {
+    /// 夜空底幕：星、冠心光晕、月。scn 加载失败时退回 2D 笔画树
+    private func treeCanvas(width: CGFloat, height: CGFloat) -> some View {
         Canvas { ctx, size in
             drawSky(ctx: ctx, size: size, cameraY: sim.cameraOffset, width: width)
-            if !items.isEmpty {
+            if !items.isEmpty && CurtainBrass.scene == nil {
                 drawTree(ctx: &ctx, size: size, cameraY: sim.cameraOffset, width: width)
             }
+        }
+    }
+
+    /// 绳与木结：画在 3D 雕塑**之上**——绳头落在枝条前面，
+    /// 看起来就是「系在枝上」而不是「绕到枝后」
+    private func ropeCanvas(snapshot: [CurtainPlacement], selectedId: UUID?) -> some View {
+        Canvas { ctx, _ in
+            drawBeads(ctx: ctx, cameraY: sim.cameraOffset)
             drawRopes(ctx: ctx, snapshot: snapshot, selectedId: selectedId)
+        }
+    }
+
+    /// 挂点木结：绳的着生点（2D 退路树与 3D 雕塑共用）
+    private func drawBeads(ctx: GraphicsContext, cameraY: CGFloat) {
+        let growth = sim.currentGrowth
+        let count = min(max(items.count - sim.windowStart, 0), Curtain.maxBranches)
+        for li in 0..<count {
+            let b = sim.branchProgress(li, count: max(count, 1), growth: growth)
+            guard b > 0.9 else { continue }
+            let tip = CGPoint(x: Curtain.tipX(li, width: sim.layoutWidth), y: Curtain.tipY(li) - cameraY)
+            let beadRect = CGRect(x: tip.x - 2.4, y: tip.y - 2.4, width: 4.8, height: 4.8)
+            ctx.fill(Path(ellipseIn: beadRect), with: .color(Curtain.bead))
         }
     }
 
@@ -811,15 +836,6 @@ struct TagCurtainView: View {
             }
             guard frac > 0.02 else { continue }
             drawLimb(ctx: &ctx, limb: limb, frac: frac, alpha: alpha, cameraY: cameraY)
-        }
-
-        // 挂点木结：枝线由建模承担，结标记绳的着生点
-        for li in 0..<count {
-            let b = sim.branchProgress(li, count: max(count, 1), growth: growth)
-            guard b > 0.9 else { continue }
-            let tip = CGPoint(x: Curtain.tipX(li, width: sim.layoutWidth), y: Curtain.tipY(li) - cameraY)
-            let beadRect = CGRect(x: tip.x - 2.4, y: tip.y - 2.4, width: 4.8, height: 4.8)
-            ctx.fill(Path(ellipseIn: beadRect), with: .color(Curtain.bead))
         }
     }
 

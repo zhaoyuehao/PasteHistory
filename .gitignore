@@ -14,3 +14,11 @@ codesign/*.csr
 # macOS
 .DS_Store
 *.swp
+
+# 3D 模型工件：只提交 Resources/brass_tree.scn 与生成脚本，重产物不进库
+models/*.usdz
+models/*.glb
+models/*.zip
+models/*.scn
+models/brass_tree_extracted/
+models/obj_extracted/

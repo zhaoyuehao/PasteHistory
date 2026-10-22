@@ -85,7 +85,8 @@ PasteHistory.app/Contents/MacOS/PasteHistory --restore-images   # 从 iCloud 恢
 | `ClipStore.swift` | 分页门面、Settings（UserDefaults） |
 | `PanelController.swift` | ⇧⌘C 面板（NSHostingController 承载 SwiftUI）、键监视器（空格/⌘Y 预览开关在此分发） |
 | `HistoryView.swift` | 面板 UI（搜索 / 列表 / 键盘导航），⌘L 在列表与线签帘之间切换 |
-| `TagCurtainView.swift` | 许愿树 3D 视图：树生长动画（干→枝→绳垂落，物理驱动）+ verlet 绳 + 夜色场景（参数集中在 `Curtain`，与列表共享 HistoryViewModel） |
+| `TagCurtainView.swift` | 许愿树 3D 视图：夜空 Canvas + 绳/签 verlet 物理 + 键盘导航，⌘L 在列表与雕塑之间切换 |
+| `CurtainBrass.swift` | 黄铜雕塑本体：生成的 .scn 模型 + SceneKit 实时渲染（黄铜 PBR、IBL 程序化环境图、挂点标定 K=0.989W/Y0=216+0.75K）；模型加载失败时 TagCurtainView 退回 2D 笔画树 |
 | `PreviewPanel.swift` | 空格/⌘Y 预览大窗：不夺焦点的 NSPanel（贴面板右侧）+ 三类内容视图，随面板选中联动 |
 | `Theme.swift` | 字号 / 图标 / 间距档位（Scale / Icon / Rhythm）与语义色（`Palette.meta` / `.warning` 按 WCAG AA 反解） |
 | `Motion.swift` | 动效令牌（选中 / 连按 / 边界回弹 / 悬停），View 与 ViewModel 共用 |
