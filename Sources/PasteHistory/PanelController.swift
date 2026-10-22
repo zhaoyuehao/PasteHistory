@@ -177,7 +177,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         // 内容顶到窗口上缘：不要让 titlebar 的 safe area 白白吃掉顶部
         hosting.safeAreaRegions = []
         let panel = NSPanel(contentViewController: hosting)
-        // 520×540 固定，不可 resize：工具不是家具，不该让用户承担调尺寸的责任。
+        // 400×647（黄金矩形，= 400×φ）固定，不可 resize：工具不是家具，不该让用户承担调尺寸的责任。
         // 窗口尺寸不参与展开动画（高度固定），否则窗口动画与内容动画会打架
         panel.styleMask = [.titled, .closable, .fullSizeContentView, .nonactivatingPanel]
         panel.title = L10n.panelTitle
@@ -194,7 +194,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         panel.isMovableByWindowBackground = true
         panel.isReleasedWhenClosed = false
         panel.backgroundColor = NSColor.windowBackgroundColor
-        // 520 宽恒定；540 是放得下时的高度，贴着输入框放不下时会收到 300~540 之间
+        // 400 宽恒定；647（= 宽×φ）是放得下时的高度，贴着输入框放不下时收到 400~647 之间
         panel.setContentSize(NSSize(width: Panel.width, height: Panel.maxHeight))
         panel.minSize = NSSize(width: Panel.width, height: Panel.minHeight)
         panel.maxSize = NSSize(width: Panel.width, height: Panel.maxHeight)
@@ -284,8 +284,9 @@ final class PanelController: NSObject, NSWindowDelegate {
             let x = min(max(alignX ?? a.minX, visible.minX + margin),
                         max(visible.minX + margin, visible.maxX - Panel.width - margin))
 
-            // 高度按可用空间收：放得下就 540，放不下就收到恰好塞进去，但不矮于 300。
-            // 收矮比夹到屏幕边上强——夹边必然压住输入框，收矮只是少显示几行
+            // 高度按可用空间收：放得下就 647，放不下就收到恰好塞进去，但不矮于 400
+            // （收缩区间 [400, 647] 两端成 φ）。收矮比夹到屏幕边上强——夹边必然
+            // 压住输入框，收矮只是少显示几行
             func fit(_ space: CGFloat) -> CGFloat {
                 min(Panel.maxHeight, max(Panel.minHeight, space))
             }

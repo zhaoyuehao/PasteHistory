@@ -29,35 +29,69 @@ enum Icon {
     static let thumb: CGFloat = 15
 }
 
+// MARK: - 间距档
+
+/// 间距档位：Fibonacci 阶梯。相邻 Fib 数之比收敛于 φ（13/8=1.625、21/13=1.615），
+/// 且落在整数 pt 上——用整数近似拿到 φ 的模度。字号四档、图标三档之后的第三块拼图：
+/// 以前间距散着 2/3/5/8/10/12/14/16/18/20/22，现在统一回档，新界面有档可查。
+///
+/// 规则：回最近档，等距取小；行高 44 与控件高度（52/20）不进阶梯——
+/// 触达常数优先于模度。圆角 8:5 也是 Fib φ 对（「黄金圆」的整数近似）。
+/// 例外：QR 卡衬边 11 不是档位数，是 φ 精确点（198:320≈φ⁻¹），见 QRPairPanel 注释。
+enum Rhythm {
+    static let xs: CGFloat = 2
+    static let s: CGFloat = 3
+    static let m: CGFloat = 5
+    static let l: CGFloat = 8
+    static let xl: CGFloat = 13
+    static let xxl: CGFloat = 21
+    static let xxxl: CGFloat = 34
+}
+
 // MARK: - 面板尺寸
 
-/// 面板外框。宽度恒定；高度只在「贴着输入框放不下」时才收。
+/// 面板外框是一个黄金矩形：400 × 647（= 400 × φ）。
 ///
-/// 540 是一屏十条的高度，平时就这么高。但输入框常常在屏幕中段，
-/// 上下都塞不下 540 —— 以前这时会把面板夹到屏幕边上，结果必然压住输入框。
-/// 所以高度是区间：放得下就 540，放不下就收到恰好塞进去，但不低于 300
-/// （搜索区 + 约四行，再矮扫不动了）。
+/// 形态对齐输入法候选窗——窄而高、贴着输入框下拉，这本来就是面板的自我定位
+/// （见 place() 的落位策略）。400 宽下一行摘要约 20 个字，正是候选窗的密度；
+/// 647 高比旧框（520×540）还多放一条。字号三档（11/13/15）不用动——
+/// 现有字号恰好落在这个密度上。
+///
+/// 收缩区间 [400, 647] 两端也成 φ（647 ÷ 400 = 1.618）：贴着输入框放不下时
+/// 高度在区间内收，收到底仍有约七行半可扫。两条硬约束不变：绝不压住输入框
+/// 本体（下方塞不下优先翻上方，不再往 400 以下硬塞）；位置每次按光标重算。
 enum Panel {
-    static let width: CGFloat = 520
-    static let maxHeight: CGFloat = 540
-    static let minHeight: CGFloat = 300
+    /// 冒烟参数 `--panel-size 520,540`：临时换成指定外框对比（真机 A/B 用），不影响默认值
+    static var debugSize: NSSize?
+
+    static var width: CGFloat { debugSize?.width ?? 400 }
+    /// 放得下时的高度 = 宽 × φ，也是收缩区间的上限
+    static var maxHeight: CGFloat { debugSize?.height ?? 647 }
+    /// 收缩下限 = 宽度本身（黄金区间的另一端）；冒烟对比时用旧下限 300 复现老行为
+    static var minHeight: CGFloat { debugSize == nil ? 400 : 300 }
 }
 
 // MARK: - 预览窗尺寸
 
-/// 空格预览大窗。宽度恒定；高度按内容形态给，塞不下收到恰好放得下。
+/// 空格预览大窗：恒为黄金矩形 640×400（= 8:5，Fibonacci 黄金近似对），
+/// 不再按内容形态换高——文本滚、图片 fit、文件列表滚，高度统一。
+/// 收缩区间 [247, 400] 两端也成 φ（247 ≈ 400÷φ），与主面板同一条纪律。
 ///
-/// 落位跟着面板走：右侧优先（间隙 12）→ 左侧 → 当前屏居中偏上，
-/// 绝不压住面板本体。
+/// 图文记录做递归 φ 分割：说明区 153 ≈ 400×0.382、图区 247 ≈ 153×φ、
+/// 整窗 400 ≈ 153×φ²——大块套小块，自相似的黄金分割。
+///
+/// 落位是「就地放大」：以面板为中心同心覆盖，从面板的几何长出来——
+/// 视线在哪里，预览就在哪里，绝不把视线拽到面板旁边。
 enum Preview {
     static let width: CGFloat = 640
-    static let textHeight: CGFloat = 520
-    static let imageHeight: CGFloat = 460
-    static let filesHeight: CGFloat = 440
-    static let minHeight: CGFloat = 300
-    /// 与面板的间隙 / 屏幕边缘留白
-    static let gap: CGFloat = 12
-    static let margin: CGFloat = 12
+    /// 640:400 = 8:5（Fib 对，φ 的整数近似）；恒定，不随内容形态切换
+    static let height: CGFloat = 400
+    /// 收缩下限 ≈ 400÷φ：区间 [247, 400] 两端成 φ
+    static let minHeight: CGFloat = 247
+    /// 图文记录说明区上限 = 400×0.382（黄金分割点），图区 247 与其成 φ
+    static let captionHeight: CGFloat = 153
+    /// 屏幕边缘留白
+    static let margin: CGFloat = Rhythm.xl
     /// 切换条目时新内容浮入的位移：有东西在移动，才谈得上阻尼感
     static let slideDistance: CGFloat = 16
     /// 原图解码的最大边长：预览窗就 640 宽，8000px 整图进内存是风扇测试

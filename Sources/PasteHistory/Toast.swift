@@ -59,10 +59,10 @@ enum Toast {
         label.textColor = .white
         container.addSubview(label)
         NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
-            label.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
-            label.topAnchor.constraint(equalTo: container.topAnchor, constant: 10),
-            label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -10),
+            label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: Rhythm.xl),
+            label.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -Rhythm.xl),
+            label.topAnchor.constraint(equalTo: container.topAnchor, constant: Rhythm.l),
+            label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -Rhythm.l),
         ])
 
         panel.contentView = container

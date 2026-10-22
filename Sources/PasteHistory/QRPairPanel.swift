@@ -111,9 +111,9 @@ private struct PairPanelView: View {
                     .accessibilityLabel(L10n.refreshQRCode)
                 }
             }
-            .padding(.top, 14)
-            .padding(.horizontal, 18)
-            .padding(.bottom, 12)
+            .padding(.top, Rhythm.xl)
+            .padding(.horizontal, Rhythm.xxl)
+            .padding(.bottom, Rhythm.xl)
 
             Group {
                 if let qr = model.qr {
@@ -132,7 +132,9 @@ private struct PairPanelView: View {
                 }
             }
             .frame(width: 176, height: 176)
-            .padding(10)
+            // 衬边 11 不是档位数，是 φ 精确点：卡含衬 198:320 = 0.6188 ≈ φ⁻¹
+            // ——扫码时视线压在整个卡上，这是全项目唯一「有意 φ」的分割
+            .padding(11)
             .background(Color.white)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .overlay(
@@ -158,13 +160,13 @@ private struct PairPanelView: View {
                 .help(L10n.copyAddress)
                 .accessibilityLabel(L10n.copyAddress)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.horizontal, Rhythm.l)
+            .padding(.vertical, Rhythm.m)
             .background(
-                RoundedRectangle(cornerRadius: 7)
+                RoundedRectangle(cornerRadius: Rhythm.l)
                     .fill(Color(NSColor.controlBackgroundColor).opacity(0.6))
             )
-            .padding(.top, 16)
+            .padding(.top, Rhythm.xl)
 
             if !model.warning.isEmpty {
                 Text(model.warning)
@@ -172,8 +174,8 @@ private struct PairPanelView: View {
                     // 系统橙在浅色底上只有 2.2:1，当文字用等于看不见
                     .foregroundStyle(Palette.warning)
                     .multilineTextAlignment(.center)
-                    .padding(.top, 10)
-                    .padding(.horizontal, 20)
+                .padding(.top, Rhythm.l)
+                .padding(.horizontal, Rhythm.xxl)
             }
 
             Spacer(minLength: 0)

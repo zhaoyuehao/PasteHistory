@@ -80,6 +80,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if n.count == 4 { PanelController.debugField = CGRect(x: n[0], y: n[1], width: n[2], height: n[3]) }
         }
 
+        // 仅供冒烟对比：--panel-size w,h 临时替换面板外框（默认 400×647 黄金矩形；
+        // --panel-size 520,540 可复现旧框做真机 A/B），不影响默认值
+        if let i = argv.firstIndex(of: "--panel-size"), i + 1 < argv.count {
+            let n = argv[i + 1].split(separator: ",").compactMap { Double($0) }
+            if n.count == 2 { Panel.debugSize = NSSize(width: n[0], height: n[1]) }
+        }
+
         // 仅供冒烟测试：--show 启动即打开面板
         if ProcessInfo.processInfo.arguments.contains("--show") {
             PanelController.shared.show()
