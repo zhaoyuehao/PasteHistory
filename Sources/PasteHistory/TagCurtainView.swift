@@ -37,43 +37,52 @@ enum Curtain {
     /// 纸签卡宽（未缩放）
     static let cardWidth: CGFloat = 150
 
-    // MARK: 树布局（世界坐标：y 向下；**横向枝线**结构——真机反馈
-    // 「是垂直的，不是水平的」：参考图的枝线是横伸的，签成排挂在线上）
-    /// 一屏最多 16 条 = 4 层枝线 × 4 个枝位；更早的滚轮/方向键翻枝
+    // MARK: 树布局（世界坐标：y 向下。**树是垂直的**——树干立着、枝斜伸
+    // （用户：「树哪有水平的」）；横向的是窗口（809×500），不是树）
+    /// 一屏最多 16 条 = 4 层 × 4 枝位；更早的滚轮/方向键翻枝
     static let maxBranches = 16
     /// 树干基座（世界 y）
-    static let trunkBaseY: CGFloat = 640
-    /// 第 0 层（最新）枝线高度：最新在最顶上
-    static let levelBaseY: CGFloat = 92
-    /// 层距：卡高 ~85 + 呼吸
-    static let levelStep: CGFloat = 98
-    /// 树干居中：枝线向两侧伸
-    static let spineXRatio: CGFloat = 0.5
-    /// 四个「枝位」：一条枝线上挂 4 张签，相邻索引换位、同位隔 4 条重现
-    static let lanes: [CGFloat] = [0.15, 0.37, 0.63, 0.85]
-    /// 各枝位绳长：同层内错开高度，读出对角节奏
-    static let laneRope: [CGFloat] = [70, 20, 45, 95]
+    static let trunkBaseY: CGFloat = 620
+    /// 最新一层的枝头高度：树冠 = 树最年轻的部分，最新在最顶上
+    static let bandBaseY: CGFloat = 95
+    /// 每旧一条下一层：层距 110（卡高 ~85 + 呼吸）
+    static let bandStep: CGFloat = 110
+    /// 树冠是梯形：最新层半宽 0.18，每深一层展宽 0.10——顶窄底宽，真树冠的形状
+    static let crownHalf: CGFloat = 0.18
+    static let spreadPerLevel: CGFloat = 0.10
+    /// 各枝位绳长：同层内错出对角节奏
+    static let laneRope: [CGFloat] = [85, 15, 100, 35]
     /// 外侧枝位更深（远），内侧更近
     static let depthSpread: CGFloat = 320
     /// 场景内容底边（相机钳制用）
-    static let contentBottomY: CGFloat = 590
+    static let contentBottomY: CGFloat = 615
+    /// 树干横向位置
+    static let spineXRatio: CGFloat = 0.5
 
-    static func lane(_ i: Int) -> Int { i % lanes.count }
-    static func level(_ i: Int) -> Int { i / lanes.count }
+    static func lane(_ i: Int) -> Int { i % 4 }
+    static func level(_ i: Int) -> Int { i / 4 }
+
+    static func halfSpan(_ level: Int) -> CGFloat {
+        crownHalf + CGFloat(level) * spreadPerLevel
+    }
 
     static func tipX(_ i: Int, width: CGFloat) -> CGFloat {
-        let jitter = 12 * sin(CGFloat(i) * 5.7)
+        let half = halfSpan(level(i))
+        let laneNorm = CGFloat(lane(i)) / 3
+        let jitter = 10 * sin(CGFloat(i) * 5.7)
+        let raw = width * (0.5 - half + laneNorm * 2 * half) + jitter
         let pad = cardWidth / 2 + 6
-        return min(max(width * lanes[lane(i)] + jitter, pad), width - pad)
+        return min(max(raw, pad), width - pad)
     }
 
     /// 挂点 y：最新在第 0 层（最顶），满 4 条下一层
-    static func tipY(_ i: Int) -> CGFloat { levelBaseY + CGFloat(level(i)) * levelStep }
+    static func tipY(_ i: Int) -> CGFloat { bandBaseY + CGFloat(level(i)) * bandStep }
 
     static func ropeLength(_ i: Int) -> CGFloat { laneRope[lane(i)] }
 
     static func depth(_ i: Int) -> CGFloat {
-        60 + abs(lanes[lane(i)] - 0.5) * 2 * depthSpread
+        let laneNorm = CGFloat(lane(i)) / 3
+        return 60 + abs(laneNorm - 0.5) * 2 * depthSpread
     }
 
     // MARK: 生长
@@ -549,13 +558,13 @@ struct TagCurtainView: View {
         ctx.fill(Path(ellipseIn: moonOuter), with: .color(Curtain.moon.opacity(0.05)))
     }
 
-    /// 树干（clip 从底部向上长）+ 横向枝线（每层一条，从树干向两侧伸展）
+    /// 树干（clip 从底部向上长）+ 斜枝（从树干伸向每个挂点，按进度伸展）
     private func drawTree(ctx: inout GraphicsContext, size: CGSize, cameraY: CGFloat, width: CGFloat) {
         let growth = sim.currentGrowth
         let count = min(max(items.count - sim.windowStart, 0), Curtain.maxBranches)
         let layoutWidth = sim.layoutWidth
         let trunkX = Curtain.spineXRatio * layoutWidth
-        let crownY = Curtain.levelBaseY - 55
+        let crownY = Curtain.bandBaseY - 55
 
         let trunkGrowth = min(1, growth / Curtain.trunkPhase)
         if trunkGrowth > 0.01 {
@@ -564,12 +573,12 @@ struct TagCurtainView: View {
             ctx.clip(to: Path(clipRect))
             let base = CGPoint(x: trunkX, y: Curtain.trunkBaseY - cameraY)
             let top = CGPoint(x: trunkX, y: crownY - cameraY)
-            let mid = CGPoint(x: trunkX + 12, y: (Curtain.trunkBaseY + crownY) / 2 - cameraY)
+            let mid = CGPoint(x: trunkX + 10, y: (Curtain.trunkBaseY + crownY) / 2 - cameraY)
             var trunk = Path()
             trunk.move(to: base)
             trunk.addQuadCurve(to: top, control: mid)
             ctx.stroke(trunk, with: .color(Curtain.inkBranch),
-                       style: StrokeStyle(lineWidth: 14, lineCap: .round))
+                       style: StrokeStyle(lineWidth: 13, lineCap: .round))
             // 侧根一笔，树才站得住
             var root = Path()
             root.move(to: CGPoint(x: trunkX, y: Curtain.trunkBaseY - 30 - cameraY))
@@ -579,45 +588,31 @@ struct TagCurtainView: View {
                        style: StrokeStyle(lineWidth: 6, lineCap: .round))
         }
 
-        // 枝线：每层一条横线（带一点交替的倾角，别像晾衣绳），
-        // 按生长进度从树干向两侧伸出去
-        let levelCount = (count + Curtain.lanes.count - 1) / Curtain.lanes.count
-        for level in 0..<levelCount {
-            let b = sim.branchProgress(level * Curtain.lanes.count,
-                                       count: max(count, 1),
-                                       growth: growth)
-            guard b > 0.01 else { continue }
-            let u = 1 - pow(1 - b, 2)
-            let y = Curtain.tipY(level * Curtain.lanes.count)
-            let tilt: CGFloat = level % 2 == 0 ? 7 : -7
-            let edgeL = layoutWidth * 0.05
-            let edgeR = layoutWidth * 0.95
-            let lx = trunkX + (edgeL - trunkX) * u
-            let rx = trunkX + (edgeR - trunkX) * u
-            var line = Path()
-            line.move(to: CGPoint(x: lx, y: y + tilt - cameraY))
-            line.addLine(to: CGPoint(x: rx, y: y - tilt - cameraY))
-            ctx.stroke(line, with: .color(Curtain.inkBranch.opacity(min(1, b * 2))),
-                       style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
-        }
-
-        // 挂绳的木结（枝线长到位后出现在挂点）
-        for tag in snapshotTagsForBeads(count: count, growth: growth) {
-            let beadRect = CGRect(x: tag.x - 2.4, y: tag.y - 2.4, width: 4.8, height: 4.8)
-            ctx.fill(Path(ellipseIn: beadRect), with: .color(Curtain.bead))
-        }
-    }
-
-    /// 枝线 ≥90% 时挂点上的木结（世界坐标）
-    private func snapshotTagsForBeads(count: Int, growth: CGFloat) -> [CGPoint] {
-        var out: [CGPoint] = []
+        // 斜枝：每条枝从树干出发伸向挂点（枝在树干上的着生点低于挂点，
+        // 向上向外伸——真树枝的姿态），按生长进度画部分曲线
         for li in 0..<count {
-            let b = sim.branchProgress(li, count: count, growth: growth)
-            guard b > 0.9 else { continue }
-            out.append(CGPoint(x: Curtain.tipX(li, width: sim.layoutWidth),
-                               y: Curtain.tipY(li)))
+            let b = sim.branchProgress(li, count: max(count, 1), growth: growth)
+            guard b > 0.01 else { continue }
+            let tipY = Curtain.tipY(li)
+            let sy = min(tipY + 90, 470)
+            let start = CGPoint(x: trunkX, y: sy - cameraY)
+            let tip = CGPoint(x: Curtain.tipX(li, width: layoutWidth), y: tipY - cameraY)
+            let control = CGPoint(x: (start.x + tip.x) / 2, y: (start.y + tip.y) / 2 - 24)
+            let u = 1 - pow(1 - b, 2)
+            let mu = 1 - u
+            let end = CGPoint(x: mu * mu * start.x + 2 * mu * u * control.x + u * u * tip.x,
+                              y: mu * mu * start.y + 2 * mu * u * control.y + u * u * tip.y)
+            var branch = Path()
+            branch.move(to: start)
+            branch.addQuadCurve(to: end, control: control)
+            ctx.stroke(branch, with: .color(Curtain.inkBranch.opacity(min(1, b * 2))),
+                       style: StrokeStyle(lineWidth: max(1.6, 4.4 - (sy - tipY) / 60),
+                                          lineCap: .round))
+            if b > 0.9 {
+                let beadRect = CGRect(x: tip.x - 2.4, y: tip.y - 2.4, width: 4.8, height: 4.8)
+                ctx.fill(Path(ellipseIn: beadRect), with: .color(Curtain.bead))
+            }
         }
-        return out
     }
 
     /// 朱红绳
