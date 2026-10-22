@@ -10,8 +10,11 @@ import SwiftUI
 /// 选中 = 踢一下绳末端（波沿绳传播），换签 = 相邻绳被反向带一下。
 /// 「减少动态效果」时风与冲量关闭，绳静止垂直，但视图照常可用（降级不是关掉）。
 enum Curtain {
-    /// 透视焦距：深度 z 处的签缩放为 persp/(persp+z)，z ∈ [0, 460)
+    /// 透视焦距：深度 z 处的签缩放为 persp/(persp+z)，z ∈ [0, depthMax)
     static let persp: CGFloat = 900
+    /// 深度散布范围。真机反馈「3D 感呢」：缩放 + 雾是人眼最弱的两个深度线索，
+    /// 空间感主要靠下面 facing / depthLift / parallax 三个强线索
+    static let depthMax: CGFloat = 600
     static let gravity: CGFloat = 1300
     /// verlet 速度保留系数（<1 即阻尼）
     static let verletDamping: CGFloat = 0.985
@@ -32,14 +35,21 @@ enum Curtain {
 
     /// 绳长随索引递增：时间维度 = 挂得越低。相机跟随选中项向下走
     static let lengthBase: CGFloat = 44
-    static let lengthStep: CGFloat = 34
+    static let lengthStep: CGFloat = 40
     /// 相机跟随（每帧 lerp）
     static let cameraLerp: CGFloat = 0.12
     /// 鼠标视差：近签动多、远签动少，深度才读得出来。工具面板的 3D 是
     /// 可感知但不可操纵的——要空间感，不要游戏相机
-    static let parallax: CGFloat = 0.06
-    /// 深度雾下限：后排签最淡到 0.5
-    static let fogFloor: CGFloat = 0.5
+    static let parallax: CGFloat = 0.12
+    /// 深度雾下限：后排签最淡到 0.55
+    static let fogFloor: CGFloat = 0.55
+    /// 朝向旋转（度）：签按偏离画面中心的横向位置绕竖轴面向灭点——
+    /// 左边的签右肩朝前、右边的签左肩朝前。物体有「面」才有体积感，
+    /// 这是最强的静态 3D 线索
+    static let facing: CGFloat = 8
+    /// 纵深抬升：后排签整体向地平线（灭点）抬高收拢。所有签挂同一条
+    /// 水平线 = 正对一面墙，怎么缩放都是平的
+    static let depthLift: CGFloat = 34
     /// 纸签卡宽（未缩放）：8×21 = 168，Fibonacci 对的乘积，不上不下时不发明新数
     static let cardWidth: CGFloat = 168
 
@@ -55,7 +65,7 @@ enum Curtain {
 
     /// 深度：按索引确定性伪随机散布（137 = 质数步长，散点均匀不聚堆）
     static func depth(_ index: Int) -> CGFloat {
-        CGFloat((index * 137 + 31) % 460)
+        CGFloat((index * 137 + 31) % Int(depthMax))
     }
 
     /// 挂点 x：黄金角叶序散布，相邻索引的签不挨在一起
@@ -81,6 +91,8 @@ struct CurtainPlacement: Identifiable {
     let fog: CGFloat
     /// 绳末端与竖直方向的夹角（度）
     let angle: CGFloat
+    /// 朝向灭点的绕竖轴转角（度）：签在画面中心的正值转向右、负值转向左
+    let facing: CGFloat
     /// 挂签点（屏幕坐标，卡片的 top-center 对齐到这里）
     let hang: CGPoint
     /// 绳的投影折线（Canvas 画线用）
@@ -192,19 +204,23 @@ final class CurtainSim {
             guard let rope = ropes[item.id] else { continue }
             let z = Curtain.depth(i)
             let s = Curtain.persp / (Curtain.persp + z)
-            // 世界 → 屏幕：横向以画布中心为灭点收敛，纵向扣除相机位移
+            // 纵深抬升：远排向地平线收（世界 → 屏幕：横向以画布中心为灭点收敛，
+            // 纵向先抬升再扣相机位移）
+            let lift = z / Curtain.depthMax * Curtain.depthLift
             let panX = self.panX
             let cameraY = self.cameraY
             let railY = self.railY
             let project: (Node) -> CGPoint = { n in
                 CGPoint(x: cx + (n.x - cx) * s + panX * s,
-                        y: railY + (n.y - cameraY) * s)
+                        y: railY - lift + (n.y - cameraY) * s)
             }
             let hang = project(rope.nodes[rope.nodes.count - 1])
             // 视口裁剪：卡高约 80/scale，上下留裕量
             if hang.y < -140 || hang.y > height + 180 { continue }
             let prev = project(rope.nodes[rope.nodes.count - 2])
             let angle = atan2(hang.x - prev.x, hang.y - prev.y) * 180 / .pi
+            // 朝向旋转：偏离中心越远转角越大，面向灭点
+            let facing = width > 40 ? (hang.x - cx) / (width / 2) * Curtain.facing : 0
             tags.append(CurtainPlacement(
                 id: item.id,
                 index: i,
@@ -212,6 +228,7 @@ final class CurtainSim {
                 scale: s,
                 fog: Curtain.fogFloor + (1 - Curtain.fogFloor) * s,
                 angle: angle,
+                facing: facing,
                 hang: hang,
                 path: rope.nodes.map(project)))
         }
@@ -318,6 +335,10 @@ struct TagCurtainView: View {
                             TagCard(item: item, selected: p.id == selectedId)
                                 .scaleEffect(p.scale, anchor: .top)
                                 .rotationEffect(.degrees(p.angle), anchor: .top)
+                                .rotation3DEffect(.degrees(p.facing),
+                                                  axis: (x: 0, y: 1, z: 0),
+                                                  anchor: .top,
+                                                  perspective: 1)
                                 .offset(x: p.hang.x - Curtain.cardWidth / 2, y: p.hang.y)
                                 .zIndex(p.id == selectedId ? 2000 : 1000 - p.depth)
                                 .contentShape(Rectangle())
