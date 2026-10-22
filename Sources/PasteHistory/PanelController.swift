@@ -205,6 +205,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         panel.isMovableByWindowBackground = true
         panel.isReleasedWhenClosed = false
         panel.backgroundColor = NSColor.windowBackgroundColor
+        applyWindowSkin(panel)
         // 宽 340~940、高 360~1200：下限是行内解剖与扫读的存活线，上限防呆
         panel.setContentSize(NSSize(width: Panel.width, height: Panel.maxHeight))
         panel.minSize = NSSize(width: Panel.minWidth, height: Panel.minHeight)
@@ -516,11 +517,25 @@ final class PanelController: NSObject, NSWindowDelegate {
     /// 与按空格完全同一条路径
     func togglePreview() { preview.toggle() }
 
-    /// ⌘L 切换后按新视图形态换外框并重新落位（面板可见时；不可见则下次 show 生效）
+    /// ⌘L 切换后按新视图形态换窗皮 + 换尺寸并重新落位（面板可见时；不可见则下次 show 生效）
     private func syncSizeToViewMode() {
-        guard let panel, panel.isVisible, !isHiding else { return }
+        guard let panel else { return }
+        applyWindowSkin(panel)
+        guard panel.isVisible, !isHiding else { return }
         let placement = place(panel, near: previousFocusElement)
         lastPlacement = placement
+    }
+
+    /// 许愿树直接长在桌面上：窗口全透明（只剩投影浮着），没有「大容器框」；
+    /// 列表模式换回正常窗皮
+    private func applyWindowSkin(_ panel: NSPanel) {
+        if Panel.isCurtain {
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+        } else {
+            panel.isOpaque = true
+            panel.backgroundColor = NSColor.windowBackgroundColor
+        }
     }
 
     // MARK: - NSWindowDelegate

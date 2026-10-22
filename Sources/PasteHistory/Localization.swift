@@ -61,6 +61,8 @@ enum L10n {
     static var deleteItem: String { value("删除", "刪除", "Delete") }
     /// 线签帘视图的右下角提示：视图可切，不是只有这一种看法
     static var curtainListHint: String { value("⌘L 列表视图", "⌘L 列表檢視", "⌘L List View") }
+    /// 树只挂最近 16 条：选到更早时的去处提示
+    static var curtainOlderHint: String { value("更早的签：搜索，或 ⌘L 回列表", "更早的籤：搜尋，或 ⌘L 回列表", "Older tags: search, or ⌘L for list") }
     /// ⌘1–9 角标的读屏名字。「⌘1」念出来没有人听得懂
     static func quickPaste(_ n: Int) -> String {
         value("快速粘贴第 \(n) 条", "快速貼上第 \(n) 筆", "Paste item \(n)")

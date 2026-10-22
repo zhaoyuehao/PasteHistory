@@ -37,12 +37,15 @@ enum Curtain {
     static let cardWidth: CGFloat = 150
 
     // MARK: 树布局（世界坐标：y 向下，与视口尺寸无关）
+    /// 树只挂最近 16 条：一屏装得下、树冠可见（真机反馈「头也看不见」）。
+    /// 更早的记录走搜索或 ⌘L 列表——树是「最近的记忆」，不是全量历史
+    static let maxBranches = 16
     /// 树干基座（世界 y；相机 0 时在视口底部之下）
     static let trunkBaseY: CGFloat = 820
     /// i=0（最新）的枝头：低枝在眼前
-    static let tipBaseY: CGFloat = 420
-    /// 每老一条，枝头升高 30
-    static let tipStep: CGFloat = 30
+    static let tipBaseY: CGFloat = 480
+    /// 每老一条，枝头升高 28（16 条 = 树冠到树脚一屏装下）
+    static let tipStep: CGFloat = 28
     /// 树干居中：枝向两侧伸
     static let spineXRatio: CGFloat = 0.5
     /// 四条「枝位」：真机截图实锤随机散布必叠（卡 150 宽，黄金角落点挤在
@@ -126,7 +129,7 @@ final class CurtainSim {
     struct Node { var x: CGFloat; var y: CGFloat; var px: CGFloat; var py: CGFloat }
 
     private final class Rope {
-        let anchor: CGPoint
+        var anchor: CGPoint
         let fullSeg: CGFloat
         var nodes: [Node]
         let phase: CGFloat
@@ -234,12 +237,21 @@ final class CurtainSim {
         lastDate = date
         let growth = growth(at: date)
 
-        let ids = Set(items.map(\.id))
-        let stale = ropes.keys.filter { !ids.contains($0) }
+        // 对账：树只挂最近 maxBranches 条；窗口宽度变了整树重排
+        // （只挪锚点不解绳——node0 被钉在新枝位，绳会荡过去，不闪不重播）
+        let treeIds = Set(items.prefix(Curtain.maxBranches).map(\.id))
+        let stale = ropes.keys.filter { !treeIds.contains($0) }
         stale.forEach { ropes.removeValue(forKey: $0) }
         if ropes.isEmpty { treeWidth = width }
-        for (i, item) in items.enumerated() where ropes[item.id] == nil {
-            ropes[item.id] = Rope(index: i, width: treeWidth)
+        let relayout = abs(width - treeWidth) > 0.5
+        if relayout { treeWidth = width }
+        for (i, item) in items.enumerated() where i < Curtain.maxBranches {
+            let want = CGPoint(x: Curtain.tipX(i, width: treeWidth), y: Curtain.tipY(i))
+            if let rope = ropes[item.id] {
+                if relayout || rope.anchor != want { rope.anchor = want }
+            } else {
+                ropes[item.id] = Rope(index: i, width: treeWidth)
+            }
         }
 
         cameraY += (cameraTargetY - cameraY) * Curtain.cameraLerp
@@ -252,8 +264,8 @@ final class CurtainSim {
         panX += (panTarget - panX) * 0.1
 
         // 枝头长到六成 → 绳开始垂落
-        let count = items.count
-        for (i, item) in items.enumerated() {
+        let count = min(items.count, Curtain.maxBranches)
+        for (i, item) in items.enumerated() where i < Curtain.maxBranches {
             if let rope = ropes[item.id], rope.spawnedAt == nil,
                branchProgress(i, count: count, growth: growth) >= Curtain.hangAt {
                 rope.spawnedAt = date
@@ -267,7 +279,7 @@ final class CurtainSim {
 
         var tags: [CurtainPlacement] = []
         let cx = width / 2
-        for (i, item) in items.enumerated() {
+        for (i, item) in items.enumerated() where i < Curtain.maxBranches {
             guard let rope = ropes[item.id], let spawned = rope.spawnedAt else { continue }
             let z = Curtain.depth(i)
             let s = Curtain.persp / (Curtain.persp + z)
@@ -421,6 +433,15 @@ struct TagCurtainView: View {
             .overlay(alignment: .center) {
                 if items.isEmpty { emptyState }
             }
+            .overlay(alignment: .bottom) {
+                // 树只挂最近 16 条：选到更早的记录时给出去处
+                if model.safeSelection >= Curtain.maxBranches {
+                    Text(L10n.curtainOlderHint)
+                        .font(.system(size: Scale.meta))
+                        .foregroundStyle(Curtain.moon.opacity(0.7))
+                        .padding(Rhythm.m)
+                }
+            }
             .onAppear {
                 model.resetSelection()
                 sim.beginGrowth()
@@ -477,7 +498,7 @@ struct TagCurtainView: View {
     /// 树干（clip 从底部向上长）+ 枝（按各自进度伸展）
     private func drawTree(ctx: inout GraphicsContext, size: CGSize, cameraY: CGFloat, width: CGFloat) {
         let growth = sim.currentGrowth
-        let count = items.count
+        let count = min(items.count, Curtain.maxBranches)
         let layoutWidth = sim.layoutWidth
         let trunkTop = Curtain.tipY(count - 1) - 40
         let trunkX = Curtain.spineXRatio * layoutWidth
@@ -560,7 +581,7 @@ struct TagCurtainView: View {
             sim.kick(id: items[old].id, -dir * Curtain.wakeKick)
         }
         sim.kick(id: items[clamped].id, dir * (fast ? Curtain.kickFast : Curtain.kick))
-        sim.updateCamera(index: clamped, height: height)
+        sim.updateCamera(index: min(clamped, Curtain.maxBranches - 1), height: height)
         if clamped >= items.count - 8 { store.loadMore() }
     }
 

@@ -79,10 +79,21 @@ struct HistoryView: View {
     private var safeSelection: Int { model.safeSelection }
 
     var body: some View {
-        VStack(spacing: 0) {
-            searchBar
-            hairline
-            content
+        Group {
+            if curtain {
+                // 许愿树直接长在桌面上：夜色铺满全窗（窗口透明），
+                // 搜索框悬浮在夜空里，没有「大容器框」
+                ZStack(alignment: .top) {
+                    TagCurtainView(store: store, model: model, onPaste: onPaste)
+                    searchBar
+                }
+            } else {
+                VStack(spacing: 0) {
+                    searchBar
+                    hairline
+                    listContent
+                }
+            }
         }
         // 高度不写死：贴着输入框放不下时窗口会收，列表跟着滚。
         // 写死 647 的话，窗口被压小后 SwiftUI 会把内容裁掉而不是滚动
@@ -91,7 +102,8 @@ struct HistoryView: View {
         // 内容顶到窗口上缘，别让标题栏白白占 28pt
         .ignoresSafeArea()
         // 头部块：比内容区亮一档。层次靠材质差异，不靠多画几条线
-        .background(Color(NSColor.controlBackgroundColor))
+        // 许愿树模式：窗口透明，场景自己铺满（PanelController 同步换窗皮）
+        .background(curtain ? Color.clear : Color(NSColor.controlBackgroundColor))
         .onAppear {
             DispatchQueue.main.async { searchFocused = true }
             model.rebuildSections()
@@ -138,16 +150,18 @@ struct HistoryView: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: Icon.action))
                 // 聚焦时点亮，未聚焦时也不该淡到看不见——图标是位置的承诺
-                .foregroundStyle(searchFocused ? Color.accentColor : Palette.meta)
+                .foregroundStyle(searchFocused ? Color.accentColor
+                                               : (curtain ? Curtain.moon.opacity(0.75) : Palette.meta))
             TextField(L10n.search, text: $store.query)
                 .textFieldStyle(.plain)
                 .font(.system(size: Scale.field))
+                .foregroundStyle(curtain ? Curtain.moon : Color.primary)
                 .focused($searchFocused)
             if !store.query.isEmpty {
                 Button { store.query = "" } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: Icon.action))
-                        .foregroundStyle(Palette.meta)
+                        .foregroundStyle(curtain ? Curtain.moon.opacity(0.75) : Palette.meta)
                 }
                 .buttonStyle(.plain)
                 .help(L10n.clear)
@@ -163,18 +177,6 @@ struct HistoryView: View {
         Rectangle()
             .fill(searchFocused ? Color.accentColor : Color(NSColor.separatorColor).opacity(0.6))
             .frame(height: 0.5)
-    }
-
-    // MARK: - 内容
-
-    @ViewBuilder
-    private var content: some View {
-        if curtain {
-            TagCurtainView(store: store, model: model, onPaste: onPaste)
-                .background(Color(NSColor.windowBackgroundColor))
-        } else {
-            listContent
-        }
     }
 
     // MARK: - 列表
