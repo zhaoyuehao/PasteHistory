@@ -87,6 +87,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if n.count == 2 { Panel.debugSize = NSSize(width: n[0], height: n[1]) }
         }
 
+        // 仅供冒烟对比：--view tags 启动即用线签帘视图（3D 挂签形态），不写用户偏好
+        if let i = argv.firstIndex(of: "--view"), i + 1 < argv.count, argv[i + 1] == "tags" {
+            Curtain.debugForce = true
+        }
+
         // 仅供冒烟测试：--show 启动即打开面板
         if ProcessInfo.processInfo.arguments.contains("--show") {
             PanelController.shared.show()

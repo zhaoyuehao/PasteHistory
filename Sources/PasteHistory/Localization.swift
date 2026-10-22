@@ -59,6 +59,8 @@ enum L10n {
     static func pixelSize(_ w: Int, _ h: Int) -> String { value("\(w)×\(h)", "\(w)×\(h)", "\(w)×\(h)") }
     static var pinItem: String { value("置顶", "置頂", "Pin") }
     static var deleteItem: String { value("删除", "刪除", "Delete") }
+    /// 线签帘视图的右下角提示：视图可切，不是只有这一种看法
+    static var curtainListHint: String { value("⌘L 列表视图", "⌘L 列表檢視", "⌘L List View") }
     /// ⌘1–9 角标的读屏名字。「⌘1」念出来没有人听得懂
     static func quickPaste(_ n: Int) -> String {
         value("快速粘贴第 \(n) 条", "快速貼上第 \(n) 筆", "Paste item \(n)")

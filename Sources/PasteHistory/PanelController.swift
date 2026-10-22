@@ -11,6 +11,8 @@ extension Notification.Name {
     static let phPin = Notification.Name("phPin")
     static let phClose = Notification.Name("phClose")
     static let phQuickPaste = Notification.Name("phQuickPaste")
+    /// 列表 ↔ 线签帘视图切换（⌘L）
+    static let phToggleCurtain = Notification.Name("phToggleCurtain")
     /// 面板即将显示：视图收到后回到第一条
     static let phPanelWillShow = Notification.Name("phPanelWillShow")
 }
@@ -467,6 +469,9 @@ final class PanelController: NSObject, NSWindowDelegate {
             Self.post(.phPin); return nil
         case 13 where mods == [.command]: // ⌘W 关闭
             Self.post(.phClose); return nil
+        case 37 where mods == [.command]: // ⌘L 列表 ↔ 线签帘
+            if event.isARepeat { return nil }
+            Self.post(.phToggleCurtain); return nil
         default:
             break
         }

@@ -369,6 +369,7 @@ final class Settings {
         static let anchorPanel = "anchorPanelToInput"
         static let panelWidth = "panelWidth"
         static let panelHeight = "panelHeight"
+        static let panelViewCurtain = "panelViewCurtain"
     }
 
     var maxItems: Int {
@@ -418,6 +419,12 @@ final class Settings {
     var panelHeight: CGFloat {
         get { let v = defaults.double(forKey: Key.panelHeight); return v <= 0 ? 647 : min(max(v, 360), 1200) }
         set { defaults.set(newValue, forKey: Key.panelHeight) }
+    }
+
+    /// 面板视图形态：false = 列表（默认），true = 线签帘。⌘L 切换并记住
+    var curtainView: Bool {
+        get { defaults.bool(forKey: Key.panelViewCurtain) }
+        set { defaults.set(newValue, forKey: Key.panelViewCurtain) }
     }
 
     /// iCloud 同步开关（默认开；未登录 iCloud Drive 时自动无效）

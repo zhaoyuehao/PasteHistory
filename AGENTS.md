@@ -27,6 +27,7 @@ PasteHistory.app/Contents/MacOS/PasteHistory --show            # 启动即打开
 PasteHistory.app/Contents/MacOS/PasteHistory --show --trace-anchor   # 额外把定位结论打到 NSLog（落盘是默认开着的，见下）
 PasteHistory.app/Contents/MacOS/PasteHistory --show --fake-field 100,470,300,60   # 喂一个假输入框（AX 坐标），绕开 AX 直接验证定位几何
 PasteHistory.app/Contents/MacOS/PasteHistory --show --panel-size 520,540   # 临时换回旧外框对比（默认 400×647 黄金矩形，真机 A/B 用）
+PasteHistory.app/Contents/MacOS/PasteHistory --show --view tags   # 启动即用「线签帘」3D 视图（不写偏好；⌘L 运行时互切）
 PasteHistory.app/Contents/MacOS/PasteHistory --show-pair       # 启动即打开手机同步配对面板（UI 冒烟）
 PasteHistory.app/Contents/MacOS/PasteHistory --print-ax         # 把辅助功能授权状态写到 ax_status.txt
 PasteHistory.app/Contents/MacOS/PasteHistory --paste-latest     # 对最新记录走完整粘贴流程
@@ -83,7 +84,8 @@ PasteHistory.app/Contents/MacOS/PasteHistory --restore-images   # 从 iCloud 恢
 | `HistoryDatabase.swift` | SQLite3 C API（WAL、分页、串行队列） |
 | `ClipStore.swift` | 分页门面、Settings（UserDefaults） |
 | `PanelController.swift` | ⇧⌘C 面板（NSHostingController 承载 SwiftUI）、键监视器（空格/⌘Y 预览开关在此分发） |
-| `HistoryView.swift` | 面板 UI（搜索 / 列表 / 键盘导航） |
+| `HistoryView.swift` | 面板 UI（搜索 / 列表 / 键盘导航），⌘L 在列表与线签帘之间切换 |
+| `TagCurtainView.swift` | 线签帘 3D 视图：verlet 绳物理 + 透视投影 + 相机跟随（参数集中在 `Curtain`，与列表共享 HistoryViewModel） |
 | `PreviewPanel.swift` | 空格/⌘Y 预览大窗：不夺焦点的 NSPanel（贴面板右侧）+ 三类内容视图，随面板选中联动 |
 | `Theme.swift` | 字号 / 图标 / 间距档位（Scale / Icon / Rhythm）与语义色（`Palette.meta` / `.warning` 按 WCAG AA 反解） |
 | `Motion.swift` | 动效令牌（选中 / 连按 / 边界回弹 / 悬停），View 与 ViewModel 共用 |

@@ -56,6 +56,8 @@ struct HistoryView: View {
     @Namespace private var selectionSpace
     /// 边界橡皮筋：撞到顶/底时整片内容纵向下沉一下再弹回
     @State private var bounce: CGFloat = 0
+    /// 列表 / 线签帘：同一份数据与交互的两种形态，⌘L 互切，选择记住
+    @State private var curtain = Settings.shared.curtainView || Curtain.debugForce
 
     var onPaste: (ClipItem) -> Void
     var onCopyOnly: (ClipItem) -> Void
@@ -113,6 +115,11 @@ struct HistoryView: View {
             model.togglePinCurrent()
         }
         .onReceive(NotificationCenter.default.publisher(for: .phClose)) { _ in onClose() }
+        // ⌘L：列表 ↔ 线签帘。两种视图共享同一个 model，切换零迁移成本
+        .onReceive(NotificationCenter.default.publisher(for: .phToggleCurtain)) { _ in
+            curtain.toggle()
+            Settings.shared.curtainView = curtain
+        }
         // 每次打开面板都是一次新的「找」：回到第一条
         .onReceive(NotificationCenter.default.publisher(for: .phPanelWillShow)) { _ in model.resetForPresentation() }
         .onReceive(NotificationCenter.default.publisher(for: .phQuickPaste)) { note in
@@ -158,9 +165,21 @@ struct HistoryView: View {
             .frame(height: 0.5)
     }
 
+    // MARK: - 内容
+
+    @ViewBuilder
+    private var content: some View {
+        if curtain {
+            TagCurtainView(store: store, model: model, onPaste: onPaste)
+                .background(Color(NSColor.windowBackgroundColor))
+        } else {
+            listContent
+        }
+    }
+
     // MARK: - 列表
 
-    private var content: some View {
+    private var listContent: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 // 不用 pinnedViews：悬浮标题盖在视口顶部，而 scrollTo 的「最小滚动」
