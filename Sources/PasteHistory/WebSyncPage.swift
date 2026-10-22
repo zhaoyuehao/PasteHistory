@@ -17,60 +17,74 @@ enum WebSyncPage {
 <link rel="manifest" href="/manifest.json">
 <title id="pageTitle">剪贴板</title>
 <style>
-:root { color-scheme: dark; }
+:root { color-scheme: dark; } /* 深色-only 是显式选择，不做浅色跟随（规范 7.4） */
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 body { font-family: -apple-system, "PingFang SC", sans-serif; background: #1c1c1e; color: #f2f2f7;
        padding-bottom: env(safe-area-inset-bottom); }
+/* 字号四档 17/15/13/11（与桌面端 15/13/11 同构）；输入控件 16 是 iOS 聚焦防缩放常数，豁免 */
 header { position: sticky; top: 0; z-index: 10; background: rgba(28,28,30,.92); backdrop-filter: blur(12px);
-         padding: max(env(safe-area-inset-top), 10px) 14px 10px; border-bottom: 1px solid #38383a; }
+         padding: max(env(safe-area-inset-top), 8px) 13px 8px; border-bottom: 1px solid #38383a; }
 h1 { font-size: 17px; font-weight: 700; }
 #status { font-size: 11px; color: #98989f; margin-top: 2px; }
-.row { display: flex; gap: 8px; margin-top: 10px; }
-input[type=search] { flex: 1; background: #2c2c2e; border: none; border-radius: 10px; color: #f2f2f7;
-                     padding: 9px 12px; font-size: 16px; outline: none; }
-#syncBtn { background: #0a84ff; color: #fff; border: none; border-radius: 10px; padding: 9px 14px;
+.row { display: flex; gap: 8px; margin-top: 8px; }
+input[type=search] { flex: 1; background: #2c2c2e; border: none; border-radius: 8px; color: #f2f2f7;
+                     padding: 8px 13px; font-size: 16px; outline: none; }
+#syncBtn { background: #0a84ff; color: #fff; border: none; border-radius: 8px; padding: 8px 13px;
            font-size: 15px; font-weight: 600; white-space: nowrap; }
 #syncBtn:active { opacity: .7; }
 #syncBtn.on { background: #30d158; }
-main { padding: 10px 14px; }
-.clip { background: #2c2c2e; border-radius: 12px; padding: 11px 13px; margin-bottom: 8px; }
-.clip .content { font-size: 14.5px; line-height: 1.45; word-break: break-all; display: -webkit-box;
+main { padding: 8px 13px; }
+/* 卡片：外距 8 : 内距 13 ≈ φ⁻¹；圆角 13，间距全 Fib 档 */
+.clip { background: #2c2c2e; border-radius: 13px; padding: 13px; margin-bottom: 8px; }
+.clip .content { font-size: 15px; line-height: 1.5; word-break: break-all; display: -webkit-box;
                  -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.clip .meta { display: flex; gap: 8px; margin-top: 6px; font-size: 11px; color: #98989f; align-items: center; }
-.badge { background: #3a3a3c; border-radius: 5px; padding: 1px 6px; font-size: 10px; }
+.clip .meta { display: flex; gap: 8px; margin-top: 5px; font-size: 11px; color: #98989f; align-items: center; }
+/* badge 文字 #a8a8ad：在 #3a3a3c 上过 AA 4.5:1（#98989f 只有 4.0:1） */
+.badge { background: #3a3a3c; border-radius: 5px; padding: 1px 5px; font-size: 11px; color: #a8a8ad; }
 .badge.pin { color: #ff9f0a; }
-.thumb { width: 42px; height: 42px; border-radius: 7px; object-fit: cover; float: right; margin-left: 8px; }
-#empty { text-align: center; color: #98989f; padding: 60px 20px; font-size: 14px; }
-#overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; z-index: 20;
-           padding: 20px; align-items: center; justify-content: center; }
-#sheet { background: #2c2c2e; border-radius: 16px; width: 100%; max-width: 500px; max-height: 80vh;
-         display: flex; flex-direction: column; overflow: hidden; }
-#sheetHead { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px;
+/* 类型图标：内联 SVG 单色，禁 emoji（跨平台渲染不一致，规范 4.3） */
+.ti { display: inline-flex; vertical-align: -2px; margin-right: 5px; line-height: 0; color: #98989f; }
+.ti svg { display: block; }
+.thumb { width: 34px; height: 34px; border-radius: 8px; object-fit: cover; float: right; margin-left: 8px; }
+#empty { text-align: center; color: #98989f; padding: 55px 21px; font-size: 15px; }
+/* 弹层一律有过渡（规范 06）：遮罩淡入 .22s，sheet scale .96→1 + 淡入——macOS popover 手感 */
+#overlay, #pasteOverlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; z-index: 20;
+           opacity: 0; transition: opacity .22s ease-out; padding: 21px; align-items: center; justify-content: center; }
+#overlay.show, #pasteOverlay.show { opacity: 1; }
+#pasteOverlay { z-index: 25; }
+#sheet { background: #2c2c2e; border-radius: 13px; width: 100%; max-width: 500px;
+         max-height: 61.8vh; /* φ：sheet : 视口 = 0.618 */
+         display: flex; flex-direction: column; overflow: hidden;
+         transform: scale(.96); opacity: 0; transition: opacity .22s ease-out, transform .22s ease-out; }
+#overlay.show #sheet { transform: scale(1); opacity: 1; }
+#sheetHead { display: flex; justify-content: space-between; align-items: center; padding: 13px;
              border-bottom: 1px solid #38383a; }
-#sheetTitle { font-size: 12px; color: #98989f; }
-#copyBtn { background: #0a84ff; color: #fff; border: none; border-radius: 9px; padding: 7px 16px;
+#sheetTitle { font-size: 13px; color: #98989f; }
+#copyBtn { background: #0a84ff; color: #fff; border: none; border-radius: 8px; padding: 8px 13px;
            font-size: 15px; font-weight: 600; }
-#detail { padding: 14px 16px; overflow-y: auto; font-size: 15px; line-height: 1.5; word-break: break-all;
+#detail { padding: 13px; overflow-y: auto; font-size: 15px; line-height: 1.5; word-break: break-all;
           white-space: pre-wrap; }
 #detail img { max-width: 100%; border-radius: 8px; margin: 8px 0; }
 #toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: 80px; background: #3a3a3c;
-         color: #fff; padding: 10px 18px; border-radius: 12px; font-size: 14px; opacity: 0;
+         color: #fff; padding: 8px 21px; border-radius: 13px; font-size: 15px; opacity: 0;
          transition: opacity .25s; pointer-events: none; z-index: 30; max-width: 85vw; text-align: center;
-         display: flex; align-items: center; justify-content: center; gap: 7px; }
+         display: flex; align-items: center; justify-content: center; gap: 8px; }
 #toastIcon { line-height: 0; }
 #toastIcon svg { display: block; }
-#lock { position: fixed; inset: 0; background: #1c1c1e; z-index: 40; display: none;
-        flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 30px; }
+#lock { position: fixed; inset: 0; background: #1c1c1e; z-index: 40; display: none; opacity: 0;
+        transition: opacity .25s ease-out;
+        flex-direction: column; align-items: center; justify-content: center; gap: 13px; padding: 34px; }
+#lock.show { opacity: 1; }
 #lock p { color: #98989f; font-size: 13px; text-align: center; line-height: 1.6; }
 /* 非 Secure Context 下没有剪贴板 API：用粘贴框代替"读取剪贴板" */
-#pasteOverlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; z-index: 25;
-                padding: 20px; align-items: center; justify-content: center; }
-#pbSheet { background: #2c2c2e; border-radius: 16px; width: 100%; max-width: 500px; padding: 14px 16px; }
-#pbTitle { font-size: 12px; color: #98989f; line-height: 1.6; margin-bottom: 10px; }
-#pb { width: 100%; height: 130px; background: #1c1c1e; border: 1px solid #48484a; border-radius: 10px;
-      color: #f2f2f7; font-size: 16px; padding: 10px 12px; resize: none; outline: none; }
-#pbBtn { background: #0a84ff; color: #fff; border: none; border-radius: 10px; padding: 11px 0; width: 100%;
-         font-size: 16px; font-weight: 600; margin-top: 10px; }
+#pbSheet { background: #2c2c2e; border-radius: 13px; width: 100%; max-width: 500px; padding: 13px;
+           transform: scale(.96); opacity: 0; transition: opacity .22s ease-out, transform .22s ease-out; }
+#pasteOverlay.show #pbSheet { transform: scale(1); opacity: 1; }
+#pbTitle { font-size: 13px; color: #98989f; line-height: 1.6; margin-bottom: 8px; }
+#pb { width: 100%; height: 144px; background: #1c1c1e; border: 1px solid #48484a; border-radius: 8px;
+      color: #f2f2f7; font-size: 16px; padding: 8px 13px; resize: none; outline: none; }
+#pbBtn { background: #0a84ff; color: #fff; border: none; border-radius: 8px; padding: 13px 0; width: 100%;
+         font-size: 15px; font-weight: 600; margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -350,7 +364,7 @@ async function initPair() {
   const m = location.hash.match(/pair=(\d{6})/);
   if (m) { localStorage.setItem('phPair', m[1]); history.replaceState(null,'','/'); }
   let code = localStorage.getItem('phPair');
-  if (!code) { $('lock').style.display = 'flex'; return false; }
+  if (!code) { showLock(); return false; }
   return await unlock(code);
 }
 async function unlock(code) {
@@ -446,8 +460,8 @@ function fmtTime(ts) {
 }
 function summary(c) {
   if (c.kind === 'text') return c.text || '';
-  if (c.kind === 'image') return c.ocr ? '🖼 ' + c.ocr.slice(0,60) : '🖼 ' + tr('image');
-  return '📁 ' + (c.paths || '').split('\n')[0];
+  if (c.kind === 'image') return c.ocr ? c.ocr.slice(0,60) : tr('image');
+  return (c.paths || '').split('\n')[0];
 }
 
 function render() {
@@ -464,7 +478,7 @@ function render() {
     const pin = c.pinned ? '<span class="badge pin">' + tr('pinned') + '</span>' : '';
     const kind = { text:tr('text'), image:tr('image'), files:tr('files') }[c.kind] || c.kind;
     return '<div class="clip" onclick="openSheet(\'' + c.id + '\')">' + thumb +
-      '<div class="content">' + esc(summary(c)) + '</div><div class="meta">' + pin +
+      '<div class="content">' + typeIcon(c) + esc(summary(c)) + '</div><div class="meta">' + pin +
       '<span class="badge">' + kind + '</span><span>' + esc(c.app||'') + '</span><span>' + fmtTime(c.ts) + '</span></div></div>';
   }).join('');
 }
@@ -475,7 +489,7 @@ function openSheet(id) {
   current = c;
   $('sheetTitle').textContent = ({text:tr('text'),image:tr('image'),files:tr('files')})[c.kind] + ' · ' + fmtTime(c.ts) + (c.app ? ' · ' + c.app : '');
   $('detail').textContent = c.kind === 'text' ? c.text : (c.paths || c.ocr || '');
-  $('overlay').style.display = 'flex';
+  showOverlay($('overlay'));
   if (c.kind === 'image' && c.img) loadImg(c.img);
 }
 async function loadImg(name) {
@@ -489,7 +503,7 @@ async function loadImg(name) {
     $('detail').prepend(img);
   } catch(e) {}
 }
-function closeSheet() { $('overlay').style.display = 'none'; }
+function closeSheet() { hideOverlay($('overlay')); }
 
 // ---- 复制：Clipboard API 仅在安全上下文可用，非 HTTPS 回退 execCommand ----
 async function copyCurrent() {
@@ -549,10 +563,10 @@ async function syncClipboard() {
 
 function openPasteBox() {
   $('pb').value = '';
-  $('pasteOverlay').style.display = 'flex';
+  showOverlay($('pasteOverlay'));
   setTimeout(() => { try { $('pb').focus(); } catch (e) {} }, 60);
 }
-function closePasteBox() { $('pasteOverlay').style.display = 'none'; }
+function closePasteBox() { hideOverlay($('pasteOverlay')); }
 async function submitPasted() {
   const t = $('pb').value.trim();
   if (!t) { toast(tr('pasteSomething'), 'warn'); return; }
@@ -595,6 +609,27 @@ var ICON = {
   ok: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
   warn: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>'
 };
+// 类型图标用内联 SVG 单色，不用 emoji：跨平台渲染不一致且自带彩色（规范 4.3）
+var TYPE_ICON = {
+  image: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>',
+  files: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9L9.6 3.9A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>'
+};
+function typeIcon(c) {
+  return c.kind === 'text' ? '' : '<span class="ti">' + TYPE_ICON[c.kind] + '</span>';
+}
+// 弹层禁止瞬现/瞬灭（规范 06）：先布局、双 rAF 后上过渡类；收起走淡出后再隐藏
+function showOverlay(el) {
+  el.style.display = 'flex';
+  requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('show')));
+}
+function hideOverlay(el) {
+  el.classList.remove('show');
+  setTimeout(() => { el.style.display = 'none'; }, 220);
+}
+function showLock() {
+  $('lock').style.display = 'flex';
+  requestAnimationFrame(() => requestAnimationFrame(() => $('lock').classList.add('show')));
+}
 
 function toast(msg, icon) {
   var t = $('toast'), ic = $('toastIcon');

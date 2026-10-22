@@ -93,9 +93,10 @@ final class PanelController: NSObject, NSWindowDelegate {
         if !placement.anchored { scheduleAnchorRetry() }
 
         // 出现：0.22s easeOut，opacity 0→1 + scale 0.96→1。
-        // 窗口淡入与内容缩放共用同一个 duration，两套时序叠加会出现「先亮后弹」
+        // 窗口淡入与内容缩放共用同一个 duration，两套时序叠加会出现「先亮后弹」。
+        // 「减少动态效果」开启时跳过缩放，只保留淡入（规范 5.5：降级不是静止）
         panel.alphaValue = 0
-        if let view = panel.contentView {
+        if !Motion.reduceMotion, let view = panel.contentView {
             view.wantsLayer = true
             let scale = CABasicAnimation(keyPath: "transform.scale")
             scale.fromValue = 0.96
@@ -391,10 +392,14 @@ final class PanelController: NSObject, NSWindowDelegate {
                abs(last.origin.x - next.origin.x) < 1, abs(last.origin.y - next.origin.y) < 1 { return }
             self.lastPlacement = next
             self.trace("retry -> \(next.reason)")
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.2
-                ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                panel.animator().setFrameOrigin(next.origin)
+            if Motion.reduceMotion {
+                panel.setFrameOrigin(next.origin)   // 降级：直接就位，只保留淡入语义
+            } else {
+                NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = 0.2
+                    ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                    panel.animator().setFrameOrigin(next.origin)
+                }
             }
         }
     }

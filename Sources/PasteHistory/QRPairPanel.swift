@@ -5,7 +5,7 @@ import SwiftUI
 
 /// Phone sync panel: displays the QR code and address.
 @MainActor
-final class QRPairPanel {
+final class QRPairPanel: NSObject, NSWindowDelegate {
     static let shared = QRPairPanel()
 
     private var panel: NSPanel?
@@ -19,11 +19,15 @@ final class QRPairPanel {
         guard let panel else { return }
 
         model.refresh()
+        // 高度随 warning 自适应：默认 320（卡区 198 : 320 = 0.619 ≈ φ⁻¹，
+        // 卡 : 其余 = 1.618——黄金分割的纵向命中）；有警示时加高到 352 容纳
+        panel.setContentSize(NSSize(width: 320, height: model.warning.isEmpty ? 320 : 352))
         panel.center()
         // 出场与主面板同一套语言：0.22s easeOut 淡入 + scale 0.96→1——三张卡片同一张脸。
-        // 以前这里是瞬现，是全项目唯一没有阻尼感的窗口
+        // 以前这里是瞬现，是全项目唯一没有阻尼感的窗口。
+        // 「减少动态效果」开启时跳过缩放，只保留淡入（规范 5.5）
         panel.alphaValue = 0
-        if let view = panel.contentView {
+        if !Motion.reduceMotion, let view = panel.contentView {
             view.wantsLayer = true
             let scale = CABasicAnimation(keyPath: "transform.scale")
             scale.fromValue = 0.96
@@ -78,6 +82,19 @@ final class QRPairPanel {
         }
     }
 
+    // MARK: - NSWindowDelegate
+
+    /// 规范 6.5 点击外部可关闭：真去了别的应用才收——一拍后问焦点去向，
+    /// 与主面板/预览同一套规矩（点自己的菜单栏不算离开）
+    func windowDidResignKey(_ notification: Notification) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let panel = self.panel, panel.isVisible else { return }
+            if NSApp.keyWindow == nil {
+                self.close()
+            }
+        }
+    }
+
     private func buildPanel() {
         let hosting = NSHostingController(rootView: PairPanelView(model: model) {
             Task { @MainActor in
@@ -100,8 +117,9 @@ final class QRPairPanel {
         panel.hidesOnDeactivate = false
         panel.isMovableByWindowBackground = true
         panel.isReleasedWhenClosed = false
-        panel.setContentSize(NSSize(width: 320, height: 360))
+        panel.setContentSize(NSSize(width: 320, height: 320))
         panel.center()
+        panel.delegate = self
         // 系统红绿灯关闭绕过 close()：清掉 Esc 监听，避免它吞掉别的窗口的 Esc
         NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification,
                                                object: panel, queue: .main) { [weak self] _ in
@@ -207,9 +225,9 @@ private struct PairPanelView: View {
             // ——扫码时视线压在整个卡上，这是全项目唯一「有意 φ」的分割
             .padding(11)
             .background(Color.white)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .clipShape(RoundedRectangle(cornerRadius: Rhythm.xl))
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: Rhythm.xl)
                     .stroke(Color(NSColor.separatorColor).opacity(0.6))
             )
 
@@ -251,7 +269,8 @@ private struct PairPanelView: View {
 
             Spacer(minLength: 0)
         }
-        .frame(width: 320, height: 360)
+        // 高度 320：卡区 198 : 320 ≈ φ⁻¹（黄金分割纵向命中）；warning 出现时 352
+        .frame(width: 320, height: model.warning.isEmpty ? 320 : 352)
         .background(Color(NSColor.windowBackgroundColor))
     }
 }

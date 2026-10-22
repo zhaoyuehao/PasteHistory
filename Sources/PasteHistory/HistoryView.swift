@@ -206,8 +206,8 @@ struct HistoryView: View {
             .onChange(of: model.bounceTick) { _, _ in
                 // 弹簧还没停就再次撞墙（按住方向键的 key repeat）不再重新推——
                 // 每次都瞬间位移再回弹，动作永远叠不严，看起来就是抖。
-                // 停稳后的下一次撞击照常弹
-                guard bounce == 0 else { return }
+                // 停稳后的下一次撞击照常弹；「减少动态效果」开启时整段推送跳过
+                guard !Motion.reduceMotion, bounce == 0 else { return }
                 // 先瞬间推出去，再让弹簧把它拉回来——
                 // 「推出去」本身不能有动画，否则撞墙那一下是软的
                 bounce = CGFloat(model.bounceDirection) * Spec.bounceDistance
