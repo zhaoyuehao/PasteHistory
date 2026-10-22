@@ -37,8 +37,8 @@ enum Curtain {
     static let cameraLerp: CGFloat = 0.12
     /// 鼠标视差：近签动多、远签动少。工具面板的 3D 是可感知不可操纵的
     static let parallax: CGFloat = 0.10
-    /// 深度雾下限：外缘（更远）的签最淡到 0.55
-    static let fogFloor: CGFloat = 0.55
+    /// 深度雾下限：外缘（更远）的签最淡到 0.62（0.55 太洗白，远签失读）
+    static let fogFloor: CGFloat = 0.62
     /// 纸签卡宽（未缩放）：真机截图实锤 150 宽 + 110 高的图卡在 809×500 里
     /// 一屏必然叠压——许愿签就该是签的尺度
     static let cardWidth: CGFloat = 124
@@ -116,6 +116,8 @@ enum Curtain {
     static let paperMeta = Color(red: 0.541, green: 0.435, blue: 0.302)
     static let glow = Color(red: 1.0, green: 0.745, blue: 0.431)
     static let moon = Color(red: 0.910, green: 0.835, blue: 0.659)
+    /// 树皮高光：主干上一层浅芯，两笔出体积
+    static let barkHighlight = Color(red: 0.541, green: 0.416, blue: 0.282)
 
     /// 冒烟：--view tags 强制许愿树（不写用户偏好）
     static var debugForce = false
@@ -540,7 +542,15 @@ struct TagCurtainView: View {
                 case .ended: sim.setHover(nil)
                 }
             }
-            .background(ScrollCatcher { delta in sim.scroll(by: delta) })
+            .background(ScrollCatcher { delta in
+                // 换树时把选中同步到新树的第一条——不然第一次按方向键
+                // 会带着选中跳回旧树、整棵树再长一遍（真机 bug 实锤）
+                let before = sim.windowStart
+                sim.scroll(by: delta)
+                if sim.windowStart != before {
+                    model.select(sim.windowStart)
+                }
+            })
             .overlay(alignment: .bottomTrailing) {
                 Text(L10n.curtainListHint)
                     .font(.system(size: Scale.meta))
@@ -592,17 +602,32 @@ struct TagCurtainView: View {
         }
     }
 
-    /// 夜色 + 树冠暖光 + 月（世界坐标，随相机滚动）
+    /// 夜色 + 星空 + 树冠暖光 + 月（世界坐标，随相机滚动）
     private func drawSky(ctx: GraphicsContext, size: CGSize, cameraY: CGFloat, width: CGFloat) {
         ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Curtain.nightBg))
+        // 星：确定性散布（137 步长伪随机），三两颗大些，微微明灭——
+        // 夜空有了纵深，整幅画立刻不像「黑底」而是「夜」
+        let t = Date().timeIntervalSinceReferenceDate
+        let w = max(Int(width), 1)
+        for i in 0..<26 {
+            let sx = CGFloat((i * 137 + 53) % w)
+            let sy = CGFloat((i * 89 + 17) % 150) - cameraY * 0.6
+            let starSize: CGFloat = i % 7 == 0 ? 2.0 : 1.2
+            let base = 0.10 + 0.16 * CGFloat((i * 31) % 10) / 10
+            let twinkle: CGFloat = Motion.reduceMotion
+                ? 1.0
+                : 0.75 + 0.25 * CGFloat(sin(t * 0.8 + Double(i) * 1.7))
+            let rect = CGRect(x: sx, y: sy, width: starSize, height: starSize)
+            ctx.fill(Path(ellipseIn: rect), with: .color(Curtain.moon.opacity(base * twinkle)))
+        }
         let glowY = 190 - cameraY
         let glowRect = CGRect(x: width * 0.5 - 210, y: glowY - 210, width: 420, height: 420)
-        ctx.fill(Path(ellipseIn: glowRect), with: .color(Curtain.glow.opacity(0.05)))
+        ctx.fill(Path(ellipseIn: glowRect), with: .color(Curtain.glow.opacity(0.06)))
         let moonY = 70 - cameraY
         let moonInner = CGRect(x: width * 0.85 - 17, y: moonY - 17, width: 34, height: 34)
-        ctx.fill(Path(ellipseIn: moonInner), with: .color(Curtain.moon.opacity(0.10)))
-        let moonOuter = CGRect(x: width * 0.85 - 26, y: moonY - 26, width: 52, height: 52)
-        ctx.fill(Path(ellipseIn: moonOuter), with: .color(Curtain.moon.opacity(0.05)))
+        ctx.fill(Path(ellipseIn: moonInner), with: .color(Curtain.moon.opacity(0.14)))
+        let moonOuter = CGRect(x: width * 0.85 - 27, y: moonY - 27, width: 54, height: 54)
+        ctx.fill(Path(ellipseIn: moonOuter), with: .color(Curtain.moon.opacity(0.07)))
     }
 
     /// 树干（clip 从底部向上长）+ 斜枝（从树干伸向每个挂点，按进度伸展）
@@ -626,6 +651,9 @@ struct TagCurtainView: View {
             trunk.addQuadCurve(to: top, control: mid)
             ctx.stroke(trunk, with: .color(Curtain.inkBranch),
                        style: StrokeStyle(lineWidth: 16, lineCap: .round))
+            // 浅芯一笔 = 受光的树皮，两笔出体积
+            ctx.stroke(trunk, with: .color(Curtain.barkHighlight),
+                       style: StrokeStyle(lineWidth: 5, lineCap: .round))
             // 侧根一笔，树才站得住
             var root = Path()
             root.move(to: CGPoint(x: trunkX, y: Curtain.trunkBaseY - 30 - cameraY))
@@ -799,5 +827,9 @@ private struct TagCard: View {
                 .strokeBorder(Curtain.ropeRedSelected, lineWidth: 1.5)
                 .opacity(selected ? 1 : 0)
         )
+        // 投影把签从夜空里托起来；选中 = 灯笼光（暖晕，不是白光）
+        .shadow(color: selected ? Curtain.glow.opacity(0.45) : Color.black.opacity(0.30),
+                radius: selected ? 9 : 5,
+                y: 2)
     }
 }
