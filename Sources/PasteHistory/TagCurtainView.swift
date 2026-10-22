@@ -68,7 +68,7 @@ enum Curtain {
     /// 场景内容底边（相机钳制用）
     static let contentBottomY: CGFloat = 505
     /// 树干横向位置
-    static let spineXRatio: CGFloat = 0.5
+    static let spineXRatio: CGFloat = 0.47
 
     static func column(_ i: Int) -> Int { i / 4 }
     /// 列内第几层（往下）：↓ 沿一列垂直向下
@@ -103,7 +103,7 @@ enum Curtain {
     static let unrollDuration: TimeInterval = 0.45
 
     // MARK: 夜色（许愿树是一个「场景」，不随系统外观切换）
-    static let nightBg = Color(red: 0.098, green: 0.075, blue: 0.035)
+    static let nightBg = Color(red: 0.106, green: 0.082, blue: 0.063)
     // 枝干要在夜色里**看得见**：真机截图实锤 #2E2318 与夜底几乎同色、树隐形。
     // 提到暖棕中调，剪影式浮出（比夜底亮约一倍亮度）
     static let inkBranch = Color(red: 0.478, green: 0.361, blue: 0.243)
@@ -111,9 +111,11 @@ enum Curtain {
     static let ropeRed = Color(red: 0.753, green: 0.224, blue: 0.169)
     static let ropeRedSelected = Color(red: 0.910, green: 0.333, blue: 0.247)
     static let paperBg = Color(red: 0.961, green: 0.914, blue: 0.812)
+    /// 悬停微亮：纸被指尖碰到的那种变化
+    static let paperHover = Color(red: 0.980, green: 0.941, blue: 0.855)
     static let paperBorder = Color(red: 0.851, green: 0.722, blue: 0.467)
     static let paperText = Color(red: 0.173, green: 0.141, blue: 0.094)
-    static let paperMeta = Color(red: 0.541, green: 0.435, blue: 0.302)
+    static let paperMeta = Color(red: 0.431, green: 0.329, blue: 0.200)
     static let glow = Color(red: 1.0, green: 0.745, blue: 0.431)
     static let moon = Color(red: 0.910, green: 0.835, blue: 0.659)
     /// 树皮高光：主干上一层浅芯，两笔出体积
@@ -439,7 +441,8 @@ final class CurtainSim {
                 m[j].px = m[j].x
                 m[j].py = m[j].y
                 let wind = (Motion.reduceMotion || unrolling) ? 0
-                    : Curtain.windAmp * CGFloat(sin(now * 0.55 + Double(rope.phase) + Double(j) / Double(Curtain.nodes)))
+                    : Curtain.windAmp * (0.7 * CGFloat(sin(now * 0.55 + Double(rope.phase) + Double(j) / Double(Curtain.nodes)))
+                        + 0.3 * CGFloat(sin(now * 1.35 + Double(rope.phase) * 1.7 + Double(j) / Double(Curtain.nodes))))
                 m[j].x += vx + wind * dt2
                 m[j].y += vy + Curtain.gravity * dt2
             }
@@ -562,8 +565,11 @@ struct TagCurtainView: View {
             .overlay(alignment: .bottomTrailing) {
                 Text(L10n.curtainListHint)
                     .font(.system(size: Scale.meta))
-                    .foregroundStyle(Curtain.moon.opacity(0.7))
-                    .padding(Rhythm.m)
+                    .foregroundStyle(Curtain.moon.opacity(0.8))
+                    .padding(.horizontal, Rhythm.m)
+                    .padding(.vertical, Rhythm.s)
+                    .background(Capsule().fill(Curtain.nightBg.opacity(0.8)))
+                    .padding(Rhythm.s)
             }
             .overlay(alignment: .center) {
                 if items.isEmpty { emptyState }
@@ -573,8 +579,11 @@ struct TagCurtainView: View {
                 if sim.windowStart + Curtain.maxBranches < items.count {
                     Text(L10n.curtainOlderHint)
                         .font(.system(size: Scale.meta))
-                        .foregroundStyle(Curtain.moon.opacity(0.7))
-                        .padding(Rhythm.m)
+                        .foregroundStyle(Curtain.moon.opacity(0.8))
+                        .padding(.horizontal, Rhythm.m)
+                        .padding(.vertical, Rhythm.s)
+                        .background(Capsule().fill(Curtain.nightBg.opacity(0.8)))
+                        .padding(Rhythm.s)
                 }
             }
             .onAppear {
@@ -631,10 +640,10 @@ struct TagCurtainView: View {
         let glowY = 190 - cameraY
         let glowRect = CGRect(x: width * 0.5 - 210, y: glowY - 210, width: 420, height: 420)
         ctx.fill(Path(ellipseIn: glowRect), with: .color(Curtain.glow.opacity(0.06)))
-        let moonY = 70 - cameraY
-        let moonInner = CGRect(x: width * 0.85 - 17, y: moonY - 17, width: 34, height: 34)
+        let moonY = 30 - cameraY
+        let moonInner = CGRect(x: width * 0.9 - 15, y: moonY - 15, width: 30, height: 30)
         ctx.fill(Path(ellipseIn: moonInner), with: .color(Curtain.moon.opacity(0.14)))
-        let moonOuter = CGRect(x: width * 0.85 - 27, y: moonY - 27, width: 54, height: 54)
+        let moonOuter = CGRect(x: width * 0.9 - 25, y: moonY - 25, width: 50, height: 50)
         ctx.fill(Path(ellipseIn: moonOuter), with: .color(Curtain.moon.opacity(0.07)))
     }
 
@@ -662,13 +671,21 @@ struct TagCurtainView: View {
             // 浅芯一笔 = 受光的树皮，两笔出体积
             ctx.stroke(trunk, with: .color(Curtain.barkHighlight),
                        style: StrokeStyle(lineWidth: 5, lineCap: .round))
-            // 侧根一笔，树才站得住
-            var root = Path()
-            root.move(to: CGPoint(x: trunkX, y: Curtain.trunkBaseY - 30 - cameraY))
-            root.addQuadCurve(to: CGPoint(x: trunkX - 40, y: Curtain.trunkBaseY - 90 - cameraY),
-                              control: CGPoint(x: trunkX - 24, y: Curtain.trunkBaseY - 50 - cameraY))
-            ctx.stroke(root, with: .color(Curtain.inkBranch),
+            // 侧根两条：必须画在视口内——树要看得见「扎根」，不是悬空
+            // （之前画在 y530-590，视口只有 438 高，等于没画）
+            let rootY = min(415 - cameraY, size.height - 12)
+            var rootL = Path()
+            rootL.move(to: CGPoint(x: trunkX, y: rootY + 34))
+            rootL.addQuadCurve(to: CGPoint(x: trunkX - 44, y: rootY),
+                               control: CGPoint(x: trunkX - 26, y: rootY + 22))
+            ctx.stroke(rootL, with: .color(Curtain.inkBranch),
                        style: StrokeStyle(lineWidth: 6, lineCap: .round))
+            var rootR = Path()
+            rootR.move(to: CGPoint(x: trunkX, y: rootY + 34))
+            rootR.addQuadCurve(to: CGPoint(x: trunkX + 38, y: rootY - 4),
+                               control: CGPoint(x: trunkX + 22, y: rootY + 20))
+            ctx.stroke(rootR, with: .color(Curtain.inkBranch),
+                       style: StrokeStyle(lineWidth: 5, lineCap: .round))
         }
 
         // 斜枝：每条枝从树干出发伸向挂点（着生点低于挂点，向上向外伸）。
@@ -782,6 +799,7 @@ private struct ScrollCatcher: NSViewRepresentable {
 private struct TagCard: View {
     let item: ClipItem
     let selected: Bool
+    @State private var hovered = false
 
     private var symbol: String {
         switch item.kind {
