@@ -23,7 +23,7 @@ private enum Spec {
     // 配色：一切「块」都用 primary 的透明度表达，不用 controlBackgroundColor
     // （后者在深色下是一块脏浅灰，跟窗口底色打架）
     static let selectFill: Double = 0.24   // 深色底上 8% 等于没选中，必须够重
-    static let hoverFill: Double = 0.06
+    static let hoverFill: Double = 0.10    // 悬停是「这里可以按」的承诺，不能比静态角标底（0.09）还浅
     static let chipFill: Double = 0.09     // 角标 / 缩略图占位
 }
 
@@ -84,7 +84,7 @@ struct HistoryView: View {
         }
         // 高度不写死：贴着输入框放不下时窗口会收，列表跟着滚。
         // 写死 647 的话，窗口被压小后 SwiftUI 会把内容裁掉而不是滚动
-        .frame(minWidth: Panel.width, maxWidth: Panel.width,
+        .frame(minWidth: Panel.minWidth, maxWidth: .infinity,
                minHeight: Panel.minHeight, maxHeight: .infinity)
         // 内容顶到窗口上缘，别让标题栏白白占 28pt
         .ignoresSafeArea()

@@ -242,6 +242,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let pause = NSMenuItem(title: L10n.pauseRecording, action: #selector(togglePause(_:)), keyEquivalent: "")
         pause.state = Settings.shared.paused ? .on : .off
+        pause.image = Self.menuIcon("pause.circle")
         menu.addItem(pause)
 
         let clear = NSMenuItem(title: L10n.clearHistory, action: #selector(clearHistory), keyEquivalent: "")
@@ -279,9 +280,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let alert = NSAlert()
         alert.messageText = L10n.clearHistoryTitle
         alert.informativeText = L10n.clearHistoryInfo(store.count)
-        alert.addButton(withTitle: L10n.clear)
+        // 破坏性操作不做回车默认钮：取消在前（Return/Esc 都落在取消上），清空要显式点。
+        // 红色沿用菜单里的标识
         alert.addButton(withTitle: L10n.cancel)
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        alert.addButton(withTitle: L10n.clear)
+        alert.buttons.last?.attributedTitle = NSAttributedString(
+            string: L10n.clear,
+            attributes: [.foregroundColor: NSColor.systemRed]
+        )
+        guard alert.runModal() == .alertSecondButtonReturn else { return }
         store.clearAll()
     }
 

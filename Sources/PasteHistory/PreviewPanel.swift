@@ -26,6 +26,9 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     private var isClosing = false
     /// 关窗动画的代际号：关到一半又开（连按空格）时，作废在排队的 orderOut
     private var closeGeneration = 0
+    /// 预览窗当前尺寸：默认 640×400（黄金矩形），用户拖边后记住（会话内）。
+    /// 程序化 setFrame 不经过 live resize，关窗缩回锚点不会污染它
+    private var previewSize = NSSize(width: Preview.width, height: Preview.height)
     private var sink: Any?
 
     var window: NSPanel? { panel }
@@ -47,7 +50,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     }
 
     func open() {
-        guard let item = model.current else { return }   // 列表空不开窗
+        guard model.current != nil else { return }   // 列表空不开窗
         if panel == nil { buildPanel() }
         guard let panel else { return }
         closeGeneration += 1
@@ -57,7 +60,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         // （侧边落位会把视线拽到面板旁边，用户明确不要）
         // 「长出来」是幅度最大的动效：frame 插值本身就是那个在动的东西，
         // 内容 scale 就不再叠加了，叠两层会过
-        let target = targetFrame(for: item)
+        let target = targetFrame()
         if let anchor = owner?.previewAnchorFrame, anchor.width > 0 {
             panel.setFrame(anchor, display: false)
         } else {
@@ -112,7 +115,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         hosting.safeAreaRegions = []
         let panel = NSPanel(contentViewController: hosting)
         // 与面板同一套窗口语言：透明标题栏、藏红绿灯、可拖动背景——一张卡片，不是一扇窗户
-        panel.styleMask = [.titled, .closable, .fullSizeContentView, .nonactivatingPanel]
+        panel.styleMask = [.titled, .closable, .fullSizeContentView, .nonactivatingPanel, .resizable]
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         // 标题不画出来，但读屏要有名字——VO 念「Untitled」等于没念
@@ -129,6 +132,9 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         panel.isReleasedWhenClosed = false
         panel.backgroundColor = NSColor.windowBackgroundColor
         panel.setContentSize(NSSize(width: Preview.width, height: Preview.height))
+        // 可拖边调整（会话内记住）；下限 400×247 ≈ 默认 ÷ φ²，缩到底仍在黄金系
+        panel.minSize = NSSize(width: Preview.minWidth, height: Preview.minHeight)
+        panel.maxSize = NSSize(width: 940, height: 1200)
         panel.delegate = self
         self.panel = panel
     }
@@ -138,21 +144,21 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     /// 目标几何：**以面板为中心就地放大**——盖在面板上方，与面板同心。
     /// 用户的视线就在面板上，侧边落位会把视线拽走（用户明确不要）。
     /// 面板中心拿不到才退当前屏居中。屏幕放不下就收高，不挪中心。
-    private func targetFrame(for item: ClipItem) -> NSRect {
+    private func targetFrame() -> NSRect {
         let anchor = owner?.previewAnchorFrame
         let screen = anchor.flatMap { a in
             NSScreen.screens.first { $0.frame.intersects(a) }
         } ?? NSScreen.main ?? NSScreen.screens.first
         guard let screen else {
-            return NSRect(x: 0, y: 0, width: Preview.width, height: Preview.height)
+            return NSRect(x: 0, y: 0, width: previewSize.width, height: previewSize.height)
         }
         let visible = screen.visibleFrame
 
-        // 窗高恒为 640×400（黄金矩形），不随内容形态切换；塞不下收到恰好放得下
-        let wanted = Preview.height
+        // 窗高：用户拖边后的尺寸或默认 640×400（黄金矩形）；塞不下收到恰好放得下
+        let wanted = previewSize.height
         let available = visible.height - Preview.margin * 2
         let height = min(wanted, max(Preview.minHeight, available))
-        let width = Preview.width
+        let width = previewSize.width
 
         // 同心：中心对中心，视线在面板的哪里，预览就在哪里
         let cx = anchor.map { $0.midX } ?? visible.midX
@@ -170,16 +176,22 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     // MARK: - 跟随列表
 
     private func syncAfterModelChange() {
-        guard let panel, panel.isVisible, !isClosing else { return }
+        guard (panel?.isVisible ?? false), !isClosing else { return }
         guard model.current != nil else {
             close()   // 列表被删空 / 过滤后无结果：预览不孤儿化
             return
         }
-        // 窗高恒为黄金矩形（640×400），不随内容形态切换——
+        // 窗高不随内容形态切换（默认 640×400 黄金矩形，用户拖边后为其尺寸）——
         // 条目增删后预览跟随下一条，列表空了收窗，窗体几何稳定
     }
 
     // MARK: - NSWindowDelegate
+
+    /// 用户拖边结束：记住尺寸（会话内）。程序化 setFrame/setContentSize 不经过这里
+    func windowDidEndLiveResize(_ notification: Notification) {
+        guard let panel, notification.object as? NSWindow === panel else { return }
+        previewSize = panel.frame.size
+    }
 
     func windowDidResignKey(_ notification: Notification) {
         // 焦点的去向要等一拍才问得出（makeKey 交接有时序）：
@@ -514,7 +526,7 @@ struct PreviewContentView: View {
                     .padding(Rhythm.xxl)
             } else {
                 Image(systemName: "photo")
-                    .font(.system(size: 32))
+                    .font(.system(size: 28))   // 与文件行图标同档，消灭 28/32 两个体系外尺寸
                     .foregroundStyle(.secondary)
             }
         }
