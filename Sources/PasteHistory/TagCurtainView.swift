@@ -59,8 +59,13 @@ enum Curtain {
     /// 树干横向位置
     static let spineXRatio: CGFloat = 0.5
 
-    static func lane(_ i: Int) -> Int { i % 4 }
-    static func level(_ i: Int) -> Int { i / 4 }
+    static func lane(_ i: Int) -> Int { columnOrder[i / 4] }
+    /// 列内第几层（往下）：↓ 连按时选中沿**一列垂直向下**（真机反馈：
+    /// 快速切换方向键时运动是水平的——行主序映射错了，列主序才对）
+    static func level(_ i: Int) -> Int { i % 4 }
+    /// 列序：最新的 4 条在**中央两列**（顶芽 = 树最新的生长点），
+    /// 更旧的往两侧展开——外侧列更深更远，和「越旧越远」同构
+    static let columnOrder = [1, 2, 0, 3]
 
     static func halfSpan(_ level: Int) -> CGFloat {
         crownHalf + CGFloat(level) * spreadPerLevel
