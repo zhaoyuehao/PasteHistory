@@ -79,25 +79,19 @@ final class QRPairPanel {
     }
 
     private func buildPanel() {
-        let hosting = NSHostingController(rootView: PairPanelView(
-            model: model,
-            onRefresh: {
-                Task { @MainActor in
-                    WebSyncServer.shared.refreshPairingCode()
-                    Self.shared.model.refresh()
-                }
-            },
-            onClose: { [weak self] in
-                self?.close()
+        let hosting = NSHostingController(rootView: PairPanelView(model: model) {
+            Task { @MainActor in
+                WebSyncServer.shared.refreshPairingCode()
+                Self.shared.model.refresh()
             }
-        ))
+        })
         let panel = NSPanel(contentViewController: hosting)
-        // 卡片三件套对齐主面板/预览：nonactivating + 藏红绿灯 + 可拖背景——一张卡片，不是一扇窗户
+        // 卡片语言对齐主面板/预览：nonactivating + 可拖背景；关闭用系统红绿灯 X
+        // （用户拍板：自绘 xmark 多余，系统的更熟悉）。最小化/缩放仍藏。
         panel.styleMask = [.titled, .closable, .fullSizeContentView, .nonactivatingPanel]
         panel.title = L10n.phoneSync
         panel.titlebarAppearsTransparent = true
         panel.titleVisibility = .hidden
-        panel.standardWindowButton(.closeButton)?.isHidden = true
         panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
         panel.standardWindowButton(.zoomButton)?.isHidden = true
         panel.isFloatingPanel = true
@@ -108,6 +102,11 @@ final class QRPairPanel {
         panel.isReleasedWhenClosed = false
         panel.setContentSize(NSSize(width: 320, height: 360))
         panel.center()
+        // 系统红绿灯关闭绕过 close()：清掉 Esc 监听，避免它吞掉别的窗口的 Esc
+        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification,
+                                               object: panel, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.removeEscMonitor() }
+        }
         self.panel = panel
     }
 
@@ -147,7 +146,6 @@ final class PairModel: ObservableObject {
 private struct PairPanelView: View {
     @ObservedObject var model: PairModel
     var onRefresh: () -> Void
-    var onClose: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -155,10 +153,14 @@ private struct PairPanelView: View {
                 VStack(spacing: 3) {
                     Text(L10n.phoneSync)
                         .font(.system(size: Scale.field, weight: .medium))
+                        // 标题让开右上按钮区：ZStack 的 topTrailing 曾把整块标题推到
+                        // 右上，尾巴被 lock/refresh 压住——「文字有遮挡」的来源
+                        .padding(.horizontal, 56)
                     Text(L10n.phoneSyncSubtitle)
                         .font(.system(size: Scale.meta))
                         .foregroundStyle(Palette.meta)
                 }
+                .frame(maxWidth: .infinity)   // 真居中：不再跟着 ZStack 的 topTrailing 走
 
                 HStack(spacing: 8) {
                     Image(systemName: "lock.fill")
@@ -178,18 +180,6 @@ private struct PairPanelView: View {
                     .contentShape(Rectangle())
                     .help(L10n.refreshQRCode)
                     .accessibilityLabel(L10n.refreshQRCode)
-                    Button {
-                        onClose()
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: Icon.action, weight: .medium))
-                            .frame(width: 24, height: 24)
-                    }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(Palette.meta)
-                    .contentShape(Rectangle())
-                    .help(L10n.close)
-                    .accessibilityLabel(L10n.close)
                 }
             }
             .padding(.top, Rhythm.xl)
