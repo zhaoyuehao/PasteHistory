@@ -19,6 +19,14 @@ extension Notification.Name {
 
 @MainActor
 final class PanelController: NSObject, NSWindowDelegate {
+
+    /// borderless 也要能当 key 窗：系统对无 .titled 的窗口默认
+    /// canBecomeKey = false——搜索框聚焦、方向键、⌘N 全靠 key 状态
+    /// （上一笔摘掉 .titled 后面板「失去焦点了」，真机实锤）
+    final class KeyablePanel: NSPanel {
+        override var canBecomeKey: Bool { true }
+    }
+
     static let shared = PanelController()
 
     private var panel: NSPanel?
@@ -108,9 +116,18 @@ final class PanelController: NSObject, NSWindowDelegate {
             view.layer?.add(scale, forKey: "panelAppear")
             view.layer?.transform = CATransform3DIdentity
         }
-        panel.orderFrontRegardless()
-        panel.makeKey()
-        NSApp.activate()
+        // 强激活：accessory 应用普通的 activate() 压不过前台应用（真机
+        // 「失去焦点了」实锤——borderless 面板从未拿到 key，方向键全进了
+        // 别的 App）。ignoringOtherApps 是命令面板类工具的标准做法
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
+        // 焦点自检（下一拍，等 makeKey 生效）：日志里确认 key/active 状态
+        DispatchQueue.main.async {
+            NSLog("[PH] focus: isKey=%@ isActive=%@ style=%lu",
+                  panel.isKeyWindow ? "YES" : "NO",
+                  NSApp.isActive ? "YES" : "NO",
+                  panel.styleMask.rawValue)
+        }
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.22
             ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
@@ -187,7 +204,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         let hosting = NSHostingController(rootView: view)
         // 内容顶到窗口上缘：不要让 titlebar 的 safe area 白白吃掉顶部
         hosting.safeAreaRegions = []
-        let panel = NSPanel(contentViewController: hosting)
+        let panel = KeyablePanel(contentViewController: hosting)
         // 默认 400×647（= 400×φ，黄金矩形）；可拖边调整并记住用户选择——
         // 默认值给设计，自由度给用户。避让收缩只影响本次落位，不回写偏好
         panel.styleMask = [.titled, .closable, .fullSizeContentView, .nonactivatingPanel, .resizable]
