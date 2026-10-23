@@ -169,11 +169,15 @@ struct ClipItem: Identifiable, Codable, Equatable {
 }
 
 enum RelativeTime {
+    /// Calendar.current 每次调用都新建一个（构造不便宜），16 张卡 ×
+    /// 每帧重算时是白烧的——缓存一个，isDateInToday/Yesterday 内部
+    /// 按当前时刻求值，跨午夜也不会过期
+    private static let cal = Calendar.current
+
     static func string(from date: Date) -> String {
         let interval = Date().timeIntervalSince(date)
         if interval < 60 { return L10n.value("刚刚", "剛剛", "Just now") }
         if interval < 3600 { return L10n.minutesAgo(Int(interval / 60)) }
-        let cal = Calendar.current
         if cal.isDateInToday(date) {
             return L10n.todayAt(format(date, "HH:mm"))
         }

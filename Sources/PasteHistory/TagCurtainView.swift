@@ -644,6 +644,9 @@ struct TagCurtainView: View {
     @ObservedObject private var model: HistoryViewModel
     let onPaste: (ClipItem) -> Void
     @State private var sim = CurtainSim()
+    /// 雕塑的入场时刻：与树的 growth 解耦——翻树（换 16 条）时绳重挂、
+    /// 雕塑作为「世界」保持稳定不跟着重长；只有面板（重）打开才入场
+    @State private var stageBirth: Date?
 
     init(store: ClipStore,
          model: HistoryViewModel,
@@ -651,9 +654,19 @@ struct TagCurtainView: View {
         self.store = store
         self.model = model
         self.onPaste = onPaste
+        _stageBirth = State(initialValue: Motion.reduceMotion ? nil : Date())
     }
 
     private var items: [ClipItem] { model.results }
+
+    /// 雕塑入场进度（easeOutCubic）。nil（reduce motion / 已入完）= 1：
+    /// 翻树时 sim 的 growth 归零，雕塑不吃这一套——世界不跟着翻页重长
+    private var stageGrowth: CGFloat {
+        guard let birth = stageBirth else { return 1 }
+        let t = Date().timeIntervalSince(birth) / Curtain.growDuration
+        guard t < 1 else { return 1 }
+        return 1 - pow(1 - CGFloat(max(0, t)), 3)
+    }
 
     var body: some View {
         GeometryReader { geo in
@@ -667,8 +680,9 @@ struct TagCurtainView: View {
                 ZStack(alignment: .topLeading) {
                     treeCanvas(width: geo.size.width, height: geo.size.height)
                     if CurtainBrass.scene != nil {
-                        CurtainStage(growth: sim.currentGrowth,
+                        CurtainStage(growth: stageGrowth,
                                      panX: sim.parallaxPan,
+                                     cameraY: sim.cameraOffset,
                                      width: geo.size.width,
                                      height: geo.size.height)
                     }
@@ -735,6 +749,7 @@ struct TagCurtainView: View {
             .onAppear {
                 model.resetSelection()
                 sim.beginGrowth()
+                stageBirth = Motion.reduceMotion ? nil : Date()
             }
             .onChange(of: model.safeSelection) { old, new in
                 handleSelectionChange(old: old, new: new, height: geo.size.height)
@@ -742,6 +757,8 @@ struct TagCurtainView: View {
             .onChange(of: model.presentationTick) { _, _ in
                 sim.resetToFirstTree()
                 sim.beginGrowth()
+                // 面板重开 = 雕塑重新入场一次（新的「到来」）
+                stageBirth = Motion.reduceMotion ? nil : Date()
             }
             .onChange(of: store.query) { _, _ in
                 model.resetSelection()

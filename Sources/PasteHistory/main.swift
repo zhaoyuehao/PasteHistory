@@ -17,6 +17,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         monitor.start()
         iCloudSync.shared.start()
         WebSyncServer.shared.start()
+        // 雕塑预载：brass_tree.scn（12MB）的同步解析落在启动后 2 秒的
+        // 主线程空闲档——否则首次打开许愿树时在 body 求值里现场解析，
+        // 面板打开必卡一下。2 秒足够 launch 忙完、又远早于用户首次 ⇧⌘C
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            _ = CurtainBrass.scene
+        }
         if Settings.shared.hotKeyEnabled {
             hotKey.register(id: 1, keyCode: kVK_ANSI_C, carbonModifiers: cmdKey | shiftKey) { [weak self] in
                 Task { @MainActor in self?.togglePanel() }
