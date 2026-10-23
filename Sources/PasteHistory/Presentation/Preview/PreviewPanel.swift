@@ -155,7 +155,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         let target = targetFrame()
         let paper = owner?.previewPaper
         let origin = paperFlight.visibleFrame ?? paper?.frame ?? paperReturnFrame ?? target
-        let image = (paper?.contentView as? TreePaperSurface)?.paperImage()
+        let image = paperFlight.visibleImage ?? (paper?.contentView as? TreePaperSurface)?.paperImage()
         previewedID = model.current?.id
         owner?.setExpandedPaper(previewedID)
         paperReturnFrame = paper?.frame
@@ -163,11 +163,11 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         panel.alphaValue = 0
         panel.ignoresMouseEvents = true
         panel.orderFrontRegardless()
+        panel.contentView?.layoutSubtreeIfNeeded()
+        let expandedFace = snapshot(panel.contentView)
         paperFlight.animate(from: Motion.reduceMotion ? target : origin, to: target,
-                            image: image, duration: Motion.reduceMotion ? 0.12 : Motion.paperOpenDuration,
-                            opening: true) { [weak panel] progress in
-            panel?.alphaValue = max(0, (progress - 0.75) / 0.25)
-        } completion: { [weak panel] in
+                            image: image, endImage: expandedFace, duration: Motion.reduceMotion ? 0.12 : Motion.paperOpenDuration,
+                            opening: true, progress: { _ in }) { [weak panel] in
             panel?.alphaValue = 1
             panel?.ignoresMouseEvents = false
         }

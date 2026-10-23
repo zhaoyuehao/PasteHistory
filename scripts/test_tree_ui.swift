@@ -126,6 +126,9 @@ struct TreeUISmoke {
             if let tree = view as? IvoryTreeSceneView { return tree }
             return view.subviews.lazy.compactMap { scene(in: $0) }.first
         }
+        func zoomViews(in view: NSView) -> [PreviewZoomScrollView] {
+            (view as? PreviewZoomScrollView).map { [$0] } ?? view.subviews.flatMap { zoomViews(in: $0) }
+        }
         run(1)
         precondition(scene(in: hosting)?.loadError == nil)
         precondition(scene(in: hosting) != nil, "Packaged scene must appear")
@@ -311,13 +314,40 @@ struct TreeUISmoke {
         _ = key(49, chars: " ")
         let settlingPaper = NSApp.windows.first { $0.isVisible && $0.title == "纸签预览过渡" }!
         var widest: CGFloat = 0
-        for _ in 0..<11 {
+        var motionFrames: [(NSImage, NSSize)] = []
+        for sample in 0..<11 {
             run(0.025)
-            if settlingPaper.isVisible { widest = max(widest, settlingPaper.frame.width) }
+            if settlingPaper.isVisible {
+                widest = max(widest, settlingPaper.frame.width)
+                if sample % 2 == 0, let view = settlingPaper.contentView,
+                   let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+                    view.cacheDisplay(in: view.bounds, to: bitmap)
+                    motionFrames.append((NSImage(cgImage: bitmap.cgImage!, size: view.bounds.size), view.bounds.size))
+                }
+                if sample >= 5 && !Motion.reduceMotion {
+                    precondition(settlingPaper.alphaValue == 1 && expanded.alphaValue == 0,
+                                 "The moving paper stays opaque; no delayed full-size preview fades in behind it")
+                }
+            }
         }
+        let strip = NSImage(size: NSSize(width: expected.width * CGFloat(motionFrames.count), height: expected.height * 1.03))
+        strip.lockFocus()
+        for (index, frame) in motionFrames.enumerated() {
+            frame.0.draw(in: NSRect(x: CGFloat(index) * expected.width + (expected.width-frame.1.width)/2,
+                                   y: strip.size.height-frame.1.height, width: frame.1.width, height: frame.1.height))
+        }
+        strip.unlockFocus()
+        try NSBitmapImageRep(data: strip.tiffRepresentation!)!.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: ".build/preview-motion-frames.png"))
         precondition(widest > expected.width && widest < expected.width * 1.025,
                      "Paper must gently overshoot and settle, not just fade or snap")
         precondition(!settlingPaper.isVisible && abs(expanded.frame.width-expected.width) < 1)
+        let textZoom = zoomViews(in: expanded.contentView!).first!
+        let textWidth = textZoom.documentVisibleRect.width
+        textZoom.setMagnification(2, centeredAt: .zero)
+        run(0.1)
+        precondition(textZoom.allowsMagnification && abs(textZoom.magnification - 2) < 0.01
+            && textZoom.documentVisibleRect.width < textWidth * 0.6, "Native text preview must magnify its document")
+        textZoom.resetViewport()
         // A realistic long clip exercises the native, non-contiguous text layout.
         let longText = String(repeating: "设计：长文本预览应按可见段落排版，方向键直接切换。\n", count: 4000)
         store.syncDatabase.upsert(ClipItem(kind: .text, text: longText, sourceApp: "Regression"))
@@ -381,6 +411,34 @@ struct TreeUISmoke {
         let imagePreview = NSApp.windows.first { $0.isVisible && $0.title == L10n.previewTitle }!
         precondition(textViews(in: imagePreview.contentView!).contains { $0.isSelectable && $0.string.contains(recognizedText) },
                      "Expanded image preview must expose selectable OCR text")
+        let imageZoom = zoomViews(in: imagePreview.contentView!).first as! PreviewImageScrollView
+        let ocrFrame = imageZoom.sheet.recognizedText.frame
+        precondition(ocrFrame.minY >= imageZoom.documentVisibleRect.maxY - 1, "First viewport must show only image; OCR begins below the fold")
+        precondition(imageZoom.sheet.recognizedText.font!.pointSize == 13, "OCR uses the compact reading type size")
+        let readingFrame = imagePreview.frame
+        let pictureFrame = imageZoom.sheet.picture.frame
+        let unzoomedWidth = imageZoom.documentVisibleRect.width
+        imageZoom.setMagnification(2, centeredAt: NSPoint(x: unzoomedWidth / 2, y: 70))
+        run(0.1)
+        precondition(imageZoom.documentVisibleRect.width < unzoomedWidth * 0.6)
+        precondition(imageZoom.sheet.picture.frame == pictureFrame && imagePreview.frame == readingFrame,
+                     "Pinch scales contents, not picture layout or the preview window")
+        imageZoom.resetViewport()
+        imageZoom.contentView.scroll(to: NSPoint(x: 0, y: ocrFrame.minY))
+        imageZoom.reflectScrolledClipView(imageZoom.contentView)
+        run(0.1)
+        precondition(imageZoom.documentVisibleRect.intersects(ocrFrame), "Scrolling down exposes OCR in the same document")
+        let scrolledFace = imagePreview.contentView!
+        let scrolledBitmap = scrolledFace.bitmapImageRepForCachingDisplay(in: scrolledFace.bounds)!
+        scrolledFace.cacheDisplay(in: scrolledFace.bounds, to: scrolledBitmap)
+        try scrolledBitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: ".build/image-preview-ocr.png"))
+        _ = key(53)
+        run(0.2)
+        _ = key(49, chars: " ")
+        run(0.3)
+        let reopenedZoom = zoomViews(in: imagePreview.contentView!).first as! PreviewImageScrollView
+        precondition(reopenedZoom.magnification == 1 && reopenedZoom.documentVisibleRect.minY < 1,
+                     "Reopening returns to the image, rather than leaving OCR or zoom from the previous viewing")
         let imageFace = imagePreview.contentView!
         let imageFaceBitmap = imageFace.bitmapImageRepForCachingDisplay(in: imageFace.bounds)!
         imageFace.cacheDisplay(in: imageFace.bounds, to: imageFaceBitmap)

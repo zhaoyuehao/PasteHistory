@@ -9,7 +9,14 @@ final class PaperPreviewFlight {
     private var timer: Timer?
     private var imageView: NSImageView?
     var visibleFrame: NSRect? { window?.isVisible == true ? window?.frame : nil }
-    var visibleImage: NSImage? { visibleFrame == nil ? nil : imageView?.image }
+    var visibleImage: NSImage? {
+        guard visibleFrame != nil, let view = window?.contentView,
+              let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        let image = NSImage(size: view.bounds.size)
+        image.addRepresentation(bitmap)
+        return image
+    }
 
     func cancel() {
         timer?.invalidate(); timer = nil
@@ -37,8 +44,8 @@ final class PaperPreviewFlight {
         }
         let sheet = NSImageView(frame: host.bounds)
         sheet.image = image
-        // Unfold the sheet without stretching its short excerpt into giant text.
-        sheet.imageScaling = opening ? .scaleProportionallyDown : .scaleAxesIndependently
+        // Both faces travel with the same sheet; there is no late full-size popup.
+        sheet.imageScaling = .scaleAxesIndependently
         sheet.imageAlignment = opening ? .alignTop : .alignCenter
         sheet.autoresizingMask = [.width, .height]
         host.addSubview(sheet)
@@ -60,11 +67,13 @@ final class PaperPreviewFlight {
                               width: from.width + (to.width-from.width)*p,
                               height: from.height + (to.height-from.height)*p)
             panel.setFrame(rect, display: true)
-            if opening { panel.alphaValue = 1 - max(0, (t-0.75)/0.25) }
-            else if endImage != nil {
-                sheet.alphaValue = 1-t; destination.alphaValue = t
-                panel.alphaValue = 1 - max(0, (t-0.8)/0.2)
-            } else { panel.alphaValue = 1-t }
+            let mix = min(1, max(0, opening ? t / 0.12 : (t - 0.82) / 0.18))
+            let easedMix = mix * mix * (3 - 2 * mix)
+            if endImage != nil {
+                sheet.alphaValue = 1 - easedMix
+                destination.alphaValue = easedMix
+            }
+            panel.alphaValue = Motion.reduceMotion ? (opening ? t : 1 - t) : 1
             progress(t)
             if t >= 1 {
                 self.cancel()

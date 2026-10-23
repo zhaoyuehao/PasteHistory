@@ -7,6 +7,8 @@ struct PreviewContentView: View {
     @ObservedObject var model: HistoryViewModel
     let mediaLoader: PreviewMediaLoader
     var paperStyle = false
+    private let viewportSession = UUID()
+    private struct ViewportID: Hashable { let record: UUID?; let session: UUID }
 
     /// 切换动画的方向：+1 新内容从下浮入（按 ↓），-1 从上（按 ↑）
     @State private var direction: Int = 1
@@ -45,7 +47,7 @@ struct PreviewContentView: View {
                         // 身份变化驱动切换：旧内容淡出，新内容从按键方向浮入。
                         // 不用交叉淡化——中间没有任何东西在移动，人眼几乎无感，
                         // 和选中高亮用 matchedGeometryEffect 是同一个理由
-                        .id(displayedID)
+                        .id(ViewportID(record: displayedID, session: viewportSession))
                         .offset(y: contentOffset)
                         .opacity(contentOpacity)
                 }
@@ -102,7 +104,9 @@ struct PreviewContentView: View {
             transaction.disablesAnimations = true
             withTransaction(transaction) {
                 displayedID = item.id
-                contentOffset = Motion.reduceMotion ? 0 : CGFloat(direction) * Preview.slideDistance
+                // In tree mode the whole paper already travels between branches.
+                // A second inner slide would make the contents appear to jerk.
+                contentOffset = (Motion.reduceMotion || paperStyle) ? 0 : CGFloat(direction) * Preview.slideDistance
                 contentOpacity = Motion.reduceMotion ? 0.6 : 1
             }
             await Task.yield()
@@ -260,19 +264,9 @@ struct PreviewContentView: View {
     }
 
     private func imageContent(_ item: ClipItem) -> some View {
-        let details = ClipPresentation(item: item).imageDetails
-        return GeometryReader { geometry in
-            VStack(spacing: 0) {
-                imageStage
-                    .frame(height: details.isEmpty ? geometry.size.height : geometry.size.height * 0.618)
-                if !details.isEmpty {
-                    hairline
-                    PreviewTextView(text: String(details.prefix(Preview.maxTextLength)),
-                                    identity: item.id, paperStyle: paperStyle)
-                        .accessibilityLabel(L10n.value("图片文字与 OCR", "圖片文字與 OCR", "Image text and OCR"))
-                }
-            }
-        }
+        PreviewImageDocument(image: fullImage ?? item.thumbnail,
+            details: String(ClipPresentation(item: item).imageDetails.prefix(Preview.maxTextLength)),
+            identity: item.id, paperStyle: paperStyle)
     }
 
     private func filesContent(_ item: ClipItem) -> some View {
@@ -302,20 +296,12 @@ struct PreviewContentView: View {
         }
     }
 
+    @ViewBuilder
     private var imageStage: some View {
-        ZStack {
-            if let image = fullImage ?? displayedItem?.thumbnail {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .padding(Rhythm.xxl)
-            } else {
-                Image(systemName: "photo")
-                    .font(.system(size: 34))   // Fib 档（与主列表缩略图同档），体系外尺寸归零
-                    .foregroundStyle(.secondary)
-            }
+        if let item = displayedItem {
+            PreviewImageDocument(image: fullImage ?? item.thumbnail, details: "",
+                                 identity: item.id, paperStyle: paperStyle)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     /// 文件形态里首个图片文件的元信息：名称 · 像素尺寸 · 大小。
@@ -342,7 +328,7 @@ private struct PreviewTextView: NSViewRepresentable {
     final class Coordinator { var identity: UUID?; var text = "" }
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeNSView(context: Context) -> NSScrollView {
-        let scroll = NSScrollView()
+        let scroll = PreviewZoomScrollView()
         scroll.hasVerticalScroller = true
         scroll.drawsBackground = false
         let view = NSTextView(frame: scroll.bounds)
@@ -369,6 +355,7 @@ private struct PreviewTextView: NSViewRepresentable {
         }
         guard context.coordinator.identity != identity || context.coordinator.text != text,
               let view = scroll.documentView as? NSTextView else { return }
+        if context.coordinator.identity != identity { (scroll as? PreviewZoomScrollView)?.resetViewport() }
         context.coordinator.identity = identity
         context.coordinator.text = text
         view.string = text

@@ -35,10 +35,13 @@ enum Motion {
         let t = min(1, max(0, fraction))
         if t == 0 || t == 1 { return t }
         let damping: CGFloat = opening ? 0.82 : 0.9
-        let frequency: CGFloat = 11
+        let frequency: CGFloat = opening ? 7.2 : 8
         let root = sqrt(1 - damping * damping)
         let phase = frequency * root * t
-        return 1 - exp(-damping * frequency * t) * (cos(phase) + damping / root * sin(phase))
+        let response = 1 - exp(-damping * frequency * t) * (cos(phase) + damping / root * sin(phase))
+        let endPhase = frequency * root
+        let end = 1 - exp(-damping * frequency) * (cos(endPhase) + damping / root * sin(endPhase))
+        return response / end
     }
 
     /// 选中态与跟随滚动：dampingFraction 0.78 有约 4% 过冲，滑过头再回来
