@@ -57,6 +57,7 @@ struct HistoryView: View {
     /// 边界橡皮筋：撞到顶/底时整片内容纵向下沉一下再弹回
     @State private var bounce: CGFloat = 0
     @State private var treeRoot = CGPoint.zero
+    private var layoutEditing: Bool { model.treeLayoutEditing }
     @AppStorage("showDesktopTree") private var showTree = true
 
     var onPaste: (ClipItem) -> Void
@@ -84,18 +85,10 @@ struct HistoryView: View {
     private var results: [ClipItem] { model.results }
     private var safeSelection: Int { model.safeSelection }
 
-    var body: some View {
+    private var presentation: some View {
         ZStack {
             if showTree {
-                GeometryReader { geometry in
-                    ZStack(alignment: .topLeading) {
-                        IvoryTreeView(model: model, onPaste: onPaste, onRootPosition: { treeRoot = $0 })
-                        desktopSearch
-                            .position(x: treeRoot == .zero ? geometry.size.width/2 : treeRoot.x,
-                                      y: min(geometry.size.height-55, (treeRoot == .zero ? geometry.size.height-112 : treeRoot.y)+55))
-                    }
-                }
-                .transition(Motion.reduceMotion ? .opacity : .scale(scale: 0.94).combined(with: .opacity))
+                treeContent
             } else {
                 VStack(spacing: 0) {
                     searchBar
@@ -117,6 +110,13 @@ struct HistoryView: View {
         .onChange(of: showTree) { _, enabled in
             onTreeModeChanged(enabled)
             DispatchQueue.main.async { searchFocused = true }
+        }
+    }
+
+    var body: some View {
+        presentation
+        .onChange(of: model.treeLayoutEditing) { _, editing in
+            if !editing { searchFocused = true }
         }
         .onReceive(NotificationCenter.default.publisher(for: .phMoveDown)) { _ in model.move(1) }
         .onReceive(NotificationCenter.default.publisher(for: .phMoveUp)) { _ in model.move(-1) }
@@ -157,9 +157,46 @@ struct HistoryView: View {
 
     private var current: ClipItem? { model.current }
 
+    private var treeContent: some View {
+                GeometryReader { geometry in
+                    ZStack(alignment: .topLeading) {
+                        IvoryTreeView(model: model, onPreview: onPreview, layoutEditing: layoutEditing, onRootPosition: { treeRoot = $0 })
+                        if !layoutEditing {
+                            Rectangle().fill(Color(red: 0.76, green: 0.72, blue: 0.62))
+                                .frame(width: 1, height: 14)
+                                .position(x: treeRoot == .zero ? geometry.size.width/2 : treeRoot.x,
+                                          y: (treeRoot == .zero ? geometry.size.height-112 : treeRoot.y)+7)
+                            TreeControlPortal(role: .search) { desktopSearch }
+                            .frame(width: 116, height: 92)
+                            .position(x: treeRoot == .zero ? geometry.size.width/2 : treeRoot.x,
+                                      y: min(geometry.size.height-46, (treeRoot == .zero ? geometry.size.height-112 : treeRoot.y)+64))
+                        } else {
+                            TreeControlPortal(role: .layout) { layoutControls }
+                                .frame(width: 310, height: 42)
+                                .position(x: geometry.size.width/2, y: geometry.size.height-28)
+                        }
+                    }
+                }
+                .transition(Motion.reduceMotion ? .opacity : .scale(scale: 0.94).combined(with: .opacity))
+    }
+
+    private var layoutControls: some View {
+        HStack(spacing: 10) {
+            TreeMoveHandle().frame(width: 65, height: 30)
+            ForEach(Array(zip(["小", "标准", "大"], [0.82, 1.0, 1.14])), id: \.0) { title, size in
+                Button(title) { NotificationCenter.default.post(name: .phTreeSize, object: size) }
+                    .buttonStyle(.plain)
+            }
+            Button("完成") { NotificationCenter.default.post(name: .phFinishTreeLayout, object: nil) }
+                .buttonStyle(.borderedProminent)
+        }
+        .font(.system(size: 13))
+        .padding(6)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+    }
+
     private var desktopSearch: some View {
         VStack(spacing: 4) {
-            Rectangle().fill(Color(red: 0.76, green: 0.72, blue: 0.62)).frame(width: 1, height: 14)
             VStack(spacing: 4) {
                 Circle().fill(Color.black.opacity(0.4)).frame(width: 3.5, height: 3.5)
                 Image(systemName: "magnifyingglass").font(.system(size: 12))

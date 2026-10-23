@@ -10,6 +10,8 @@ struct TreeUISmoke {
         // This harness has its own bundle ID. Disable external sync before any action.
         Settings.shared.iCloudSync = false
         UserDefaults.standard.set(true, forKey: "showDesktopTree")
+        UserDefaults.standard.removeObject(forKey: "desktopTreeScale")
+        UserDefaults.standard.removeObject(forKey: "desktopTreeOrigin")
         let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
             "ivory-ui-" + UUID().uuidString)
         let store = ClipStore(directory: temporary)
@@ -68,7 +70,7 @@ struct TreeUISmoke {
         precondition(scene(in: hosting) != nil, "Packaged scene must appear")
         precondition(!window.isOpaque && !window.hasShadow && !window.styleMask.contains(.titled))
         precondition(
-            window.canBecomeKey && window.isKeyWindow, "Borderless search must receive keyboard input")
+            window.canBecomeKey && (window.isKeyWindow || window.islands.contains { $0.isKeyWindow }), "Borderless search must receive keyboard input")
         let corner = NSBitmapImageRep(data: scene(in: hosting)!.snapshot().tiffRepresentation!)!
         precondition(corner.colorAt(x: 0, y: 0)!.alphaComponent < 0.01, "Tree background must be transparent")
         let surface = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds)!
@@ -160,17 +162,24 @@ struct TreeUISmoke {
         let liveWindow = NSApp.windows.first { $0.isVisible && $0 is HistoryPanel }!
         let liveScene = scene(in: liveWindow.contentView!)!
         let clickedID = controller.panelModel.results[3].id
-        let rect = liveScene.cardFrames[clickedID]!
-        let clickPoint = NSPoint(x: rect.midX, y: liveScene.bounds.height - rect.midY)
-        let hit = liveWindow.contentView!.hitTest(liveScene.convert(clickPoint, to: liveWindow.contentView!))
-        precondition(hit === liveScene, "Search must not overlay the tree's mouse hit area")
-        func mouse(_ type: NSEvent.EventType) -> NSEvent {
-            NSEvent.mouseEvent(with: type, location: liveScene.convert(clickPoint, to: nil),
-                modifierFlags: [], timestamp: 0, windowNumber: liveWindow.windowNumber,
-                context: nil, eventNumber: 1, clickCount: 1, pressure: 1)!
+        let treeWindow = liveWindow as! HistoryPanel
+        precondition(treeWindow.ignoresMouseEvents, "Decorations and all transparent gaps must pass through at OS window level")
+        precondition(treeWindow.islands.filter { $0.role == .paper }.count == 8)
+        precondition(treeWindow.islands.filter { $0.role == .search }.count == 1)
+        treeWindow.focusSearch()
+        precondition(treeWindow.islands.first { $0.role == .search }?.firstResponder is NSTextView,
+                     "Showing the tree must focus its native search editor for direct typing")
+        let paperWindow = treeWindow.islands.first { ($0.contentView as? TreePaperSurface)?.recordID == clickedID }!
+        let paperSurface = paperWindow.contentView as! TreePaperSurface
+        precondition(paperWindow.frame.width < 200 && paperWindow.frame.height < 160)
+        func mouse(_ type: NSEvent.EventType, view: NSView, point: NSPoint, clicks: Int = 1) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: view.convert(point, to: nil),
+                modifierFlags: [], timestamp: 0, windowNumber: view.window!.windowNumber,
+                context: nil, eventNumber: 1, clickCount: clicks, pressure: 1)!
         }
-        liveScene.mouseDown(with: mouse(.leftMouseDown))
-        liveScene.mouseUp(with: mouse(.leftMouseUp))
+        let middle = NSPoint(x: paperSurface.bounds.midX, y: paperSurface.bounds.midY)
+        paperSurface.mouseDown(with: mouse(.leftMouseDown, view: paperSurface, point: middle))
+        paperSurface.mouseUp(with: mouse(.leftMouseUp, view: paperSurface, point: middle))
         run(0.2)
         precondition(controller.panelModel.current?.id == clickedID, "Filtered paper click must select")
         _ = key(49, chars: " ")
@@ -196,17 +205,97 @@ struct TreeUISmoke {
         print("Preview 100k-text navigation: slowest down/up pair = \(Int(slowest*1000)) ms")
         _ = key(53)
         run(0.2)
-        precondition(!controller.isPreviewVisible && controller.isVisible)
+        precondition(!controller.isPreviewVisible && controller.isVisible,
+                     "Esc must close only preview: preview=\(controller.isPreviewVisible), tree=\(controller.isVisible)")
+        // Dragging a paper is reserved; it cannot move/rotate the tree or paste.
+        let originalFrame = treeWindow.frame
+        let originalRotation = liveScene.scene!.rootNode.childNodes[0].eulerAngles
+        let currentPaper = treeWindow.islands.first { $0.role == .paper }!.contentView as! TreePaperSurface
+        let center = NSPoint(x: currentPaper.bounds.midX, y: currentPaper.bounds.midY)
+        let moved = NSPoint(x: center.x+35, y: center.y+12)
+        currentPaper.mouseDown(with: mouse(.leftMouseDown, view: currentPaper, point: center))
+        currentPaper.mouseDragged(with: mouse(.leftMouseDragged, view: currentPaper, point: moved))
+        currentPaper.mouseUp(with: mouse(.leftMouseUp, view: currentPaper, point: moved))
+        run(0.1)
+        precondition(treeWindow.frame == originalFrame)
+        precondition(liveScene.scene!.rootNode.childNodes[0].eulerAngles.y == originalRotation.y)
+        controller.beginTreeLayout()
+        run(0.4)
+        precondition(controller.layoutEditing && controller.isVisible)
+        precondition(treeWindow.islands.filter { $0.role == .paper }.allSatisfy { ($0.contentView as? TreePaperSurface)?.enabled == false })
+        precondition(!treeWindow.islands.contains { $0.role == .search })
+        let controls = treeWindow.islands.first { $0.role == .layout }!
+        precondition(controls.isKeyWindow, "Layout controls must support native keyboard focus")
+        func handle(in view: NSView) -> TreeMoveHandleView? {
+            if let handle = view as? TreeMoveHandleView { return handle }
+            return view.subviews.lazy.compactMap { handle(in: $0) }.first
+        }
+        let grip = handle(in: controls.contentView!)!
+        let gripPoint = NSPoint(x: 20, y: 15)
+        grip.mouseDown(with: mouse(.leftMouseDown, view: grip, point: gripPoint))
+        grip.mouseDragged(with: mouse(.leftMouseDragged, view: grip, point: NSPoint(x: 55, y: 15)))
+        grip.mouseUp(with: mouse(.leftMouseUp, view: grip, point: NSPoint(x: 55, y: 15)))
+        precondition(treeWindow.frame.origin != originalFrame.origin, "Only the explicit grip moves the tree")
+        NotificationCenter.default.post(name: .phTreeSize, object: 0.82)
+        run(0.3)
+        precondition(treeWindow.frame.height < originalFrame.height)
+        precondition(key(36, chars: "\r") != nil, "Return in layout mode must not paste")
+        _ = key(53)
+        run(0.3)
+        precondition(!controller.layoutEditing && controller.isVisible)
+        precondition(treeWindow.islands.contains { $0.role == .search })
+        precondition(!treeWindow.islands.contains { $0.role == .layout })
+        precondition(treeWindow.islands.filter { $0.role == .paper }.allSatisfy { !$0.ignoresMouseEvents })
+        controller.hide(restoreFocus: false)
+        run(0.3)
+        precondition(treeWindow.islands.allSatisfy { !$0.isVisible }, "Dismissal must leave no input windows behind")
+        controller.beginTreeLayout()
+        run(0.3)
+        precondition(controller.layoutEditing && treeWindow.islands.contains { $0.role == .layout },
+                     "Layout invoked while hidden must still create controls")
+        controller.endTreeLayout()
+        run(0.3)
+        precondition(!controller.layoutEditing && controller.isVisible)
         store.query = ""
         run(0.5)
+        // Render the native display and bounded child surfaces into one synthetic-data artifact.
+        let rendered = NSImage(size: treeWindow.frame.size)
+        rendered.lockFocus()
+        liveScene.snapshot().draw(in: liveScene.bounds)
+        let parent = treeWindow.contentView!
+        let parentBitmap = parent.bitmapImageRepForCachingDisplay(in: parent.bounds)!
+        parent.cacheDisplay(in: parent.bounds, to: parentBitmap)
+        NSImage(cgImage: parentBitmap.cgImage!, size: parent.bounds.size).draw(in: parent.bounds)
+        for child in treeWindow.islands where child.isVisible {
+            guard let view = child.contentView,
+                  let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { continue }
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+            let frame = treeWindow.convertFromScreen(child.frame)
+            NSImage(cgImage: bitmap.cgImage!, size: view.bounds.size).draw(in: frame)
+        }
+        rendered.unlockFocus()
+        let bitmap = NSBitmapImageRep(data: rendered.tiffRepresentation!)!
+        try bitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: ".build/tree-boundary-preview.png"))
         print(
-            "PASS: borderless transparent key window, filtered search, packaged resource, shared selection/copy/paste/pin/delete, list/tree toggle, page selection, lazy loading, empty search, query reset, compact panel"
+            "PASS: borderless transparent key window, filtered search, packaged resource, shared selection/copy/paste/pin/delete, list/tree toggle, page selection, lazy loading, empty search, query reset, compact panel, OS click-through, bounded paper/search windows, reserved paper drag, explicit move/size mode, clean dismissal"
         )
         fflush(stdout)
-        if CommandLine.arguments.contains("--interactive") { app.run() }
+        if CommandLine.arguments.contains("--interactive") {
+            let delegate = TreeHarnessDelegate(controller: controller)
+            app.delegate = delegate
+            withExtendedLifetime(delegate) { app.run() }
+        }
         controller.hide()
         run(0.2)
         window.orderOut(nil)
         try? FileManager.default.removeItem(at: temporary)
+    }
+}
+
+@MainActor final class TreeHarnessDelegate: NSObject, NSApplicationDelegate {
+    let controller: PanelController
+    init(controller: PanelController) { self.controller = controller }
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        controller.show(); return true
     }
 }

@@ -9,6 +9,7 @@ struct HistorySection {
 /// Coordinates list state and user actions for the history panel.
 @MainActor
 final class HistoryViewModel: ObservableObject {
+    @Published var treeLayoutEditing = false
     let store: ClipStore
     @Published private(set) var selection = 0
     @Published private(set) var sections: [HistorySection] = []

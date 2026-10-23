@@ -2,7 +2,8 @@ import SwiftUI
 
 struct IvoryTreeView: View {
     @ObservedObject var model: HistoryViewModel
-    var onPaste: (ClipItem) -> Void
+    var onPreview: () -> Void
+    var layoutEditing: Bool
     var onRootPosition: (CGPoint) -> Void = { _ in }
     @State private var resetToken = 0
     @State private var unavailable = false
@@ -24,7 +25,7 @@ struct IvoryTreeView: View {
         IvoryTreeCanvas(
             entries: entries, selectedID: model.current?.id, resetToken: resetToken,
             presentationToken: model.presentationTick, onRootPosition: onRootPosition,
-            unavailable: $unavailable, onSelect: select, onActivate: activate
+            unavailable: $unavailable, onSelect: select, onPreview: preview, layoutEditing: layoutEditing
         )
         .accessibilityLabel(L10n.wishTree)
         .accessibilityValue(model.current?.summary ?? L10n.noMatch)
@@ -41,8 +42,9 @@ struct IvoryTreeView: View {
     private func select(_ id: UUID) {
         if let index = model.results.firstIndex(where: { $0.id == id }) { model.select(index) }
     }
-    private func activate(_ id: UUID) {
-        if let item = model.results.first(where: { $0.id == id }) { onPaste(item) }
+    private func preview(_ id: UUID) {
+        select(id)
+        onPreview()
     }
     private func loadMoreIfNeeded() {
         if pageEnd >= model.results.count - 8 { model.store.loadMore() }
@@ -57,7 +59,8 @@ private struct IvoryTreeCanvas: NSViewRepresentable {
     let onRootPosition: (CGPoint) -> Void
     @Binding var unavailable: Bool
     let onSelect: (UUID) -> Void
-    let onActivate: (UUID) -> Void
+    let onPreview: (UUID) -> Void
+    let layoutEditing: Bool
     final class Coordinator {
         var resetToken = 0
         var presentationToken = -1
@@ -87,7 +90,8 @@ private struct IvoryTreeCanvas: NSViewRepresentable {
             DispatchQueue.main.async { onRootPosition(point) }
         }
         view.onSelect = onSelect
-        view.onActivate = onActivate
+        view.onPreview = onPreview
+        view.layoutEditing = layoutEditing
         view.update(entries: entries, selectedID: selectedID)
         if context.coordinator.presentationToken != presentationToken {
             context.coordinator.presentationToken = presentationToken

@@ -40,12 +40,9 @@ final class IvoryTreeSceneView: SCNView {
     private var appearedAt: CFTimeInterval = 0
     private var lastStep: CFTimeInterval = 0
     private var appliedGrowthHeight: Float = 12
-    private var downPoint = NSPoint.zero
-    private var previousScreenPoint = NSPoint.zero
-    private var dragged = false
-    private var movingWindow = false
     var onSelect: ((UUID) -> Void)?
-    var onActivate: ((UUID) -> Void)?
+    var onPreview: ((UUID) -> Void)?
+    var layoutEditing = false { didSet { paper.layoutEditing = layoutEditing; startSettling() } }
     var onRootPosition: ((CGPoint) -> Void)?
     private(set) var loadError: Error?
     private(set) var growthProgress: CGFloat = 1
@@ -55,14 +52,6 @@ final class IvoryTreeSceneView: SCNView {
     override var mouseDownCanMoveWindow: Bool { false }
     override var acceptsFirstResponder: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: NSEvent.modifierFlags.contains(.option) ? .crosshair : .openHand)
-    }
-
-    override func flagsChanged(with event: NSEvent) {
-        window?.invalidateCursorRects(for: self)
-    }
-
     init(url: URL?) {
         super.init(frame: .zero, options: nil)
         let scene = SCNScene()
@@ -123,6 +112,7 @@ final class IvoryTreeSceneView: SCNView {
         addSubview(paper)
         paper.autoresizingMask = [.width, .height]
         paper.onSelect = { [weak self] id in self?.onSelect?(id) }
+        paper.onPreview = { [weak self] id in self?.onPreview?(id) }
         applyRotation()
         setAccessibilityElement(false)
     }
@@ -226,37 +216,10 @@ final class IvoryTreeSceneView: SCNView {
         let root = projectPoint(sculpture.convertPosition(SCNVector3(0, 0.25, 0), to: nil))
         onRootPosition?(CGPoint(x: root.x, y: bounds.height - root.y))
     }
-    override func mouseDown(with event: NSEvent) {
-        downPoint = convert(event.locationInWindow, from: nil)
-        previousScreenPoint =
-            window?.convertPoint(toScreen: event.locationInWindow) ?? event.locationInWindow
-        dragged = false
-        // A single, explicit gesture contract anywhere on the sculpture or paper.
-        movingWindow = !event.modifierFlags.contains(.option)
-        window?.makeKey()
-    }
-    override func mouseDragged(with event: NSEvent) {
-        guard let window else { return }
-        let screen = window.convertPoint(toScreen: event.locationInWindow)
-        let dx = screen.x - previousScreenPoint.x
-        let dy = screen.y - previousScreenPoint.y
-        if !dragged {
-            guard hypot(screen.x - previousScreenPoint.x, screen.y - previousScreenPoint.y) > 4 else { return }
-            dragged = true
-        }
-        if movingWindow {
-            NSCursor.closedHand.set()
-            let proposed = NSPoint(x: window.frame.minX + dx, y: window.frame.minY + dy)
-            window.setFrameOrigin(Self.clampedOrigin(proposed, size: window.frame.size))
-        } else {
-            let point = convert(event.locationInWindow, from: nil)
-            if hypot(point.x - downPoint.x, point.y - downPoint.y) > 4 { dragged = true }
-            targetYaw += dx * 0.009  // deliberately unbounded: repeated full turns work
-            targetPitch = min(0.32, max(-0.32, targetPitch - dy * 0.005))
-            startSettling()
-        }
-        previousScreenPoint = screen
-    }
+    // Display-only. Pointer gestures belong to paper windows or the layout handle.
+    override func mouseDown(with event: NSEvent) {}
+    override func mouseDragged(with event: NSEvent) {}
+    override func mouseUp(with event: NSEvent) {}
     static func clampedOrigin(_ origin: NSPoint, size: NSSize) -> NSPoint {
         let center = NSPoint(x: origin.x + size.width / 2, y: origin.y + size.height / 2)
         let screen = NSScreen.screens.first(where: { $0.frame.contains(center) }) ?? NSScreen.main
@@ -264,14 +227,6 @@ final class IvoryTreeSceneView: SCNView {
         return NSPoint(
             x: min(max(origin.x, available.minX), max(available.minX, available.maxX - size.width)),
             y: min(max(origin.y, available.minY), max(available.minY, available.maxY - size.height)))
-    }
-    override func mouseUp(with event: NSEvent) {
-        NSCursor.openHand.set()
-        guard !dragged else { return }
-        if let id = entryID(at: convert(event.locationInWindow, from: nil)) {
-            onSelect?(id)
-            if event.clickCount == 2 { onActivate?(id) }
-        }
     }
     func entryID(at point: NSPoint) -> UUID? {
         paper.entryID(at: NSPoint(x: point.x, y: bounds.height - point.y))

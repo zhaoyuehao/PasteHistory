@@ -90,39 +90,22 @@ struct TreeSmoke {
                 with: type, location: view.convert(point, to: nil), modifierFlags: mods, timestamp: 0,
                 windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1)!
         }
-        var selected: UUID?
-        view.onSelect = { selected = $0 }
-        view.mouseDown(with: event(.leftMouseDown, point))
-        view.mouseUp(with: event(.leftMouseUp, point))
-        precondition(selected == entries[0].id)
         let pivot = view.scene!.rootNode.childNodes[0]
         let originalYaw = pivot.eulerAngles.y
-        view.mouseDown(with: event(.leftMouseDown, NSPoint(x: 400, y: 500), mods: [.option]))
-        view.mouseDragged(with: event(.leftMouseDragged, NSPoint(x: 510, y: 500), mods: [.option]))
-        view.mouseUp(with: event(.leftMouseUp, NSPoint(x: 510, y: 500), mods: [.option]))
-        run(0.8)
-        precondition(abs(pivot.eulerAngles.y - originalYaw) > 0.8)
-        precondition(
-            abs(view.cardFrames[entries[0].id]!.midX - original.midX) > 20,
-            "Paper must follow the rotating attachment")
-        try capture("angle.png")
-        view.mouseDown(with: event(.leftMouseDown, NSPoint(x: 400, y: 500), mods: [.option]))
-        view.mouseDragged(with: event(.leftMouseDragged, NSPoint(x: 1200, y: 500), mods: [.option]))
-        view.mouseUp(with: event(.leftMouseUp, NSPoint(x: 1200, y: 500), mods: [.option]))
-        run(0.9)
-        precondition(
-            pivot.eulerAngles.y - originalYaw > 2 * .pi, "Yaw must allow more than a full revolution")
-        view.resetView()
-        run(0.9)
-        precondition(abs(pivot.eulerAngles.y - originalYaw) < 0.01)
-        // Plain drag moves the window; only Option-drag rotates. Tiny pointer jitter is a click.
-        let start = window.frame.origin
-        view.mouseDown(with: event(.leftMouseDown, NSPoint(x: 400, y: 500)))
-        view.mouseDragged(with: event(.leftMouseDragged, NSPoint(x: 440, y: 520)))
-        view.mouseUp(with: event(.leftMouseUp, NSPoint(x: 440, y: 520)))
-        precondition(window.frame.origin != start)
+        let origin = window.frame.origin
+        for mods: NSEvent.ModifierFlags in [[], [.option]] {
+            view.mouseDown(with: event(.leftMouseDown, NSPoint(x: 400, y: 500), mods: mods))
+            view.mouseDragged(with: event(.leftMouseDragged, NSPoint(x: 510, y: 500), mods: mods))
+            view.mouseUp(with: event(.leftMouseUp, NSPoint(x: 510, y: 500), mods: mods))
+        }
+        run(0.2)
+        precondition(window.frame.origin == origin && pivot.eulerAngles.y == originalYaw,
+                     "The display-only sculpture must ignore drag and Option-drag")
+        // Documentation can render another angle without exposing rotation gestures.
+        pivot.eulerAngles.y = 0.6
         run(0.1)
-        precondition(abs(pivot.eulerAngles.y - originalYaw) < 0.01, "Moving must not rotate")
+        try capture("angle.png")
+        pivot.eulerAngles.y = originalYaw
         let second = entries.map { IvoryTreeEntry(id: UUID(), title: $0.title, index: $0.index + 8) }
         view.update(entries: second, selectedID: second[0].id)
         run(0.07)
@@ -140,7 +123,7 @@ struct TreeSmoke {
         view.update(entries: entries, selectedID: entries[0].id)
         run(0.4)
         print(
-            "PASS: five birds, true depth, transparent scene, root growth pixels, 8 attached papers, hit selection, rotation/parallax beyond 360°, damped reset, window drag, interruptible paging, empty results"
+            "PASS: five birds, true depth, transparent scene, root growth pixels, 8 attached papers, display-only pointer boundary, interruptible paging, empty results"
         )
         fflush(stdout)
         if args.contains("--interactive") { app.run() }

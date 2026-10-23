@@ -202,6 +202,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         PanelController.shared.toggle()
     }
 
+    @objc private func adjustTreeLayout() { PanelController.shared.beginTreeLayout() }
+
     // MARK: - 菜单栏
 
     private func buildStatusBar() {
@@ -221,6 +223,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         open.keyEquivalentModifierMask = [.command, .shift]
         open.image = Self.menuIcon("clipboard")
         menu.addItem(open)
+        let layout = NSMenuItem(title: "调整树布局…", action: #selector(adjustTreeLayout), keyEquivalent: "M")
+        layout.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(layout)
 
         let cycle = NSMenuItem(title: L10n.pasteEarlier, action: #selector(cyclePaste), keyEquivalent: "V")
         cycle.keyEquivalentModifierMask = [.command, .shift]

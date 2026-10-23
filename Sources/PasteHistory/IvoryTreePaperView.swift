@@ -30,6 +30,79 @@ final class IvoryTreePaperView: NSView {
     private var selectionFade: CGFloat = 1
     private(set) var isAnimating = false
     var onSelect: ((UUID) -> Void)?
+    var onPreview: ((UUID) -> Void)?
+    var layoutEditing = false
+    private var islands: [UUID: TreeInteractionPanel] = [:]
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil { clearIslands() }
+    }
+    private func clearIslands() {
+        for panel in islands.values { panel.detach() }
+        islands.removeAll()
+    }
+    private func syncIslands() {
+        guard let owner = window as? HistoryPanel else { clearIslands(); return }
+        let current = visuals()
+        let ids = Set(current.map { $0.entry.id })
+        for id in Array(islands.keys) where !ids.contains(id) {
+            islands.removeValue(forKey: id)?.detach()
+        }
+        for card in current {
+            let id = card.entry.id
+            let panel: TreeInteractionPanel
+            let surface: TreePaperSurface
+            if let existing = islands[id], let view = existing.contentView as? TreePaperSurface {
+                panel = existing; surface = view
+            } else {
+                panel = TreeInteractionPanel(owner: owner, role: .paper)
+                surface = TreePaperSurface()
+                panel.contentView = surface
+                panel.title = "剪贴纸签"
+                islands[id] = panel
+            }
+            // Rectangular paper footprint (including its small tilt and shadow).
+            // Cords, branches and the rest of the desktop never acquire a window.
+            let a = card.tilt * .pi / 180
+            let center = NSPoint(x: card.rect.midX, y: card.rect.minY + 7)
+            let corners: [NSPoint] = [NSPoint(x: card.rect.minX, y: card.rect.minY),
+                          NSPoint(x: card.rect.maxX, y: card.rect.minY),
+                          NSPoint(x: card.rect.minX, y: card.rect.maxY),
+                          NSPoint(x: card.rect.maxX, y: card.rect.maxY)]
+            let points: [NSPoint] = corners.map { p in
+                let dx = (p.x-center.x) * card.fold
+                let dy = p.y-center.y
+                return NSPoint(x: center.x + dx*cos(a) - dy*sin(a), y: center.y + dx*sin(a) + dy*cos(a))
+            }
+            let left = points.map(\.x).min()!, top = points.map(\.y).min()!
+            let frame = NSRect(x: left-3, y: top-3,
+                               width: points.map(\.x).max()!-left+6,
+                               height: points.map(\.y).max()!-top+6)
+            panel.setFrame(owner.convertToScreen(convert(frame, to: nil)), display: false)
+            // Visible transitional papers consume a click without activating a new
+            // record or accidentally clicking the app beneath the departing paper.
+            panel.enabled = card.opacity > 0.01
+            surface.enabled = !layoutEditing && !isTurningPage && card.opacity > 0.9
+                && cards.contains { $0.entry.id == id }
+            surface.recordID = id
+            surface.setAccessibilityLabel(card.entry.title)
+            surface.setAccessibilityValue(card.entry.id == selectedID ? "已选中" : "")
+            surface.paint = { [weak self] in
+                guard let self, let ctx = NSGraphicsContext.current?.cgContext else { return }
+                ctx.saveGState()
+                ctx.translateBy(x: -frame.minX, y: -frame.minY)
+                ctx.setAlpha(card.opacity)
+                self.transform(card.rect, tilt: card.tilt, fold: card.fold, context: ctx)
+                self.drawPaper(card)
+                ctx.restoreGState()
+            }
+            surface.onSelect = { [weak self] in self?.onSelect?(id) }
+            surface.onPreview = { [weak self] in self?.onPreview?(id) }
+            surface.needsDisplay = true
+            owner.showIslandIfNeeded(panel)
+        }
+    }
+
     var cardFrames: [UUID: NSRect] {
         Dictionary(uniqueKeysWithValues: cards.map { ($0.entry.id, $0.rect) })
     }
@@ -114,6 +187,7 @@ final class IvoryTreePaperView: NSView {
         selectionFade = min(1, selectionFade + dt / 0.15)
         if !isTurningPage { outgoing.removeAll() }
         isAnimating = isTurningPage || unsettled > 0.05 || selectionFade < 1
+        syncIslands()
         needsDisplay = true
     }
     private func visuals() -> [Card] {
@@ -160,7 +234,10 @@ final class IvoryTreePaperView: NSView {
             NSBezierPath(ovalIn: NSRect(x: card.anchor.x - 2, y: card.anchor.y - 2, width: 4, height: 4))
                 .stroke()
             transform(card.rect, tilt: card.tilt, fold: card.fold, context: context)
-            drawPaper(card)
+            // Outgoing cards are decoration only; only the current page owns input.
+            if !(window is HistoryPanel) {
+                drawPaper(card)
+            }
             context.restoreGState()
         }
         if let card = cards.first(where: { $0.entry.id == selectedID }), card.opacity > 0 {
@@ -261,6 +338,7 @@ final class IvoryTreePaperView: NSView {
         return nil
     }
     private func rebuildAccessibility() {
+        if window is HistoryPanel { setAccessibilityChildren([]); return }
         let children = entries.map { entry -> IvoryPaperAccessibility in
             let item = IvoryPaperAccessibility()
             item.setAccessibilityRole(.button)
@@ -280,5 +358,44 @@ private final class IvoryPaperAccessibility: NSAccessibilityElement {
     override func accessibilityPerformPress() -> Bool {
         action?()
         return true
+    }
+}
+
+/// A click remains attached to its initial record. Dragging cancels that click;
+/// it is reserved for a future NSDraggingSession and never moves the sculpture.
+final class TreePaperSurface: NSView {
+    var recordID: UUID?
+    var paint: (() -> Void)?
+    var onSelect: (() -> Void)?
+    var onPreview: (() -> Void)?
+    var enabled = true { didSet { setAccessibilityEnabled(enabled) } }
+    private var down = NSPoint.zero
+    private var dragged = false
+    private var selectionAtDown: (() -> Void)?
+    private var previewAtDown: (() -> Void)?
+    override var isFlipped: Bool { true }
+    override var isOpaque: Bool { false }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func draw(_ dirtyRect: NSRect) { paint?() }
+    override func accessibilityRole() -> NSAccessibility.Role? { .button }
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityPerformPress() -> Bool {
+        guard enabled else { return false }; onSelect?(); return true
+    }
+    override func mouseDown(with event: NSEvent) {
+        guard enabled else { return }
+        down = event.locationInWindow
+        dragged = false
+        selectionAtDown = onSelect
+        previewAtDown = onPreview
+        (window as? TreeInteractionPanel)?.owner?.focusSearch()
+    }
+    override func mouseDragged(with event: NSEvent) {
+        if hypot(event.locationInWindow.x-down.x, event.locationInWindow.y-down.y) > 5 { dragged = true }
+    }
+    override func mouseUp(with event: NSEvent) {
+        defer { selectionAtDown = nil; previewAtDown = nil }
+        guard enabled, window?.isVisible == true, !dragged, bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
+        if event.clickCount == 2 { previewAtDown?() } else { selectionAtDown?() }
     }
 }

@@ -228,6 +228,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     }
 
     func windowDidResignKey(_ notification: Notification) {
+        guard owner?.previewBesideTree != true else { return }
         // 焦点的去向要等一拍才问得出（makeKey 交接有时序）：
         // 用户点回面板不算离开；真去了别的应用，整组一起收
         DispatchQueue.main.async { [weak self] in
