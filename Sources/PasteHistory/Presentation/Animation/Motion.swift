@@ -30,6 +30,7 @@ enum Motion {
     static let paperCloseDuration: TimeInterval = 0.17
     static let paperFollowFrequency: CGFloat = 46
     static let paperFollowDamping: CGFloat = 0.86
+    static let paperScaleReturnDuration: TimeInterval = 0.15
 
     /// Damped step response: about 1.1% overshoot when opening, then settling.
     /// Travel stays visible; reduced-motion callers use opacity instead.

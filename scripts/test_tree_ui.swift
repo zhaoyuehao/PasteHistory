@@ -393,11 +393,26 @@ struct TreeUISmoke {
         precondition(!settlingPaper.isVisible && abs(expanded.frame.width-expected.width) < 1)
         let textZoom = zoomViews(in: expanded.contentView!).first!
         let textWidth = textZoom.documentVisibleRect.width
-        textZoom.setMagnification(2, centeredAt: .zero)
+        let zoomPanel = expanded as! PaperPreviewPanel
+        let unscaledPaperFrame = expanded.frame
+        let textSize = textZoom.convert(NSRect(x: 0, y: 0, width: 100, height: 20), to: nil).size
+        let keyBeforePinch = NSApp.keyWindow
+        precondition(zoomPanel.magnifyPaper(by: 0.5, phase: .began))
+        zoomPanel.magnifyPaper(by: 0, phase: .ended)
         run(0.1)
-        precondition(textZoom.allowsMagnification && abs(textZoom.magnification - 2) < 0.01
-            && textZoom.documentVisibleRect.width < textWidth * 0.6, "Native text preview must magnify its document")
-        textZoom.resetViewport()
+        let scaledTextSize = textZoom.convert(NSRect(x: 0, y: 0, width: 100, height: 20), to: nil).size
+        precondition(abs(expanded.frame.width / unscaledPaperFrame.width - 1.5) < 0.01
+            && abs(scaledTextSize.width / textSize.width - 1.5) < 0.01,
+            "Pinching must enlarge the real paper and live text together")
+        precondition(!textZoom.allowsMagnification && textZoom.magnification == 1
+            && abs(textZoom.documentVisibleRect.width - textWidth) < 1,
+            "Text keeps its logical layout; there is no second document zoom")
+        precondition(NSApp.keyWindow === keyBeforePinch, "Pinch must not require or steal keyboard focus")
+        let scaledPin = controller.previewPaper!.paperPin!
+        let scaledTarget = PreviewPanelController.paperFrame(pin: scaledPin, visible: screen.visibleFrame,
+            size: expanded.frame.size, magnification: 1.5)
+        precondition(abs(expanded.frame.minX - scaledTarget.minX) < 2 && abs(expanded.frame.minY - scaledTarget.minY) < 2,
+                     "Scaled paper retains its hanging point except for screen-edge fitting")
         // A realistic long clip exercises the native, non-contiguous text layout.
         let longText = String(repeating: "设计：长文本预览应按可见段落排版，方向键直接切换。\n", count: 4000)
         store.syncDatabase.upsert(ClipItem(kind: .text, text: longText, sourceApp: "Regression"))
@@ -417,9 +432,16 @@ struct TreeUISmoke {
         }
         precondition(controller.isPreviewVisible && controller.panelModel.safeSelection == 0)
         precondition(expanded.frame.size == stablePreviewSize, "Arrow navigation must not repeatedly reflow long text by resizing the paper")
+        run(0.4)
+        let zoomedPin = controller.previewPaper!.paperPin!
+        let zoomedTarget = PreviewPanelController.paperFrame(pin: zoomedPin, visible: screen.visibleFrame,
+            size: stablePreviewSize, magnification: 1.5)
+        precondition(abs(expanded.frame.minX - zoomedTarget.minX) < 2 && abs(expanded.frame.minY - zoomedTarget.minY) < 2,
+                     "Arrow navigation preserves zoom and the scaled hanging point")
         print("Preview 100k-text navigation: slowest down/up pair = \(Int(slowest*1000)) ms")
         _ = key(53)
         run(0.2)
+        precondition(!zoomPanel.magnifyPaper(by: 0.5, phase: .began), "Hidden preview cannot consume a pinch")
         precondition(controller.previewPaper?.alphaValue == 1, "Closing restores the hanging paper")
         precondition(!controller.isPreviewVisible && controller.isVisible,
                      "Esc must close only preview: preview=\(controller.isPreviewVisible), tree=\(controller.isVisible)")
@@ -468,12 +490,32 @@ struct TreeUISmoke {
         let readingFrame = imagePreview.frame
         let pictureFrame = imageZoom.sheet.picture.frame
         let unzoomedWidth = imageZoom.documentVisibleRect.width
-        imageZoom.setMagnification(2, centeredAt: NSPoint(x: unzoomedWidth / 2, y: 70))
+        let imagePhysicalSize = imageZoom.sheet.picture.convert(imageZoom.sheet.picture.bounds, to: nil).size
+        let imagePanel = imagePreview as! PaperPreviewPanel
+        imagePanel.magnifyPaper(by: 0.4, phase: .began)
+        imagePanel.magnifyPaper(by: 0, phase: .ended)
         run(0.1)
-        precondition(imageZoom.documentVisibleRect.width < unzoomedWidth * 0.6)
-        precondition(imageZoom.sheet.picture.frame == pictureFrame && imagePreview.frame == readingFrame,
-                     "Pinch scales contents, not picture layout or the preview window")
-        imageZoom.resetViewport()
+        let enlargedImageSize = imageZoom.sheet.picture.convert(imageZoom.sheet.picture.bounds, to: nil).size
+        precondition(abs(imagePreview.frame.width / readingFrame.width - 1.4) < 0.01
+            && abs(enlargedImageSize.width / imagePhysicalSize.width - 1.4) < 0.01,
+            "Image and paper must enlarge with the same gesture and scale")
+        precondition(!imageZoom.allowsMagnification && imageZoom.magnification == 1
+            && abs(imageZoom.documentVisibleRect.width - unzoomedWidth) < 1
+            && imageZoom.sheet.picture.frame == pictureFrame,
+            "Whole-card scaling must preserve the image/OCR document layout")
+        // Oversized gestures remain on screen and settle back from the limit.
+        imagePanel.magnifyPaper(by: 4, phase: .began)
+        imagePanel.magnifyPaper(by: 0, phase: .ended)
+        run(0.25)
+        precondition(imagePreview.frame.width <= readingFrame.width * 2 + 1
+            && imagePreview.screen!.visibleFrame.contains(imagePreview.frame), "Pinch limit must fit the screen")
+        imagePanel.magnifyPaper(by: -0.9, phase: .began)
+        precondition(imagePreview.frame.width < readingFrame.width, "Lower zoom limit has a small elastic response")
+        imagePanel.magnifyPaper(by: 0, phase: .ended)
+        run(0.25)
+        precondition(abs(imagePreview.frame.width - readingFrame.width) < 1, "Elastic return must settle at default size")
+        imagePanel.magnifyPaper(by: 0.4, phase: .began)
+        imagePanel.magnifyPaper(by: 0, phase: .ended)
         imageZoom.contentView.scroll(to: NSPoint(x: 0, y: ocrFrame.minY))
         imageZoom.reflectScrolledClipView(imageZoom.contentView)
         run(0.1)
@@ -489,6 +531,7 @@ struct TreeUISmoke {
         let reopenedZoom = zoomViews(in: imagePreview.contentView!).first as! PreviewImageScrollView
         precondition(reopenedZoom.magnification == 1 && reopenedZoom.documentVisibleRect.minY < 1,
                      "Reopening returns to the image, rather than leaving OCR or zoom from the previous viewing")
+        precondition(imagePreview.frame.size == readingFrame.size, "Closing and reopening must discard whole-card magnification")
         let imageFace = imagePreview.contentView!
         let imageFaceBitmap = imageFace.bitmapImageRepForCachingDisplay(in: imageFace.bounds)!
         imageFace.cacheDisplay(in: imageFace.bounds, to: imageFaceBitmap)
@@ -599,6 +642,22 @@ struct TreeUISmoke {
         rendered.unlockFocus()
         let bitmap = NSBitmapImageRep(data: rendered.tiffRepresentation!)!
         try bitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: ".build/tree-boundary-preview.png"))
+        // The shared hosting container must also retain the ordinary list preview.
+        _ = key(37, chars: "l", mods: [.command])
+        run(0.4)
+        _ = key(49, chars: " ")
+        run(0.3)
+        precondition(controller.isPreviewVisible && !zoomPanel.magnifyPaper(by: 0.5, phase: .began),
+                     "Whole-paper gestures belong only to tree previews")
+        let listSurface = expanded.contentView as! PaperPreviewSurface
+        precondition(listSurface.readingSize == nil && abs(listSurface.bounds.width - listSurface.frame.width) < 1,
+                     "List previews must not inherit the tree's scaled coordinate system")
+        precondition(zoomViews(in: expanded.contentView!).allSatisfy { $0.allowsMagnification },
+                     "List previews retain their native document magnification")
+        _ = key(53)
+        run(0.2)
+        _ = key(37, chars: "l", mods: [.command])
+        run(0.4)
         print(
             "PASS: borderless transparent key window, filtered search, packaged resource, shared selection/copy/paste/pin/delete, list/tree toggle, page selection, lazy loading, empty search, query reset, compact panel, OS click-through, bounded paper/search windows, drag payload round trips, paper-origin preview and interruptible return, explicit move/size mode, clean dismissal"
         )

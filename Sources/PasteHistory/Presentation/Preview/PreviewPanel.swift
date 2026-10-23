@@ -41,9 +41,12 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     private var sink: Any?
     private let paperFlight = PaperPreviewFlight()
     private let paperFollow = PaperPreviewFollow()
+    private let paperScaleReturn = PaperScaleReturn()
     private var previewedID: UUID?
     private var paperReturnFrame: NSRect?
     private var paperSessionSize: NSSize?
+    private var paperMagnification: CGFloat = 1
+    private var gestureMagnification: CGFloat = 1
     private var needsFlightRetarget = false
 
     var window: NSPanel? { panel }
@@ -154,8 +157,14 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         // Choose once per opening. Arrows move the sheet without resizing the
         // text container on every animation frame.
         paperFollow.cancel()
+        paperScaleReturn.cancel()
         needsFlightRetarget = false
-        if !continuing { paperSessionSize = Self.paperSize(for: model.current) }
+        if !continuing {
+            paperSessionSize = Self.paperSize(for: model.current)
+            paperMagnification = 1
+            gestureMagnification = 1
+        }
+        (panel.contentView as? PaperPreviewSurface)?.readingSize = paperSessionSize
         let target = targetFrame()
         let paper = owner?.previewPaper
         let origin = paperFlight.visibleFrame ?? paper?.frame ?? paperReturnFrame ?? target
@@ -180,6 +189,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
 
     private func closeToPaper(_ panel: NSPanel) {
         paperFollow.cancel()
+        paperScaleReturn.cancel()
         if panel.isKeyWindow, owner?.previewAnchorVisible == true { owner?.makePanelKeyAgain() }
         let origin = paperFlight.visibleFrame ?? panel.frame
         let image = paperFlight.visibleImage ?? snapshot(panel.contentView)
@@ -211,6 +221,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         closeGeneration += 1
         paperFlight.cancel()
         paperFollow.cancel()
+        paperScaleReturn.cancel()
         owner?.setExpandedPaper(nil)
         panel?.orderOut(nil)
         panel?.alphaValue = 1
@@ -223,6 +234,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     private func configureAppearance() {
         guard let panel else { return }
         let paper = owner?.previewBesideTree == true
+        if !paper { (panel.contentView as? PaperPreviewSurface)?.readingSize = nil }
         hosting?.rootView = PreviewContentView(model: model, mediaLoader: mediaLoader, paperStyle: paper)
         panel.styleMask = paper ? [.borderless, .nonactivatingPanel]
             : [.titled, .closable, .fullSizeContentView, .nonactivatingPanel, .resizable]
@@ -262,12 +274,12 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         }
     }
 
-    static func paperFrame(pin: NSPoint, visible: NSRect, size: NSSize = NSSize(width: 400, height: 247)) -> NSRect {
+    static func paperFrame(pin: NSPoint, visible: NSRect, size: NSSize = NSSize(width: 400, height: 247), magnification: CGFloat = 1) -> NSRect {
         let scale = min(1, max(1, visible.width - 24) / size.width, max(1, visible.height - 24) / size.height)
         let width = size.width * scale
         let height = size.height * scale
         let x = min(max(pin.x - width / 2, visible.minX + 12), visible.maxX - width - 12)
-        let y = min(max(pin.y + IvoryPaperStyle.pinInset - height, visible.minY + 12), visible.maxY - height - 12)
+        let y = min(max(pin.y + IvoryPaperStyle.pinInset * magnification * scale - height, visible.minY + 12), visible.maxY - height - 12)
         return NSRect(x: x, y: y, width: width, height: height)
     }
 
@@ -290,7 +302,9 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         let hosting = NSHostingController(rootView: view)
         hosting.safeAreaRegions = []
         self.hosting = hosting
-        let panel = PaperPreviewPanel(contentViewController: hosting)
+        let panel = PaperPreviewPanel(contentRect: .zero, styleMask: [.nonactivatingPanel], backing: .buffered, defer: false)
+        panel.contentView = PaperPreviewSurface(document: hosting.view)
+        panel.onMagnify = { [weak self] delta, phase in self?.magnifyPaper(by: delta, phase: phase) ?? false }
         // 与面板同一套窗口语言：透明标题栏、藏红绿灯、可拖动背景——一张卡片，不是一扇窗户
         panel.styleMask = [.titled, .closable, .fullSizeContentView, .nonactivatingPanel, .resizable]
         panel.titleVisibility = .hidden
@@ -334,7 +348,10 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         if owner?.previewBesideTree == true {
             let pin = paper?.paperPin ?? anchor.map { NSPoint(x: $0.midX, y: $0.maxY - IvoryPaperStyle.pinInset) }
                 ?? NSPoint(x: visible.midX, y: visible.midY)
-            return Self.paperFrame(pin: pin, visible: visible, size: paperSessionSize ?? Self.paperSize(for: nil))
+            let base = paperSessionSize ?? Self.paperSize(for: nil)
+            return Self.paperFrame(pin: pin, visible: visible,
+                size: NSSize(width: base.width * paperMagnification, height: base.height * paperMagnification),
+                magnification: paperMagnification)
         }
 
         // 窗高：用户拖边后的尺寸或默认 640×400（黄金矩形）；塞不下收到恰好放得下
@@ -357,6 +374,44 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     }
 
     // MARK: - 跟随列表
+
+    private func magnifyPaper(by delta: CGFloat, phase: NSEvent.Phase) -> Bool {
+        guard owner?.previewBesideTree == true, isVisible, !isClosing,
+              let panel, let base = paperSessionSize else { return false }
+        // Let an unfinished unfold complete before taking over its geometry.
+        // Consume the gesture so descendants cannot start a second zoom layer.
+        guard paperFlight.visibleFrame == nil else { return true }
+        let screen = owner?.previewPaper.flatMap { paper in
+            NSScreen.screens.first { $0.frame.intersects(paper.frame) }
+        } ?? panel.screen ?? NSScreen.main
+        guard let screen else { return true }
+        let visible = screen.visibleFrame
+        let screenMaximum = max(1, min((visible.width - 24) / base.width, (visible.height - 24) / base.height))
+        let maximum = min(2, screenMaximum)
+        if phase.contains(.began) { gestureMagnification = paperMagnification }
+        paperScaleReturn.cancel()
+        gestureMagnification = min(maximum * 1.5, max(0.5, gestureMagnification * (1 + delta)))
+        let bounded = min(maximum, max(1, gestureMagnification))
+        // A little elastic travel at the limits, never beyond screen capacity.
+        let elastic = min(screenMaximum, bounded + (gestureMagnification - bounded) * 0.12)
+        applyPaperMagnification(elastic)
+        if phase.contains(.ended) || phase.contains(.cancelled) {
+            gestureMagnification = bounded
+            paperScaleReturn.settle(from: paperMagnification, to: bounded) { [weak self] scale in
+                self?.applyPaperMagnification(scale)
+            }
+        }
+        return true
+    }
+
+    private func applyPaperMagnification(_ scale: CGFloat) {
+        guard let panel, isVisible, !isClosing else { return }
+        paperMagnification = scale
+        paperFollow.cancel()
+        panel.setFrame(targetFrame(), display: true)
+        panel.contentView?.needsLayout = true
+        panel.contentView?.layoutSubtreeIfNeeded()
+    }
 
     private func syncAfterModelChange() {
         if isVisible, previewedID != model.current?.id {
@@ -400,9 +455,4 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
             }
         }
     }
-}
-
-private final class PaperPreviewPanel: NSPanel {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
 }

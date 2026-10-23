@@ -25,6 +25,7 @@ final class PreviewImageScrollView: PreviewZoomScrollView {
     convenience init() { self.init(frame: .zero) }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     func update(image: NSImage?, details: String, identity: UUID, paperStyle: Bool) {
+        allowsMagnification = !paperStyle
         let changed = self.identity != identity
         self.identity = identity
         sheet.update(image: image, details: details, paperStyle: paperStyle)
@@ -33,8 +34,8 @@ final class PreviewImageScrollView: PreviewZoomScrollView {
     }
     override func layout() {
         super.layout()
-        // Layout is measured in unzoomed points; pinch scales the document,
-        // rather than reflowing OCR or shrinking the image beneath the fingers.
+        // Fixed logical points keep OCR and the photo stable while the preview
+        // surface scales the entire paper in tree mode.
         sheet.arrange(viewport: contentSize)
     }
 }

@@ -1,7 +1,7 @@
 import AppKit
 
-/// Native trackpad magnification stays inside the preview document. It never
-/// changes the sculpture, window frame or application selection.
+/// Native scrolling for both presentations. List previews allow document zoom;
+/// tree previews disable it because their window scales the whole live paper.
 class PreviewZoomScrollView: NSScrollView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)

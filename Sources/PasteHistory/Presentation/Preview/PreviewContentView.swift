@@ -348,6 +348,7 @@ private struct PreviewTextView: NSViewRepresentable {
         return scroll
     }
     func updateNSView(_ scroll: NSScrollView, context: Context) {
+        scroll.allowsMagnification = !paperStyle
         if let view = scroll.documentView as? NSTextView {
             view.font = .systemFont(ofSize: paperStyle ? 15 : Scale.body)
             view.textColor = paperStyle ? IvoryPaperStyle.ink : .labelColor
