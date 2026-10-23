@@ -78,7 +78,7 @@ macOS 剪贴板历史管理器：后台常驻（菜单栏），自动记录每�
 ## 构建与维护
 
 ```bash
-./scripts/build_app.sh     # 构建 + 打包 + ad-hoc 签名
+./scripts/build_app.sh     # 构建 + 打包 + Apple Development 签名
 open PasteHistory.app      # 启动
 
 # 维护：清除指定记录（本地 DB + iCloud 文件 + 墓碑）
@@ -92,23 +92,34 @@ open PasteHistory.app --args --restore-images
 
 ```
 Sources/PasteHistory/
-├── main.swift             # 入口 + AppDelegate + 菜单栏 + --purge-ids 维护参数
-├── Models.swift           # ClipItem 模型、内容指纹、搜索文本列
-├── HistoryDatabase.swift  # SQLite 层：WAL、分页查询、upsert 去重、OCR 更新
-├── ClipStore.swift        # 门面：分页状态、图片落盘/缩略图、Settings
-├── ClipboardMonitor.swift # 轮询 NSPasteboard 捕获文本/图片/文件
-├── OCRIndexer.swift       # Vision OCR 后台索引图片文字
-├── iCloudSync.swift       # iCloud Drive 事件文件导出/导入合并 + NSMetadataQuery
-├── HotKeyManager.swift    # Carbon 全局热键 ⇧⌘C
-├── PanelController.swift  # 浮动面板 + 键盘事件分发
-├── HistoryViewModel.swift # 面板选择、分组、键盘导航和记录操作（业务状态）
-├── HistoryView.swift      # 只负责 SwiftUI 布局、渲染和事件绑定
-├── Localization.swift     # 跟随系统首选语言的简体中文 / 繁體中文 / English 文案
-├── AXFocus.swift          # AX 聚焦输入框的捕获/恢复 + 目标应用跟踪
-├── Toast.swift            # 无权限提示条
-└── PasteService.swift     # 回写剪贴板 + 恢复焦点 + 模拟 ⌘V
+├── main.swift                    # 组合入口：连接服务、界面和用户提示
+├── Domain/Models.swift           # 记录、指纹、检索字段；不依赖 UI
+├── Application/                  # ClipStore、Settings、HistoryViewModel、键盘规则
+├── Infrastructure/
+│   ├── Persistence/              # SQLite 查询与写入
+│   ├── Clipboard/                # 捕获、复制/粘贴、拖放数据、焦点与热键
+│   ├── Media/                    # OCR、原图读取/降采样/缓存
+│   ├── Sync/                     # iCloud 与 HTTP 同步
+│   └── Diagnostics/              # 定位日志落盘
+├── Presentation/
+│   ├── Tree/                     # 树体、纸签、挂点、输入窗口
+│   ├── History/                  # 列表与搜索布局
+│   ├── Preview/                  # 预览窗口与内容布局
+│   ├── Animation/                # 阻尼令牌、树动效参数、纸面开合、选中动效适配
+│   ├── Style/                    # 字体、间距、颜色、黄金比例
+│   ├── Shared/                   # 展示摘要、缩略图适配、提示条
+│   ├── Windows/                  # 窗口生命周期与输入路由
+│   └── Sync/                     # 配对界面与手机网页
+├── Shared/Localization.swift     # 各层共用文案
+└── Resources/ivory_tree.scn       # 3D 资源
 ```
 
-界面层通过 `HistoryViewModel` 读取分页结果并发送用户操作，数据写入、删除、置顶仍由 `ClipStore` 负责。所有原生界面文案集中在 `Localization.swift`，启动时读取 macOS 的首选语言列表，未匹配中文时使用 English。
+界面通过 `HistoryViewModel` 发起选择、置顶、删除，通过 `ClipStore` 查询和变更记录。状态层只发布状态和输入时序，不导入 SwiftUI、不调用动画；`Presentation/Animation` 根据时序选择阻尼，视图负责应用。数据库、剪贴板载荷、OCR 搜索索引和同步协议与视觉布局独立。
+
+图片纸签以完整缩略图为主体，保持长宽比，不用 OCR 替代图片。OCR 仍参与搜索；展开预览后才显示可选择的识别文字，图片区占有文字预览内容区约 61.8%。无缩略图时显示图片占位，不回退成 OCR 卡片。展开和收回沿用挂孔锚点、黄金矩形与可打断阻尼动画。
+
+预览的文件读取、降采样和缓存由 `Infrastructure/Media/PreviewMediaLoader` 承担，构造时传入当前数据目录；视图不引用 `ClipStore.shared`。服务只发出用户提示，由 `main.swift` 接到 Toast；HTTP 服务接收注入的网页内容，不导入页面布局。
+
+当前仍使用一个 SwiftPM executable target，避免为了目录调整引入分发变化。`python3 scripts/check_architecture.py` 检查依赖边界；以后改颜色、布局或动效应集中在 `Presentation`，不得让 `Domain`、`Application` 或 `Infrastructure` 反向依赖窗口和动画类型。`./scripts/test_tree_ui.sh` 会先执行此检查，再验证真实原生界面行为。
 
 自定义热键：改 `HotKeyManager.register(keyCode:carbonModifiers:)` 参数（kVK_ANSI_* + cmdKey/shiftKey/optionKey/controlKey）。

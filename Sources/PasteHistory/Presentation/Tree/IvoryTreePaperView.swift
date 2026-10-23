@@ -1,15 +1,5 @@
 import AppKit
 
-/// Shared by the hanging card, its expanded face and the moving paper.
-enum IvoryPaperStyle {
-    static let fill = NSColor(red: 0.94, green: 0.92, blue: 0.86, alpha: 1)
-    static let ink = NSColor(white: 0.16, alpha: 1)
-    static let meta = NSColor(white: 0.36, alpha: 1)
-    static let edge = NSColor(red: 0.66, green: 0.77, blue: 0.72, alpha: 1)
-    static let radius: CGFloat = 4
-    static let pinInset: CGFloat = 7
-}
-
 /// Screen-facing paper keeps the system font readable at every viewing angle.
 /// A paper's suspension point always comes from the corresponding 3D branch.
 final class IvoryTreePaperView: NSView {
@@ -124,7 +114,7 @@ final class IvoryTreePaperView: NSView {
     var cardFrames: [UUID: NSRect] {
         Dictionary(uniqueKeysWithValues: cards.map { ($0.entry.id, $0.rect) })
     }
-    var isTurningPage: Bool { CACurrentMediaTime() - turnStart < 0.28 }
+    var isTurningPage: Bool { CACurrentMediaTime() - turnStart < TreeMotion.pageDuration }
     override var isOpaque: Bool { false }
     override var isFlipped: Bool { true }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -153,7 +143,7 @@ final class IvoryTreePaperView: NSView {
     }
     func advance(attachments: [Attachment], sway: CGFloat, growth: CGFloat, dt: CGFloat) {
         let reduced = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        let blend = 1 - pow(0.62, dt * 60)
+        let blend = TreeMotion.followBlend(dt: dt)
         var next: [Card] = []
         var unsettled: CGFloat = 0
         let drops: [CGFloat] = [24, 33, 22, 37, 29, 21, 38, 26]
@@ -161,9 +151,10 @@ final class IvoryTreePaperView: NSView {
         for (slot, entry) in entries.enumerated() where slot < attachments.count {
             let a = attachments[slot]
             let width = min(IvoryTreeLayout.cardWidth, max(130, bounds.width * 0.32))
-            let target =
-                entry.id == selectedID ? IvoryTreeLayout.selectedHeight : IvoryTreeLayout.cardHeight
-            let old = heights[entry.id] ?? IvoryTreeLayout.cardHeight
+            let restingHeight = entry.imageFirst ? IvoryTreeLayout.imageCardHeight : IvoryTreeLayout.cardHeight
+            let expandedHeight = entry.imageFirst ? IvoryTreeLayout.selectedImageHeight : IvoryTreeLayout.selectedHeight
+            let target = entry.id == selectedID ? expandedHeight : restingHeight
+            let old = heights[entry.id] ?? restingHeight
             let height = reduced ? target : old + (target - old) * blend
             heights[entry.id] = height
             unsettled += abs(target - height)
@@ -202,7 +193,7 @@ final class IvoryTreePaperView: NSView {
                     + abs(old.height - target.height) + abs(selectionTilt - selected.tilt)
             }
         }
-        selectionFade = min(1, selectionFade + dt / 0.15)
+        selectionFade = min(1, selectionFade + dt / TreeMotion.fadeDuration)
         if !isTurningPage { outgoing.removeAll() }
         isAnimating = isTurningPage || unsettled > 0.05 || selectionFade < 1
         syncIslands()
@@ -212,9 +203,9 @@ final class IvoryTreePaperView: NSView {
         let elapsed = CGFloat(CACurrentMediaTime() - turnStart)
         let reduced = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         var result: [Card] = []
-        if elapsed < 0.14 {
+        if elapsed < TreeMotion.outgoingDuration {
             for var card in outgoing {
-                let p = min(1, elapsed / 0.14)
+                let p = min(1, elapsed / TreeMotion.outgoingDuration)
                 card.opacity *= 1 - p
                 if !reduced {
                     card.fold *= max(0.02, cos(p * .pi / 2))
@@ -224,8 +215,8 @@ final class IvoryTreePaperView: NSView {
             }
         }
         for (slot, var card) in cards.enumerated() {
-            let p = max(0, min(1, (elapsed - CGFloat(slot) * 0.006) / 0.23))
-            card.opacity *= reduced ? min(1, elapsed / 0.15) : p
+            let p = max(0, min(1, (elapsed - CGFloat(slot) * TreeMotion.pageStagger) / TreeMotion.incomingDuration))
+            card.opacity *= reduced ? min(1, elapsed / TreeMotion.fadeDuration) : p
             if !reduced && p < 1 {
                 card.fold = max(0.025, sin(p * .pi / 2))
                 card.tilt += turnDirection * 5 * sin(p * .pi)
@@ -262,7 +253,7 @@ final class IvoryTreePaperView: NSView {
            (window as? HistoryPanel)?.expandedPaperID != card.entry.id {
             context.saveGState()
             context.setAlpha(
-                min(1, CGFloat(CACurrentMediaTime() - turnStart) / 0.23) * card.opacity * selectionFade)
+                min(1, CGFloat(CACurrentMediaTime() - turnStart) / TreeMotion.incomingDuration) * card.opacity * selectionFade)
             transform(selectionRect, tilt: selectionTilt, fold: 1, context: context)
             IvoryPaperStyle.edge.setStroke()
             let border = NSBezierPath(roundedRect: selectionRect, xRadius: 5, yRadius: 5)
@@ -308,27 +299,24 @@ final class IvoryTreePaperView: NSView {
             withAttributes: metaAttributes)
         var body = NSRect(
             x: rect.minX + 10, y: rect.minY + 31, width: rect.width - 20, height: rect.height - 37)
-        if let image = images[card.entry.id] {
-            let thumb = NSRect(x: rect.maxX - 54, y: body.minY, width: 44, height: min(52, body.height))
-            let ratio = min(
-                thumb.width / max(1, image.size.width), thumb.height / max(1, image.size.height))
-            let size = NSSize(width: image.size.width * ratio, height: image.size.height * ratio)
-            image.draw(
-                in: NSRect(
-                    x: thumb.midX - size.width / 2, y: thumb.midY - size.height / 2, width: size.width,
-                    height: size.height), from: .zero, operation: .sourceOver, fraction: 1,
-                respectFlipped: true, hints: nil)
-            body.size.width -= 51
-        }
         if selected && !card.entry.date.isEmpty { body.size.height -= 15 }
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineBreakMode = .byWordWrapping
-        (String(card.entry.title.prefix(500)) as NSString).draw(
-            with: body, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
-            attributes: [
-                .font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor(white: 0.16, alpha: 1),
-                .paragraphStyle: paragraph,
-            ])
+        if card.entry.imageFirst {
+            // The photograph owns the paper body. OCR is reserved for preview.
+            if let image = images[card.entry.id] {
+                drawImage(image, in: body)
+            } else if let placeholder = NSImage(systemSymbolName: "photo", accessibilityDescription: nil) {
+                drawImage(placeholder, in: NSRect(x: body.midX - 13, y: body.midY - 13, width: 26, height: 26))
+            }
+        } else {
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.lineBreakMode = .byWordWrapping
+            (String(card.entry.title.prefix(500)) as NSString).draw(
+                with: body, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: 13), .foregroundColor: IvoryPaperStyle.ink,
+                    .paragraphStyle: paragraph,
+                ])
+        }
         if selected && !card.entry.date.isEmpty {
             (card.entry.date as NSString).draw(
                 in: NSRect(x: rect.minX + 10, y: rect.maxY - 19, width: rect.width - 20, height: 14),
@@ -337,10 +325,18 @@ final class IvoryTreePaperView: NSView {
                 ])
         }
     }
+    private func drawImage(_ image: NSImage, in bounds: NSRect) {
+        let ratio = min(bounds.width / max(1, image.size.width), bounds.height / max(1, image.size.height))
+        let size = NSSize(width: image.size.width * ratio, height: image.size.height * ratio)
+        image.draw(in: NSRect(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2,
+                              width: size.width, height: size.height),
+                   from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+    }
+
     func entryID(at point: NSPoint) -> UUID? {
         // Do not let a click on a departing title activate the incoming record.
         // Keyboard selection/paste still takes effect immediately through the model.
-        guard CACurrentMediaTime() - turnStart >= 0.14 else { return nil }
+        guard CACurrentMediaTime() - turnStart >= Double(TreeMotion.outgoingDuration) else { return nil }
         let ordered = Array(visuals().suffix(cards.count)).sorted {
             ($0.entry.id == selectedID ? 1 : 0) < ($1.entry.id == selectedID ? 1 : 0)
         }

@@ -1,11 +1,12 @@
 #!/bin/zsh
 set -euo pipefail
 cd "$(dirname "$0")/.."
+python3 scripts/check_architecture.py
 swift build > .build/tree-ui-build.log 2>&1
 BIN_DIR=$(swift build --show-bin-path)
 APP=.build/IvoryTreePreview.app
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-SOURCES=(Sources/PasteHistory/*.swift)
+SOURCES=(Sources/PasteHistory/**/*.swift)
 SOURCES=("${(@)SOURCES:#Sources/PasteHistory/main.swift}")
 swiftc -swift-version 5 -parse-as-library "${SOURCES[@]}" \
   "$BIN_DIR/PasteHistory.build/DerivedSources/resource_bundle_accessor.swift" scripts/test_tree_ui.swift \

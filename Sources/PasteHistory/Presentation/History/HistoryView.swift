@@ -52,12 +52,13 @@ struct HistoryView: View {
     /// 由 PanelController 持有并传入：预览大窗要跟着选中条目联动，
     /// 共享同一个 ViewModel 比通知转发少一层状态
     @ObservedObject private var model: HistoryViewModel
+    @ObservedObject private var presentationState: HistoryPresentationState
     @FocusState private var searchFocused: Bool
     @Namespace private var selectionSpace
     /// 边界橡皮筋：撞到顶/底时整片内容纵向下沉一下再弹回
     @State private var bounce: CGFloat = 0
     @State private var treeRoot = CGPoint.zero
-    private var layoutEditing: Bool { model.treeLayoutEditing }
+    private var layoutEditing: Bool { presentationState.treeLayoutEditing }
     @AppStorage("showDesktopTree") private var showTree = true
 
     var onPaste: (ClipItem) -> Void
@@ -68,6 +69,7 @@ struct HistoryView: View {
 
     init(store: ClipStore,
          model: HistoryViewModel,
+         presentation: HistoryPresentationState = HistoryPresentationState(),
          onPaste: @escaping (ClipItem) -> Void,
          onCopyOnly: @escaping (ClipItem) -> Void,
          onClose: @escaping () -> Void,
@@ -75,6 +77,7 @@ struct HistoryView: View {
          onTreeModeChanged: @escaping (Bool) -> Void = { _ in }) {
         self.store = store
         self.model = model
+        self.presentationState = presentation
         self.onPaste = onPaste
         self.onCopyOnly = onCopyOnly
         self.onClose = onClose
@@ -115,7 +118,7 @@ struct HistoryView: View {
 
     var body: some View {
         presentation
-        .onChange(of: model.treeLayoutEditing) { _, editing in
+        .onChange(of: presentationState.treeLayoutEditing) { _, editing in
             if !editing { searchFocused = true }
         }
         .onReceive(NotificationCenter.default.publisher(for: .phMoveDown)) { _ in model.move(1) }
@@ -291,6 +294,7 @@ struct HistoryView: View {
                         }
                     }
                 }
+                .animation(model.selectionAnimation, value: safeSelection)
                 .padding(Spec.listPadding)
                 // 橡皮筋位移放在内容上、不放在 ScrollView 上：
                 // 放 ScrollView 会把滚动条一起推出去，看着像整个面板在晃
@@ -300,9 +304,7 @@ struct HistoryView: View {
                 guard newValue < results.count else { return }
                 // 不带 anchor：只滚最小位移。anchor: .center 每按一次都把行拉到正中，
                 // 整片列表跟着滑——那是「抖」的根源
-                let anim = Date().timeIntervalSince(model.lastMoveAt) < Motion.repeatThreshold
-                    ? Motion.selectionFast
-                    : Motion.selection
+                let anim = model.selectionAnimation
                 withAnimation(anim) { proxy.scrollTo(results[newValue].id) }
             }
             .onChange(of: model.presentationTick) { _, _ in
@@ -537,7 +539,7 @@ struct RowView: View {
 
     /// 摘要里高亮搜索命中
     private var summary: AttributedString {
-        var attr = AttributedString(item.summary)
+        var attr = AttributedString(ClipPresentation(item: item).compactTitle)
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return attr }
         var searchRange = attr.startIndex..<attr.endIndex

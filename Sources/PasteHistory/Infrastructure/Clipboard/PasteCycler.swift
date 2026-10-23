@@ -76,7 +76,7 @@ final class PasteCycler {
     private func begin() {
         items = ClipStore.shared.recent(limit)
         guard !items.isEmpty else {
-            Toast.show(L10n.noClipboardHistory)
+            UserFeedback.show(L10n.noClipboardHistory)
             return
         }
         index = 0
@@ -96,12 +96,12 @@ final class PasteCycler {
         NotificationCenter.default.post(name: .pasteHistoryDidWritePasteboard, object: nil)
 
         guard Settings.shared.autoPaste else {
-            Toast.show(L10n.pasteToClipboard)
+            UserFeedback.show(L10n.pasteToClipboard)
             end()
             return
         }
         guard PasteService.isTrusted() else {
-            Toast.show(L10n.pasteToClipboard, duration: 3)
+            UserFeedback.show(L10n.pasteToClipboard, duration: 3)
             end()
             return
         }

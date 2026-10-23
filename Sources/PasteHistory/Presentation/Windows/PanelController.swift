@@ -32,7 +32,8 @@ final class PanelController: NSObject, NSWindowDelegate {
     private var outsideMouseMonitor: Any?
     private var activationObserver: Any?
     private var layoutObservers: [NSObjectProtocol] = []
-    var layoutEditing: Bool { panelModel.treeLayoutEditing }
+    private let presentation = HistoryPresentationState()
+    var layoutEditing: Bool { presentation.treeLayoutEditing }
     private var keyboardState = HistoryKeyboardState()
     private var previousApp: NSRunningApplication?
     /// 唤起面板前系统里聚焦的那个输入框，粘贴后要把焦点还回去
@@ -207,6 +208,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         let view = HistoryView(
             store: store,
             model: panelModel,
+            presentation: presentation,
             onPaste: pasteHandler,
             onCopyOnly: { [weak self] item in
                 guard let self else { return }
@@ -293,13 +295,13 @@ final class PanelController: NSObject, NSWindowDelegate {
         if !isTreePresentation { Self.post(.phToggleTree) }
         preview.closeImmediately()
         panel?.makeKey()
-        panelModel.treeLayoutEditing = true
+        presentation.treeLayoutEditing = true
         panel?.layoutEditing = true
     }
     func endTreeLayout() {
         guard layoutEditing else { return }
         if isVisible { panel?.makeKey() }
-        panelModel.treeLayoutEditing = false
+        presentation.treeLayoutEditing = false
         panel?.layoutEditing = false
         DispatchQueue.main.async { [weak self] in
             guard let self, self.isVisible, !self.layoutEditing else { return }
@@ -458,31 +460,7 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     // MARK: - 定位日志
 
-    /// 真机验收只有日志能说清「没贴过去」到底是没拿到输入框还是位置算错，
-    /// 所以默认就落盘（一次一行，超过 200KB 就整体重写，不会无限涨）。
-    private static let traceURL: URL? = {
-        let dir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/PasteHistory")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("anchor_trace.log")
-    }()
-
-    private func trace(_ line: String) {
-        guard let url = Self.traceURL else { return }
-        let row = Data(String(format: "%.3f %@\n", Date().timeIntervalSince1970, line).utf8)
-        let fm = FileManager.default
-        let tooBig = ((try? fm.attributesOfItem(atPath: url.path))?[.size] as? NSNumber)?.intValue ?? 0 > 200_000
-        if !tooBig, let handle = try? FileHandle(forWritingTo: url) {
-            handle.seekToEndOfFile()
-            handle.write(row)
-            try? handle.close()
-        } else {
-            try? row.write(to: url)
-        }
-        if ProcessInfo.processInfo.arguments.contains("--trace-anchor") {
-            NSLog("[PH] anchor: %@", line)
-        }
-    }
+    private func trace(_ line: String) { AnchorTrace.write(line) }
 
     private static func fmt(_ rect: CGRect?) -> String {
         guard let r = rect else { return "nil" }

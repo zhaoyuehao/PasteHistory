@@ -11,11 +11,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        UserFeedback.present = { message, duration in Toast.show(message, duration: duration) }
         NSApp.setActivationPolicy(.accessory)
 
         AppTracker.start()
         monitor.start()
         iCloudSync.shared.start()
+        WebSyncServer.shared.configurePage(html: WebSyncPage.html)
         WebSyncServer.shared.start()
         if Settings.shared.hotKeyEnabled {
             hotKey.register(id: 1, keyCode: kVK_ANSI_C, carbonModifiers: cmdKey | shiftKey) { [weak self] in

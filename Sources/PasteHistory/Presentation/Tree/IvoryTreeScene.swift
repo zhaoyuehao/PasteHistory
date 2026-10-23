@@ -6,6 +6,8 @@ enum IvoryTreeLayout {
     static let cardWidth: CGFloat = 158
     static let cardHeight: CGFloat = 74
     static let selectedHeight: CGFloat = 112
+    static let imageCardHeight: CGFloat = 98
+    static let selectedImageHeight: CGFloat = 128
 }
 
 struct IvoryTreeEntry: Equatable {
@@ -16,6 +18,7 @@ struct IvoryTreeEntry: Equatable {
     var date: String = ""
     var pinned: Bool = false
     var thumbnail: Data? = nil
+    var imageFirst: Bool = false
 }
 
 /// The sculpture is native geometry. Readable paper billboards follow actual mesh
@@ -281,7 +284,7 @@ final class IvoryTreeSceneView: SCNView {
         advance(&pitch, &pitchVelocity, targetPitch)
         sway = reduced ? 0 : (sway - yawVelocity * 28) * pow(0.84, steps)
         applyRotation()
-        growthProgress = min(1, CGFloat((now - appearedAt) / (reduced ? 0.12 : 0.22)))
+        growthProgress = min(1, CGFloat((now - appearedAt) / (reduced ? 0.12 : TreeMotion.growthDuration)))
         let height: Float = reduced ? 12 : Float(10 * (1 - pow(1 - growthProgress, 2)))
         let opacity: CGFloat = reduced ? growthProgress : 1
         if height != appliedGrowthHeight || sculpture.opacity != opacity {

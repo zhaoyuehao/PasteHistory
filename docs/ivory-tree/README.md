@@ -3,6 +3,7 @@
 默认按 `⇧⌘C` 唤起透明、无边框的桌面许愿树。树体和树根的搜索悬签直接浮在桌面上，没有灰色背景、大标题、说明文字或底部工具栏。`⌘L` 切回列表，记住上次选择。列表与树共用排序、搜索结果和选中记录。
 
 - 树的视角固定，日常模式不可移动或缩放。菜单栏“调整树布局…”或 ⇧⌘M 进入独立模式，只有专用把手能移动树；小／标准／大三档尺寸，⌘R 复位，完成或 Esc 退出。每次重新唤起都恢复日常模式。
+- 图片纸签优先展示完整缩略图，OCR 仅用于搜索和展开后的文字详情；无图时保留图片占位。
 - 每页显示 8 张枝头纸签。直接输入搜索，↑↓ 选记录，空格预览，回车粘贴。Page Up / Page Down（fn↑ / fn↓）翻组，⌘C 复制、⌘P 置顶、⌘⌫ 删除。搜索输入和页数收在树根悬签中，无横向搜索条、工具按钮或操作菜单。
 - 树模式下，输入搜索词后直接按空格即可预览；Shift＋空格在搜索词里输入空格。中文输入法组词时，空格、方向键和回车交给输入法。⌘Y 随时预览。
 - `↑` / `↓`、回车、`⌘C`、`⌘1–9`、空格 / `⌘Y` 沿用面板的快捷键；接近加载边界时继续读取历史记录。
@@ -56,14 +57,14 @@
 在已登录图形桌面的 macOS 上执行：
 
 ```sh
-swiftc Sources/PasteHistory/IvoryTreeScene.swift Sources/PasteHistory/IvoryTreePaperView.swift Sources/PasteHistory/HistoryPanel.swift Sources/PasteHistory/TreeInteraction.swift scripts/test_ivory_tree.swift \
+swiftc Sources/PasteHistory/Presentation/Tree/IvoryTreeScene.swift Sources/PasteHistory/Presentation/Tree/IvoryTreePaperView.swift Sources/PasteHistory/Presentation/Windows/HistoryPanel.swift Sources/PasteHistory/Presentation/Tree/TreeInteraction.swift Sources/PasteHistory/Presentation/Style/IvoryPaperStyle.swift Sources/PasteHistory/Presentation/Animation/TreeMotion.swift scripts/test_ivory_tree.swift \
   -o .build/tree-smoke -framework AppKit -framework SceneKit
 .build/tree-smoke Sources/PasteHistory/Resources/ivory_tree.scn .build/ivory-preview
 ./scripts/test_tree_ui.sh
 ./scripts/build_app.sh
 ```
 
-几何冒烟验证五只鸟、实际纵深、生长前后实际像素差异、纸签命中、装饰树忽略普通及 Option 拖动、连续翻页中断及空结果；UI 冒烟使用真实视图、ViewModel 和临时 SQLite 数据库，验证切换、共用选中项、复制/粘贴回调、置顶/取消置顶、删除、图片缩略图、跨组选择、分页加载、空搜索、实际搜索筛选、无边框窗口的键盘焦点、窗口和视图透明度及紧凑布局、受限输入窗口、布局模式的独立拖动与尺寸档位、关闭后无残留窗口；还验证真实 PanelController 中的筛选后鼠标命中、空格预览、方向键切换、Esc 收起和十万字文本连续切换。另验证隔离拖放剪贴板中的多行文字、PNG/导出 URL、多文件、缺失文件拒绝，以及挂孔定位、同款纸色、黄金比例及小屏等比缩放、实际窗口轻微回弹与落定、长文本导航尺寸稳定、从纸签出发的中间帧和快速开合后无残留过渡窗口。不会读取用户历史或写入系统剪贴板。`./scripts/test_tree_ui.sh --interactive` 留下独立演示窗口。
+几何冒烟验证五只鸟、实际纵深、生长前后实际像素差异、纸签命中、装饰树忽略普通及 Option 拖动、连续翻页中断及空结果；UI 冒烟使用真实视图、ViewModel 和临时 SQLite 数据库，验证切换、共用选中项、复制/粘贴回调、置顶/取消置顶、删除、图片缩略图、跨组选择、分页加载、空搜索、实际搜索筛选、无边框窗口的键盘焦点、窗口和视图透明度及紧凑布局、受限输入窗口、布局模式的独立拖动与尺寸档位、关闭后无残留窗口；还验证真实 PanelController 中的筛选后鼠标命中、空格预览、方向键切换、Esc 收起和十万字文本连续切换。另验证隔离拖放剪贴板中的多行文字、PNG/导出 URL、多文件、缺失文件拒绝，以及挂孔定位、同款纸色、黄金比例及小屏等比缩放、实际窗口轻微回弹与落定、长文本导航尺寸稳定、从纸签出发的中间帧和快速开合后无残留过渡窗口。同时验证 OCR 搜索仍命中图片、图片占据纸签主体像素、展开后 OCR 可选择，以及预览服务读取注入的测试目录。不会读取用户历史或写入系统剪贴板。`./scripts/test_tree_ui.sh --interactive` 留下独立演示窗口。
 
 系统输入框的最终回写沿用现有 PasteService；上述冒烟只验证回调路由，不模拟向其他应用粘贴。
 

@@ -343,6 +343,63 @@ struct TreeUISmoke {
         precondition(controller.previewPaper?.alphaValue == 1, "Closing restores the hanging paper")
         precondition(!controller.isPreviewVisible && controller.isVisible,
                      "Esc must close only preview: preview=\(controller.isPreviewVisible), tree=\(controller.isVisible)")
+        // Image content remains searchable by OCR, but the hanging paper is a
+        // photograph. Inspect actual rendered pixels and native preview text.
+        let recognizedText = "OCR-only-fixture 识别内容：枝头图片优先，文字在展开后阅读。"
+        let imageRecord = ClipItem(kind: .image, imageFile: savedImage.name,
+            sourceApp: "Image regression", thumbnailData: thumbnail, ocrText: recognizedText)
+        store.syncDatabase.upsert(imageRecord)
+        store.query = "OCR-only-fixture"
+        run(0.7)
+        precondition(controller.panelModel.results.map(\.id) == [imageRecord.id], "OCR search remains a data operation")
+        let imageEntry = IvoryTreeEntry(item: imageRecord, index: 0)
+        precondition(imageEntry.imageFirst && imageEntry.title == L10n.image,
+                     "Compact image presentation must not substitute OCR for pixels")
+        let imagePaper = controller.previewPaper!.contentView as! TreePaperSurface
+        let imageBitmap = NSBitmapImageRep(data: imagePaper.paperImage().tiffRepresentation!)!
+        try imageBitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: ".build/image-first-card.png"))
+        let sourceColor = NSBitmapImageRep(data: thumbnail)!.colorAt(x: 5, y: 5)!.usingColorSpace(.deviceRGB)!
+        var photoPixels = 0
+        for y in 0..<imageBitmap.pixelsHigh {
+            for x in 0..<imageBitmap.pixelsWide {
+                guard let color = imageBitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
+                if color.alphaComponent > 0.9 && abs(color.redComponent - sourceColor.redComponent) < 0.035
+                    && abs(color.greenComponent - sourceColor.greenComponent) < 0.035 && abs(color.blueComponent - sourceColor.blueComponent) < 0.035 {
+                    photoPixels += 1
+                }
+            }
+        }
+        print("Photo pixel fraction: \(Double(photoPixels) / Double(imageBitmap.pixelsWide * imageBitmap.pixelsHigh))")
+        precondition(Double(photoPixels) / Double(imageBitmap.pixelsWide * imageBitmap.pixelsHigh) > 0.16,
+                     "Image pixels must occupy the paper body, not a small side thumbnail")
+        try imageBitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: ".build/image-first-card.png"))
+        _ = key(49, chars: " ")
+        run(0.5)
+        func textViews(in view: NSView) -> [NSTextView] {
+            (view as? NSTextView).map { [$0] } ?? view.subviews.flatMap { textViews(in: $0) }
+        }
+        let imagePreview = NSApp.windows.first { $0.isVisible && $0.title == L10n.previewTitle }!
+        precondition(textViews(in: imagePreview.contentView!).contains { $0.isSelectable && $0.string.contains(recognizedText) },
+                     "Expanded image preview must expose selectable OCR text")
+        let imageFace = imagePreview.contentView!
+        let imageFaceBitmap = imageFace.bitmapImageRepForCachingDisplay(in: imageFace.bounds)!
+        imageFace.cacheDisplay(in: imageFace.bounds, to: imageFaceBitmap)
+        try imageFaceBitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: ".build/image-first-preview.png"))
+        let loader = PreviewMediaLoader(imagesDirectory: store.imagesDirectory)
+        var loaded: PreviewMediaLoader.Asset?
+        var fileMetadata: FileMetadata?
+        Task {
+            loaded = await loader.load(loader.url(for: imageRecord)!, maxPixel: 640)
+            fileMetadata = await FileMetadata.read(path: fileA.path)
+        }
+        run(0.5)
+        precondition(loaded?.image != nil && loaded?.pixels == CGSize(width: NSBitmapImageRep(data: thumbnail)!.pixelsWide, height: NSBitmapImageRep(data: thumbnail)!.pixelsHigh),
+                     "Preview loader must read the injected store, not the user's global history")
+        precondition(fileMetadata?.exists == true && fileMetadata?.bytes == 1, "File preview metadata must come from the filesystem service")
+        _ = key(53)
+        run(0.2)
+        store.query = "设计"
+        run(0.7)
         // A rejected/missing payload cancels the click and never moves the tree.
         let prepareDrag = treeWindow.prepareDrag
         treeWindow.prepareDrag = { _ in { nil } }
