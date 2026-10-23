@@ -15,6 +15,25 @@ struct TreeUISmoke {
         let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
             "ivory-ui-" + UUID().uuidString)
         let store = ClipStore(directory: temporary)
+        // Round-trip the actual drag writers through an isolated pasteboard.
+        let dragBoard = NSPasteboard.withUniqueName()
+        defer { dragBoard.releaseGlobally() }
+        func roundTrip(_ item: ClipItem) -> [NSPasteboardItem] {
+            dragBoard.clearContents()
+            guard let writers = ClipDragPayload.writers(for: item, imagesDirectory: store.imagesDirectory) else { preconditionFailure("Missing drag payload") }
+            precondition(dragBoard.writeObjects(writers))
+            return dragBoard.pasteboardItems!
+        }
+        let dragText = "Native drag test — 中文\nsecond line"
+        precondition(roundTrip(ClipItem(kind: .text, text: dragText))[0].string(forType: .string) == dragText)
+        let fileA = temporary.appendingPathComponent("first file.txt")
+        let fileB = temporary.appendingPathComponent("第二份.txt")
+        try Data("A".utf8).write(to: fileA)
+        try Data("B".utf8).write(to: fileB)
+        let draggedFiles = roundTrip(ClipItem(kind: .files, filePaths: [fileA.path, fileB.path]))
+        precondition(draggedFiles.count == 2)
+        precondition(draggedFiles.compactMap { $0.string(forType: .fileURL).flatMap(URL.init(string:)) } == [fileA, fileB])
+        precondition(ClipDragPayload.writers(for: ClipItem(kind: .files, filePaths: [fileA.path, "/missing-drag-file"]), imagesDirectory: store.imagesDirectory) == nil)
         let sampleImage = NSImage(size: NSSize(width: 80, height: 60))
         sampleImage.lockFocus()
         NSColor(red: 0.6, green: 0.7, blue: 0.65, alpha: 1).setFill()
@@ -24,6 +43,12 @@ struct TreeUISmoke {
         sampleImage.unlockFocus()
         let thumbnail = NSBitmapImageRep(data: sampleImage.tiffRepresentation!)!
             .representation(using: .png, properties: [:])!
+        let savedImage = store.saveImage(sampleImage)!
+        let draggedImage = roundTrip(ClipItem(kind: .image, text: "image caption", imageFile: savedImage.name))[0]
+        precondition(draggedImage.data(forType: .png) == (try! Data(contentsOf: store.imagesDirectory.appendingPathComponent(savedImage.name))))
+        let exportedImage = URL(string: draggedImage.string(forType: .fileURL)!)!
+        precondition(FileManager.default.fileExists(atPath: exportedImage.path))
+        precondition(draggedImage.string(forType: .string) == "image caption")
         for index in 0..<72 {
             let titles = [
                 "记下灵感，让它生长。纸签系在真实的枝头，保留分枝之间的空隙。",
@@ -34,11 +59,47 @@ struct TreeUISmoke {
             store.syncDatabase.upsert(
                 ClipItem(
                     kind: index % 6 == 5 ? .image : .text, text: titles[index % 6] + " · \(index+1)",
+                    imageFile: index % 6 == 5 ? savedImage.name : nil,
                     sourceApp: ["备忘录", "Safari", "微信", "Obsidian", "访达", "邮件"][index % 6],
                     createdAt: Date().addingTimeInterval(Double(-index)),
                     thumbnailData: index % 6 == 5 ? thumbnail : nil))
         }
         store.refresh()
+        if CommandLine.arguments.contains("--drag-interactive") {
+            let date = Date()
+            store.syncDatabase.upsert(ClipItem(kind: .text, text: "Drag fixture: 中文 text\nsecond line", createdAt: date))
+            store.syncDatabase.upsert(ClipItem(kind: .image, text: "Drag fixture: image", imageFile: savedImage.name, createdAt: date.addingTimeInterval(-0.01), thumbnailData: thumbnail))
+            store.syncDatabase.upsert(ClipItem(kind: .files, filePaths: [fileA.path, fileB.path], sourceApp: "Drag fixture: files", createdAt: date.addingTimeInterval(-0.02)))
+            store.refresh()
+            let controller = PanelController(store: store)
+            let delegate = TreeHarnessDelegate(controller: controller)
+            app.delegate = delegate
+            controller.show()
+            store.query = "Drag fixture"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                let index = CommandLine.arguments.contains("--drag-image") ? 1 : (CommandLine.arguments.contains("--drag-files") ? 2 : 0)
+                controller.panelModel.select(index)
+                guard let tree = NSApp.windows.first(where: { $0 is HistoryPanel && $0.isVisible }) as? HistoryPanel,
+                      let item = controller.panelModel.current,
+                      let original = tree.paper(for: item.id)?.contentView as? TreePaperSurface else { return }
+                // A key-capable fixture lets native automation bind the actual
+                // production drag source, independently of the tiny search window.
+                let fixture = TreeInteractionPanel(owner: tree, role: .layout)
+                fixture.title = "拖放测试纸签"
+                let view = TreePaperSurface()
+                view.recordID = item.id
+                view.paint = original.paint
+                view.setAccessibilityLabel(item.summary)
+                fixture.contentView = view
+                let screen = NSScreen.screens.first!.visibleFrame
+                fixture.setFrame(NSRect(x: screen.minX + 150, y: screen.midY, width: original.bounds.width, height: original.bounds.height), display: true)
+                tree.showIslandIfNeeded(fixture)
+                fixture.makeKey()
+                delegate.inspectionWindow = fixture
+            }
+            withExtendedLifetime(delegate) { app.run() }
+            return
+        }
         let model = HistoryViewModel(store: store)
         var copied: UUID?
         var pasted: UUID?
@@ -184,7 +245,21 @@ struct TreeUISmoke {
         precondition(controller.panelModel.current?.id == clickedID, "Filtered paper click must select")
         _ = key(49, chars: " ")
         run(0.2)
+        precondition(controller.isPreviewVisible, "Preview missing: tree visible=\(controller.isVisible), front=\(NSWorkspace.shared.frontmostApplication?.localizedName ?? "nil")")
+        _ = key(49, chars: " ")
+        run(0.25)
+        let sourcePaper = controller.previewPaper!.frame
+        _ = key(49, chars: " ")
+        let openingSheet = NSApp.windows.first { $0.isVisible && $0.title == "纸签预览过渡" }!
+        precondition(openingSheet.frame == sourcePaper, "Preview must start at the selected paper, not the whole tree")
+        run(0.07)
+        precondition(openingSheet.frame.width > sourcePaper.width, "Paper must visibly grow toward preview")
+        _ = key(49, chars: " ") // interrupt opening with close
+        run(0.04)
+        _ = key(49, chars: " ") // reopen during return flight
+        run(0.3)
         precondition(controller.isPreviewVisible)
+        precondition(!NSApp.windows.contains { $0.isVisible && $0.title == "纸签预览过渡" }, "No stale flight may survive rapid toggling")
         // A realistic long clip exercises the native, non-contiguous text layout.
         let longText = String(repeating: "设计：长文本预览应按可见段落排版，方向键直接切换。\n", count: 4000)
         store.syncDatabase.upsert(ClipItem(kind: .text, text: longText, sourceApp: "Regression"))
@@ -207,7 +282,9 @@ struct TreeUISmoke {
         run(0.2)
         precondition(!controller.isPreviewVisible && controller.isVisible,
                      "Esc must close only preview: preview=\(controller.isPreviewVisible), tree=\(controller.isVisible)")
-        // Dragging a paper is reserved; it cannot move/rotate the tree or paste.
+        // A rejected/missing payload cancels the click and never moves the tree.
+        let prepareDrag = treeWindow.prepareDrag
+        treeWindow.prepareDrag = { _ in { nil } }
         let originalFrame = treeWindow.frame
         let originalRotation = liveScene.scene!.rootNode.childNodes[0].eulerAngles
         let currentPaper = treeWindow.islands.first { $0.role == .paper }!.contentView as! TreePaperSurface
@@ -218,6 +295,26 @@ struct TreeUISmoke {
         currentPaper.mouseUp(with: mouse(.leftMouseUp, view: currentPaper, point: moved))
         run(0.1)
         precondition(treeWindow.frame == originalFrame)
+        treeWindow.prepareDrag = prepareDrag
+        // Freeze the source while the native session owns it. A result refresh
+        // during dragging must be reconciled even after rendering has settled.
+        let beforeDrag = Set(treeWindow.islands.compactMap { ($0.contentView as? TreePaperSurface)?.recordID })
+        treeWindow.dragInProgress = true
+        treeWindow.onDragBegan?()
+        controller.hide(restoreFocus: false)
+        precondition(controller.isVisible, "External activation cannot destroy an active native drag")
+        precondition(key(53) != nil && key(36) != nil, "Drag tracking owns Escape and Return")
+        store.query = "A quieter"
+        run(0.6)
+        precondition(Set(treeWindow.islands.compactMap { ($0.contentView as? TreePaperSurface)?.recordID }) == beforeDrag)
+        treeWindow.finishPaperDrag(operation: .copy)
+        run(0.25)
+        precondition(!controller.isVisible, "Accepted drop dismisses tree without reactivating a previous app")
+        store.query = "设计"
+        controller.show()
+        run(0.5)
+        let visibleIDs = Set(treeWindow.islands.compactMap { ($0.contentView as? TreePaperSurface)?.recordID })
+        precondition(visibleIDs.isSubset(of: Set(controller.panelModel.results.map(\.id))), "No stale cards after drag refresh")
         precondition(liveScene.scene!.rootNode.childNodes[0].eulerAngles.y == originalRotation.y)
         controller.beginTreeLayout()
         run(0.4)
@@ -277,7 +374,7 @@ struct TreeUISmoke {
         let bitmap = NSBitmapImageRep(data: rendered.tiffRepresentation!)!
         try bitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: ".build/tree-boundary-preview.png"))
         print(
-            "PASS: borderless transparent key window, filtered search, packaged resource, shared selection/copy/paste/pin/delete, list/tree toggle, page selection, lazy loading, empty search, query reset, compact panel, OS click-through, bounded paper/search windows, reserved paper drag, explicit move/size mode, clean dismissal"
+            "PASS: borderless transparent key window, filtered search, packaged resource, shared selection/copy/paste/pin/delete, list/tree toggle, page selection, lazy loading, empty search, query reset, compact panel, OS click-through, bounded paper/search windows, drag payload round trips, paper-origin preview and interruptible return, explicit move/size mode, clean dismissal"
         )
         fflush(stdout)
         if CommandLine.arguments.contains("--interactive") {
@@ -294,8 +391,13 @@ struct TreeUISmoke {
 
 @MainActor final class TreeHarnessDelegate: NSObject, NSApplicationDelegate {
     let controller: PanelController
+    var inspectionWindow: TreeInteractionPanel?
     init(controller: PanelController) { self.controller = controller }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        controller.show(); return true
+        controller.show()
+        if let inspectionWindow {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { inspectionWindow.orderFrontRegardless(); inspectionWindow.makeKey() }
+        }
+        return true
     }
 }

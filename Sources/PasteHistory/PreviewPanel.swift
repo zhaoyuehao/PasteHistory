@@ -38,6 +38,9 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     /// 程序化 setFrame 不经过 live resize，关窗缩回锚点不会污染它
     private var previewSize = NSSize(width: Preview.width, height: Preview.height)
     private var sink: Any?
+    private let paperFlight = PaperPreviewFlight()
+    private var previewedID: UUID?
+    private var paperReturnFrame: NSRect?
 
     var window: NSPanel? { panel }
     var isVisible: Bool { (panel?.isVisible ?? false) && !isClosing }
@@ -63,6 +66,11 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         guard let panel else { return }
         closeGeneration += 1
         isClosing = false
+        panel.ignoresMouseEvents = false
+        if owner?.previewBesideTree == true {
+            openFromPaper(panel)
+            return
+        }
 
         // 出现：从面板的几何长出来，就地把面板放大成预览——视线零移动。
         // （侧边落位会把视线拽到面板旁边，用户明确不要）
@@ -100,6 +108,10 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         closeGeneration += 1
         let generation = closeGeneration
         isClosing = true
+        if owner?.previewBesideTree == true {
+            closeToPaper(panel)
+            return
+        }
         // 预览窗可能因为点选文字拿到过键盘焦点：关窗前还给面板，
         // 否则面板看着开着、却没有键窗口，按键全部落空
         if panel.isKeyWindow, let owner, owner.previewAnchorVisible {
@@ -128,6 +140,65 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
                 self.isClosing = false
             }
         }
+    }
+
+    /// Animate a lightweight paper snapshot, not a resizing text layout. The
+    /// actual preview stays at its final size; arrow navigation never queues flights.
+    private func openFromPaper(_ panel: NSPanel) {
+        let target = targetFrame()
+        let paper = owner?.previewPaper
+        let origin = paperFlight.visibleFrame ?? paper?.frame ?? paperReturnFrame ?? target
+        let image = (paper?.contentView as? TreePaperSurface)?.paperImage()
+        previewedID = model.current?.id
+        paperReturnFrame = paper?.frame
+        panel.setFrame(target, display: false)
+        panel.alphaValue = 0
+        panel.ignoresMouseEvents = true
+        panel.orderFrontRegardless()
+        paperFlight.animate(from: Motion.reduceMotion ? target : origin, to: target,
+                            image: image, duration: Motion.reduceMotion ? 0.12 : 0.22,
+                            opening: true) { [weak panel] progress in
+            panel?.alphaValue = max(0, (progress - 0.45) / 0.55)
+        } completion: { [weak panel] in
+            panel?.alphaValue = 1
+            panel?.ignoresMouseEvents = false
+        }
+    }
+
+    private func closeToPaper(_ panel: NSPanel) {
+        if panel.isKeyWindow, owner?.previewAnchorVisible == true { owner?.makePanelKeyAgain() }
+        let origin = paperFlight.visibleFrame ?? panel.frame
+        let image = paperFlight.visibleImage ?? snapshot(panel.contentView)
+        let destination = owner?.previewPaper?.frame ?? paperReturnFrame ?? panel.frame
+        let paper = (owner?.previewPaper?.contentView as? TreePaperSurface)?.paperImage()
+        panel.ignoresMouseEvents = true
+        panel.alphaValue = 0
+        paperFlight.animate(from: origin, to: Motion.reduceMotion ? origin : destination,
+                            image: image, endImage: paper, duration: Motion.reduceMotion ? 0.1 : 0.17,
+                            opening: false, progress: { _ in }) { [weak self] in
+            guard let self else { return }
+            self.panel?.orderOut(nil)
+            self.panel?.alphaValue = 1
+            self.panel?.ignoresMouseEvents = false
+            self.isClosing = false
+        }
+    }
+
+    private func snapshot(_ view: NSView?) -> NSImage? {
+        guard let view, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        let image = NSImage(size: view.bounds.size)
+        image.addRepresentation(rep)
+        return image
+    }
+
+    func closeImmediately() {
+        closeGeneration += 1
+        paperFlight.cancel()
+        panel?.orderOut(nil)
+        panel?.alphaValue = 1
+        panel?.ignoresMouseEvents = false
+        isClosing = false
     }
 
     // MARK: - 构建
@@ -206,6 +277,16 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     // MARK: - 跟随列表
 
     private func syncAfterModelChange() {
+        if isVisible, previewedID != model.current?.id {
+            previewedID = model.current?.id
+            paperReturnFrame = owner?.previewPaper?.frame ?? paperReturnFrame
+            // A new selection takes over immediately; don't show a stale flying card.
+            if paperFlight.visibleFrame != nil {
+                paperFlight.cancel()
+                panel?.alphaValue = 1
+                panel?.ignoresMouseEvents = false
+            }
+        }
         guard (panel?.isVisible ?? false), !isClosing else { return }
         guard model.current != nil else {
             close()   // 列表被删空 / 过滤后无结果：预览不孤儿化
@@ -237,6 +318,79 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
                 self.owner?.dismissAllFromPreview()
             }
         }
+    }
+}
+
+/// A bounded, non-key window tracks the moving sheet. Empty desktop space
+/// remains click-through; the visible moving sheet consumes clicks during flight.
+@MainActor
+private final class PaperPreviewFlight {
+    private var window: NSPanel?
+    private var timer: Timer?
+    private var imageView: NSImageView?
+    var visibleFrame: NSRect? { window?.isVisible == true ? window?.frame : nil }
+    var visibleImage: NSImage? { visibleFrame == nil ? nil : imageView?.image }
+
+    func cancel() {
+        timer?.invalidate(); timer = nil
+        window?.orderOut(nil)
+    }
+
+    func animate(from: NSRect, to: NSRect, image: NSImage?, endImage: NSImage? = nil,
+                 duration: Double, opening: Bool, progress: @escaping (CGFloat) -> Void,
+                 completion: @escaping () -> Void) {
+        cancel()
+        let panel = NSPanel(contentRect: from, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.isReleasedWhenClosed = false
+        panel.title = "纸签预览过渡"
+        panel.backgroundColor = .clear; panel.isOpaque = false; panel.hasShadow = false
+        panel.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 2)
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.hidesOnDeactivate = false
+        let host = NSView(frame: NSRect(origin: .zero, size: from.size))
+        if opening {
+            host.wantsLayer = true
+            host.layer?.backgroundColor = NSColor(red: 0.94, green: 0.92, blue: 0.86, alpha: 1).cgColor
+            host.layer?.cornerRadius = 5
+        }
+        let sheet = NSImageView(frame: host.bounds)
+        sheet.image = image
+        // Unfold the sheet without stretching its short excerpt into giant text.
+        sheet.imageScaling = opening ? .scaleProportionallyDown : .scaleAxesIndependently
+        sheet.autoresizingMask = [.width, .height]
+        host.addSubview(sheet)
+        let destination = NSImageView(frame: host.bounds)
+        destination.image = endImage; destination.imageScaling = .scaleAxesIndependently
+        destination.autoresizingMask = [.width, .height]; destination.alphaValue = 0
+        host.addSubview(destination)
+        panel.contentView = host
+        window = panel; imageView = sheet
+        panel.orderFrontRegardless()
+        let start = CACurrentMediaTime()
+        let tick = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self, weak panel] timer in
+            MainActor.assumeIsolated {
+            guard let self, let panel else { timer.invalidate(); return }
+            let t = min(1, CGFloat((CACurrentMediaTime() - start) / duration))
+            let p = 1 - pow(1 - t, 3)
+            let rect = NSRect(x: from.minX + (to.minX-from.minX)*p,
+                              y: from.minY + (to.minY-from.minY)*p,
+                              width: from.width + (to.width-from.width)*p,
+                              height: from.height + (to.height-from.height)*p)
+            panel.setFrame(rect, display: true)
+            if opening { panel.alphaValue = 1 - max(0, (t-0.45)/0.55) }
+            else if endImage != nil {
+                sheet.alphaValue = 1-t; destination.alphaValue = t
+                panel.alphaValue = 1 - max(0, (t-0.8)/0.2)
+            } else { panel.alphaValue = 1-t }
+            progress(t)
+            if t >= 1 {
+                self.cancel()
+                completion()
+            }
+            }
+        }
+        timer = tick
+        RunLoop.main.add(tick, forMode: .common)
     }
 }
 

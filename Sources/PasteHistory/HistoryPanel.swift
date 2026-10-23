@@ -7,6 +7,22 @@ final class HistoryPanel: NSPanel {
 
     private(set) var treePresentation = false
     var layoutEditing = false
+    var prepareDrag: ((UUID) -> (() -> [NSPasteboardWriting]?)?)?
+    var onDragUnavailable: (() -> Void)?
+    var onDragBegan: (() -> Void)?
+    var onDragEnded: ((NSDragOperation) -> Void)?
+    var dragInProgress = false
+    var resumePaperUpdates: (() -> Void)?
+    func finishPaperDrag(operation: NSDragOperation) {
+        dragInProgress = false
+        let resume = resumePaperUpdates
+        resumePaperUpdates = nil
+        resume?()
+        onDragEnded?(operation)
+    }
+    func paper(for id: UUID) -> TreeInteractionPanel? {
+        islands.first { $0.role == .paper && ($0.contentView as? TreePaperSurface)?.recordID == id && $0.isVisible }
+    }
     private var presentsIslands = true
     private(set) var islands: [TreeInteractionPanel] = []
     func register(_ island: TreeInteractionPanel) { islands.append(island) }

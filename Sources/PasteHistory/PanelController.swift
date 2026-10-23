@@ -88,6 +88,7 @@ final class PanelController: NSObject, NSWindowDelegate {
     }
 
     func show() {
+        guard panel?.dragInProgress != true else { return }
         if panel == nil { buildPanel() }
         guard let panel else { return }
         // 作废上一次 hide() 排队的 previousApp.activate()：
@@ -97,7 +98,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         endTreeLayout()
         keyboardState.edit()
         // 面板重开是一次新的会话：预览不跨会话存活
-        preview.close()
+        preview.closeImmediately()
 
         // 打开面板 = 用户要「找」，⇧⌘V 的循环会话立刻结束
         PasteCycler.shared.end()
@@ -151,14 +152,14 @@ final class PanelController: NSObject, NSWindowDelegate {
     }
 
     func hide(restoreFocus: Bool = true) {
-        guard let panel, panel.isVisible, !isHiding else { return }
+        guard let panel, panel.isVisible, !isHiding, !panel.dragInProgress else { return }
         showGeneration += 1
         let generation = showGeneration
         isHiding = true
         removeKeyMonitor()
         endTreeLayout()
-        // 预览窗的命挂在面板上：面板收它一定收，绝不孤儿化
-        preview.close()
+        // No orphan flight or input window when the entire tree disappears.
+        preview.closeImmediately()
         // Child input windows disappear immediately: an invisible fading paper
         // must never keep intercepting the desktop.
         panel.suspendIslands()
@@ -232,6 +233,20 @@ final class PanelController: NSObject, NSWindowDelegate {
         panel.minSize = NSSize(width: Panel.minWidth, height: Panel.minHeight)
         panel.maxSize = NSSize(width: 940, height: 1200)
         panel.delegate = self
+        panel.prepareDrag = { [weak self] id in
+            guard let self, !self.layoutEditing,
+                  let item = self.panelModel.results.first(where: { $0.id == id }) else { return nil }
+            let directory = self.store.imagesDirectory
+            return { ClipDragPayload.writers(for: item, imagesDirectory: directory) }
+        }
+        panel.onDragUnavailable = { Toast.show("原内容不可读取，无法拖出", duration: 2) }
+        panel.onDragBegan = { [weak self] in self?.preview.closeImmediately() }
+        panel.onDragEnded = { [weak self] operation in
+            guard let self else { return }
+            let external = NSWorkspace.shared.frontmostApplication?.processIdentifier != ProcessInfo.processInfo.processIdentifier
+            if !operation.isEmpty || external { self.hide(restoreFocus: false) }
+            else { self.panel?.focusSearch() }
+        }
         self.panel = panel
     }
 
@@ -239,7 +254,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         guard enabled != isTreePresentation else { return }
         isTreePresentation = enabled
         guard let panel else { return }
-        preview.close()
+        preview.closeImmediately()
         // Changing window chrome can itself emit a move notification. Preserve
         // the user's tree position while switching back from the list.
         placingTree = true
@@ -270,9 +285,10 @@ final class PanelController: NSObject, NSWindowDelegate {
     }
 
     func beginTreeLayout() {
+        guard panel?.dragInProgress != true else { return }
         if !isVisible { show() }
         if !isTreePresentation { Self.post(.phToggleTree) }
-        preview.close()
+        preview.closeImmediately()
         panel?.makeKey()
         panelModel.treeLayoutEditing = true
         panel?.layoutEditing = true
@@ -534,6 +550,7 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     /// Shared dispatch path, also exercised by isolated keyboard regression tests.
     func handle(_ event: NSEvent) -> NSEvent? {
+        if panel?.dragInProgress == true { return event } // Escape belongs to the native drag session.
         let key = Int(event.keyCode)
         let mods = event.modifierFlags.intersection([.command, .shift, .option, .control])
 
@@ -631,6 +648,10 @@ final class PanelController: NSObject, NSWindowDelegate {
     // MARK: - 预览窗联动（PreviewPanelController 回调）
 
     var previewAnchorFrame: NSRect? { panel?.frame }
+    var previewPaper: TreeInteractionPanel? {
+        guard isTreePresentation, let id = panelModel.current?.id else { return nil }
+        return panel?.paper(for: id)
+    }
     var previewBesideTree: Bool { isTreePresentation }
     var previewAnchorVisible: Bool { (panel?.isVisible ?? false) && !isHiding }
     func makePanelKeyAgain() { panel?.makeKey(); panel?.focusSearch() }

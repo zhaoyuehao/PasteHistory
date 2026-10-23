@@ -43,6 +43,10 @@ final class IvoryTreePaperView: NSView {
     }
     private func syncIslands() {
         guard let owner = window as? HistoryPanel else { clearIslands(); return }
+        guard !owner.dragInProgress else {
+            owner.resumePaperUpdates = { [weak self] in self?.syncIslands() }
+            return
+        }
         let current = visuals()
         let ids = Set(current.map { $0.entry.id })
         for id in Array(islands.keys) where !ids.contains(id) {
@@ -361,14 +365,17 @@ private final class IvoryPaperAccessibility: NSAccessibilityElement {
     }
 }
 
-/// A click remains attached to its initial record. Dragging cancels that click;
-/// it is reserved for a future NSDraggingSession and never moves the sculpture.
-final class TreePaperSurface: NSView {
+/// Native dragging owns the pointer after the threshold. The payload is captured
+/// from the pressed record, never from the changing keyboard selection.
+final class TreePaperSurface: NSView, NSDraggingSource {
     var recordID: UUID?
     var paint: (() -> Void)?
     var onSelect: (() -> Void)?
     var onPreview: (() -> Void)?
     var enabled = true { didSet { setAccessibilityEnabled(enabled) } }
+    private var dragPayload: (() -> [NSPasteboardWriting]?)?
+    private var downEvent: NSEvent?
+    private var dragOwner: HistoryPanel?
     private var down = NSPoint.zero
     private var dragged = false
     private var selectionAtDown: (() -> Void)?
@@ -384,6 +391,9 @@ final class TreePaperSurface: NSView {
     }
     override func mouseDown(with event: NSEvent) {
         guard enabled else { return }
+        guard let owner = (window as? TreeInteractionPanel)?.owner, !owner.layoutEditing else { return }
+        downEvent = event
+        dragPayload = recordID.flatMap { owner.prepareDrag?($0) }
         down = event.locationInWindow
         dragged = false
         selectionAtDown = onSelect
@@ -391,10 +401,41 @@ final class TreePaperSurface: NSView {
         (window as? TreeInteractionPanel)?.owner?.focusSearch()
     }
     override func mouseDragged(with event: NSEvent) {
-        if hypot(event.locationInWindow.x-down.x, event.locationInWindow.y-down.y) > 5 { dragged = true }
+        guard enabled, window?.isVisible == true, !dragged, let downEvent,
+              let owner = (window as? TreeInteractionPanel)?.owner, !owner.layoutEditing,
+              hypot(event.locationInWindow.x-down.x, event.locationInWindow.y-down.y) > 5 else { return }
+        dragged = true
+        guard let writers = dragPayload?(), !writers.isEmpty else { owner.onDragUnavailable?(); return }
+        let image = paperImage()
+        let items = writers.enumerated().map { index, writer in
+            let item = NSDraggingItem(pasteboardWriter: writer)
+            item.setDraggingFrame(bounds.offsetBy(dx: CGFloat(index) * 3, dy: CGFloat(index) * 3), contents: image)
+            return item
+        }
+        dragOwner = owner // retain the source window through target activation and cancellation
+        owner.dragInProgress = true
+        owner.onDragBegan?()
+        let session = beginDraggingSession(with: items, event: downEvent, source: self)
+        session.animatesToStartingPositionsOnCancelOrFail = true
+        session.draggingFormation = .none
+    }
+    func paperImage() -> NSImage {
+        let image = NSImage(size: bounds.size)
+        image.lockFocusFlipped(true)
+        paint?()
+        image.unlockFocus()
+        return image
+    }
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation { .copy }
+    func ignoreModifierKeys(for session: NSDraggingSession) -> Bool { true }
+    func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+        let owner = dragOwner
+        dragOwner = nil
+        downEvent = nil; dragPayload = nil; selectionAtDown = nil; previewAtDown = nil
+        owner?.finishPaperDrag(operation: operation)
     }
     override func mouseUp(with event: NSEvent) {
-        defer { selectionAtDown = nil; previewAtDown = nil }
+        defer { selectionAtDown = nil; previewAtDown = nil; downEvent = nil; dragPayload = nil }
         guard enabled, window?.isVisible == true, !dragged, bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
         if event.clickCount == 2 { previewAtDown?() } else { selectionAtDown?() }
     }

@@ -89,7 +89,7 @@ final class TreeControlPortalView<Content: View>: NSView {
     func detach() { island?.detach(); island = nil }
 }
 
-/// The only draggable surface. It exists exclusively in explicit layout mode.
+/// The only surface that moves the sculpture; available only in layout mode.
 struct TreeMoveHandle: NSViewRepresentable {
     func makeNSView(context: Context) -> TreeMoveHandleView { TreeMoveHandleView() }
     func updateNSView(_ view: TreeMoveHandleView, context: Context) {}
