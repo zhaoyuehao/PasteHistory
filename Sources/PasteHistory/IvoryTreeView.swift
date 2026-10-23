@@ -17,77 +17,30 @@ struct IvoryTreeView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            ZStack(alignment: .top) {
-                IvoryTreeCanvas(entries: entries, selectedID: model.current?.id, resetToken: resetToken,
-                                unavailable: $unavailable, onSelect: select, onActivate: activate)
-                    .accessibilityLabel(L10n.wishTree)
-                    .accessibilityHint(L10n.treeHint)
-                HStack {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(L10n.wishTree).font(.system(size: 15, weight: .medium))
-                        Text(L10n.treeHint).font(.system(size: 11)).foregroundStyle(.white.opacity(0.7))
-                    }
-                    Spacer()
-                    Button { resetToken += 1 } label: { Image(systemName: "arrow.counterclockwise") }
-                        .buttonStyle(.plain).help(L10n.treeReset).accessibilityLabel(L10n.treeReset)
-                }
-                .foregroundStyle(.white).padding(16)
-                if unavailable {
-                    Text(L10n.treeUnavailable).padding().background(.regularMaterial).frame(maxHeight: .infinity)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Button { model.select(max(0, pageStart - 6)) } label: { Image(systemName: "chevron.left") }
-                        .disabled(pageStart == 0).accessibilityLabel(L10n.treePrevious)
-                    Text(model.results.isEmpty ? "0 / 0" : "\(pageStart+1)–\(pageEnd) / \(model.results.count)")
-                        .font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
-                    Button {
-                        model.select(pageEnd)
-                    } label: { Image(systemName: "chevron.right") }
-                    .disabled(pageEnd >= model.results.count).accessibilityLabel(L10n.treeNext)
-                    Spacer()
-                    if let item = model.current {
-                        Button { model.togglePinCurrent() } label: { Image(systemName: item.pinned ? "pin.fill" : "pin") }
-                            .help(L10n.pinItem).accessibilityLabel(L10n.pinItem)
-                        Button { model.deleteCurrent() } label: { Image(systemName: "trash") }
-                            .help(L10n.deleteItem).accessibilityLabel(L10n.deleteItem)
-                    }
-                }
-                .buttonStyle(.borderless)
+        IvoryTreeCanvas(entries: entries, selectedID: model.current?.id, resetToken: resetToken,
+                        unavailable: $unavailable, onSelect: select, onActivate: activate)
+            .accessibilityLabel(L10n.wishTree)
+            .accessibilityValue(model.current?.summary ?? L10n.noMatch)
+            .contextMenu {
                 if let item = model.current {
-                    HStack(alignment: .top, spacing: 10) {
-                        if let thumbnail = item.thumbnail {
-                            Image(nsImage: thumbnail).resizable().scaledToFill()
-                                .frame(width: 36, height: 36).clipShape(RoundedRectangle(cornerRadius: 6))
-                        }
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(item.summary).font(.system(size: 13)).lineLimit(2)
-                            Text(item.sourceApp ?? L10n.appName).font(.system(size: 11)).foregroundStyle(.secondary)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .frame(height: 48, alignment: .top)
-                    HStack(spacing: 10) {
-                        Button { model.move(-1) } label: { Image(systemName: "arrow.up") }
-                            .disabled(model.safeSelection == 0).help(L10n.treePreviousItem).accessibilityLabel(L10n.treePreviousItem)
-                        Button { model.move(1) } label: { Image(systemName: "arrow.down") }
-                            .disabled(model.safeSelection+1 >= model.results.count).help(L10n.treeNextItem).accessibilityLabel(L10n.treeNextItem)
-                        Spacer(minLength: 0)
-                        Button(L10n.treePreview) { onPreview() }
-                        Button(L10n.treeCopy) { onCopy(item) }
-                        Button(L10n.treePaste) { onPaste(item) }.buttonStyle(.borderedProminent)
-                    }.font(.system(size: 11))
-                } else {
-                    Text(model.store.query.isEmpty ? L10n.noHistory : L10n.noMatch)
-                        .font(.system(size: 13)).frame(maxWidth: .infinity, minHeight: 64)
+                    Button(L10n.treePreview, action: onPreview)
+                    Button(L10n.treeCopy) { onCopy(item) }
+                    Button(L10n.treePaste) { onPaste(item) }
+                    Divider()
+                    Button(L10n.pinItem) { model.togglePinCurrent() }
+                    Button(L10n.deleteItem) { model.deleteCurrent() }
                 }
+                Divider()
+                Button(L10n.treePrevious) { model.select(max(0, pageStart - 6)) }
+                    .disabled(pageStart == 0)
+                Button(L10n.treeNext) { model.select(pageEnd) }
+                    .disabled(pageEnd >= model.results.count)
+                Button(L10n.treeReset) { resetToken += 1 }
             }
-            .padding(14)
-            .background(Color(NSColor.windowBackgroundColor))
-        }
+            .onChange(of: unavailable) { _, failed in
+                // Preserve access to history if the resource cannot be loaded.
+                if failed { NotificationCenter.default.post(name: .phToggleTree, object: nil) }
+            }
         .onAppear { loadMoreIfNeeded() }
         .onChange(of: model.safeSelection) { _, _ in loadMoreIfNeeded() }
         .onChange(of: model.results.count) { _, _ in loadMoreIfNeeded() }

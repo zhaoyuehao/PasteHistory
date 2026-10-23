@@ -29,6 +29,7 @@ struct TreeSmoke {
         func capture(_ name: String) throws {
             let image = view.snapshot()
             let bitmap = NSBitmapImageRep(data: image.tiffRepresentation!)!
+            precondition(bitmap.colorAt(x: 0, y: 0)!.alphaComponent < 0.01, "Scene backdrop must be transparent")
             try bitmap.representation(using: .png, properties: [:])!.write(to: output.appendingPathComponent(name))
         }
         run(1)

@@ -26,6 +26,7 @@ enum L10n {
         }
     }
 
+    static var treeActions: String { value("记录操作", "記錄操作", "Record Actions") }
     static var wishTree: String { value("许愿树", "許願樹", "Wish Tree") }
     static var treeShowList: String { value("列表视图", "列表檢視", "List View") }
     static var treeHint: String { value("拖动旋转 · 点击枝头卡片", "拖動旋轉 · 點擊枝頭卡片", "Drag to rotate · Select a hanging card") }

@@ -56,55 +56,64 @@ struct HistoryView: View {
     @Namespace private var selectionSpace
     /// 边界橡皮筋：撞到顶/底时整片内容纵向下沉一下再弹回
     @State private var bounce: CGFloat = 0
-    @AppStorage("showIvoryTree") private var showTree = false
+    @AppStorage("showDesktopTree") private var showTree = true
 
     var onPaste: (ClipItem) -> Void
     var onCopyOnly: (ClipItem) -> Void
     var onClose: () -> Void
     var onPreview: () -> Void
+    var onTreeModeChanged: (Bool) -> Void
 
     init(store: ClipStore,
          model: HistoryViewModel,
          onPaste: @escaping (ClipItem) -> Void,
          onCopyOnly: @escaping (ClipItem) -> Void,
          onClose: @escaping () -> Void,
-         onPreview: @escaping () -> Void) {
+         onPreview: @escaping () -> Void,
+         onTreeModeChanged: @escaping (Bool) -> Void = { _ in }) {
         self.store = store
         self.model = model
         self.onPaste = onPaste
         self.onCopyOnly = onCopyOnly
         self.onClose = onClose
         self.onPreview = onPreview
+        self.onTreeModeChanged = onTreeModeChanged
     }
 
     private var results: [ClipItem] { model.results }
     private var safeSelection: Int { model.safeSelection }
 
     var body: some View {
-        VStack(spacing: 0) {
-            searchBar
-            hairline
-            ZStack {
-                if showTree {
+        ZStack {
+            if showTree {
+                ZStack(alignment: .bottom) {
                     IvoryTreeView(model: model, onPaste: onPaste, onCopy: onCopyOnly, onPreview: onPreview)
-                        .transition(Motion.reduceMotion ? .opacity : .move(edge: .trailing).combined(with: .opacity))
-                } else {
-                    content
-                        .transition(Motion.reduceMotion ? .opacity : .move(edge: .leading).combined(with: .opacity))
+                        .padding(.bottom, 62)
+                    desktopSearch
+                        .padding(.bottom, 12)
                 }
-            }.clipped()
+                .transition(Motion.reduceMotion ? .opacity : .scale(scale: 0.94).combined(with: .opacity))
+            } else {
+                VStack(spacing: 0) {
+                    searchBar
+                    hairline
+                    content
+                }
+                .background(Color(NSColor.controlBackgroundColor))
+                .transition(Motion.reduceMotion ? .opacity : .scale(scale: 0.94).combined(with: .opacity))
+            }
         }
-        // 高度不写死：贴着输入框放不下时窗口会收，列表跟着滚。
-        // 写死 647 的话，窗口被压小后 SwiftUI 会把内容裁掉而不是滚动
         .frame(minWidth: Panel.minWidth, maxWidth: .infinity,
                minHeight: Panel.minHeight, maxHeight: .infinity)
-        // 内容顶到窗口上缘，别让标题栏白白占 28pt
         .ignoresSafeArea()
-        // 头部块：比内容区亮一档。层次靠材质差异，不靠多画几条线
-        .background(Color(NSColor.controlBackgroundColor))
         .onAppear {
             DispatchQueue.main.async { searchFocused = true }
             model.rebuildSections()
+            onTreeModeChanged(showTree)
+        }
+        .onChange(of: showTree) { _, enabled in
+            onTreeModeChanged(enabled)
+            DispatchQueue.main.async { searchFocused = true }
         }
         .onReceive(NotificationCenter.default.publisher(for: .phMoveDown)) { _ in model.move(1) }
         .onReceive(NotificationCenter.default.publisher(for: .phMoveUp)) { _ in model.move(-1) }
@@ -126,7 +135,10 @@ struct HistoryView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .phClose)) { _ in onClose() }
         // 每次打开面板都是一次新的「找」：回到第一条
-        .onReceive(NotificationCenter.default.publisher(for: .phPanelWillShow)) { _ in model.resetForPresentation() }
+        .onReceive(NotificationCenter.default.publisher(for: .phPanelWillShow)) { _ in
+            model.resetForPresentation()
+            searchFocused = true
+        }
         .onReceive(NotificationCenter.default.publisher(for: .phQuickPaste)) { note in
             guard let index = note.object as? Int, index < results.count else { return }
             onPaste(results[index])
@@ -139,6 +151,52 @@ struct HistoryView: View {
     private func toggleTree() { withAnimation(Motion.selection) { showTree.toggle() } }
 
     private var current: ClipItem? { model.current }
+
+    private var desktopSearch: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField(L10n.search, text: $store.query)
+                .textFieldStyle(.plain)
+                .focused($searchFocused)
+                .accessibilityLabel(L10n.search)
+            if !store.query.isEmpty {
+                Button { store.query = "" } label: { Image(systemName: "xmark.circle.fill") }
+                    .accessibilityLabel(L10n.clear)
+            }
+            if results.isEmpty && !store.query.isEmpty {
+                Image(systemName: "magnifyingglass.circle").foregroundStyle(.secondary)
+                    .accessibilityLabel(L10n.noMatch)
+            }
+            Button { model.select(max(0, safeSelection / 6 * 6 - 6)) } label: {
+                Image(systemName: "chevron.left")
+            }.disabled(safeSelection < 6).accessibilityLabel(L10n.treePrevious)
+            Button { model.select(safeSelection / 6 * 6 + 6) } label: {
+                Image(systemName: "chevron.right")
+            }.disabled(safeSelection / 6 * 6 + 6 >= results.count).accessibilityLabel(L10n.treeNext)
+            Menu {
+                if let item = current {
+                    Button(L10n.treePreview, action: onPreview)
+                    Button(L10n.treeCopy) { onCopyOnly(item) }
+                    Button(L10n.treePaste) { onPaste(item) }
+                    Divider()
+                    Button(L10n.pinItem) { model.togglePinCurrent() }
+                    Button(L10n.deleteItem) { model.deleteCurrent() }
+                    Divider()
+                }
+                Button(L10n.treeShowList, action: toggleTree)
+            } label: { Image(systemName: "ellipsis") }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .accessibilityLabel(L10n.treeActions)
+        }
+        .font(.system(size: 13))
+        .buttonStyle(.plain)
+        .padding(.horizontal, 15)
+        .frame(width: 300, height: 40)
+        .background(.regularMaterial, in: Capsule())
+        .shadow(color: .black.opacity(0.15), radius: 10, y: 3)
+    }
 
     // MARK: - 搜索
 

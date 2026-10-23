@@ -31,6 +31,7 @@ final class IvoryTreeSceneView: SCNView {
     var onSelect: ((UUID) -> Void)?
     var onActivate: ((UUID) -> Void)?
     private(set) var loadError: Error?
+    override var isOpaque: Bool { false }
     override var mouseDownCanMoveWindow: Bool { false }
     override var acceptsFirstResponder: Bool { false }
 
@@ -38,7 +39,11 @@ final class IvoryTreeSceneView: SCNView {
         super.init(frame: .zero, options: nil)
         let scene = SCNScene()
         self.scene = scene
-        backgroundColor = NSColor(red: 0.095, green: 0.105, blue: 0.12, alpha: 1)
+        backgroundColor = .clear
+        scene.background.contents = NSColor.clear
+        wantsLayer = true
+        layer?.isOpaque = false
+        layer?.backgroundColor = NSColor.clear.cgColor
         antialiasingMode = .multisampling8X
         preferredFramesPerSecond = 60
         autoenablesDefaultLighting = false
@@ -73,13 +78,6 @@ final class IvoryTreeSceneView: SCNView {
         addLight(type: .directional, intensity: 850, position: SCNVector3(-5, 10, 8), shadows: true)
         addLight(type: .omni, intensity: 220, position: SCNVector3(5, 5, -3))
         addLight(type: .ambient, intensity: 230, position: .init())
-        let wall = SCNNode(geometry: SCNPlane(width: 40, height: 40))
-        wall.position = SCNVector3(0, 4, -3)
-        let wallMaterial = SCNMaterial()
-        wallMaterial.diffuse.contents = NSColor(white: 0.12, alpha: 1)
-        wallMaterial.roughness.contents = 1.0
-        wall.geometry?.materials = [wallMaterial]
-        scene.rootNode.addChildNode(wall)
         applyRotation()
         setAccessibilityElement(true)
         setAccessibilityRole(.image)

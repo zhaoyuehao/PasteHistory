@@ -9,7 +9,7 @@ struct TreeUISmoke {
         app.setActivationPolicy(.regular)
         // This harness has its own bundle ID. Disable external sync before any action.
         Settings.shared.iCloudSync = false
-        UserDefaults.standard.set(true, forKey: "showIvoryTree")
+        UserDefaults.standard.set(true, forKey: "showDesktopTree")
         let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("ivory-ui-"+UUID().uuidString)
         let store = ClipStore(directory: temporary)
         for index in 0..<72 {
@@ -20,13 +20,15 @@ struct TreeUISmoke {
         let model = HistoryViewModel(store: store)
         var copied: UUID?
         var pasted: UUID?
+        let window = HistoryPanel(contentRect: NSRect(x: 100, y: 100, width: 620, height: 800), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         let root = HistoryView(store: store, model: model,
                                onPaste: { pasted = $0.id }, onCopyOnly: { copied = $0.id },
-                               onClose: {}, onPreview: {})
+                               onClose: { window.orderOut(nil) }, onPreview: {},
+                               onTreeModeChanged: { window.applyPresentation(tree: $0) })
         let hosting = NSHostingView(rootView: root)
-        let window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 400, height: 647), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-        window.title = "PasteHistory — 3D Wish Tree Preview"
+        window.title = "PasteHistory — Desktop Tree Preview"
         window.contentView = hosting
+        window.applyPresentation(tree: true)
         window.makeKeyAndOrderFront(nil)
         app.activate(ignoringOtherApps: true)
         func run(_ seconds: Double = 0.4) { RunLoop.main.run(until: Date().addingTimeInterval(seconds)) }
@@ -38,6 +40,13 @@ struct TreeUISmoke {
         run(1)
         precondition(scene(in: hosting)?.loadError == nil)
         precondition(scene(in: hosting) != nil, "Packaged scene must appear")
+        precondition(!window.isOpaque && !window.hasShadow && !window.styleMask.contains(.titled))
+        precondition(window.canBecomeKey && window.isKeyWindow, "Borderless search must receive keyboard input")
+        let corner = NSBitmapImageRep(data: scene(in: hosting)!.snapshot().tiffRepresentation!)!
+        precondition(corner.colorAt(x: 0, y: 0)!.alphaComponent < 0.01, "Tree background must be transparent")
+        let surface = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds)!
+        hosting.cacheDisplay(in: hosting.bounds, to: surface)
+        precondition(surface.colorAt(x: 0, y: 0)!.alphaComponent < 0.01, "Hosting view must not add an opaque panel")
         let first = model.current!.id
         post(.phMoveDown)
         precondition(model.safeSelection == 1)
@@ -48,8 +57,13 @@ struct TreeUISmoke {
         post(.phToggleTree)
         precondition(scene(in: hosting) == nil, "List toggle must remove 3D renderer")
         precondition(model.safeSelection == 1)
+        precondition(window.isOpaque && window.styleMask.contains(.titled))
         post(.phToggleTree)
         precondition(scene(in: hosting) != nil)
+        precondition(!window.isOpaque && !window.styleMask.contains(.titled))
+        store.query = "设计草稿"; run(0.8)
+        precondition(!model.results.isEmpty && model.results.allSatisfy { $0.summary.contains("设计草稿") })
+        store.query = ""; run(0.8)
         model.select(6); run()
         let seventh = model.current!.id
         precondition(seventh != first)
@@ -62,8 +76,8 @@ struct TreeUISmoke {
         precondition(model.safeSelection == 0 && model.current?.id == first)
         window.setContentSize(NSSize(width: 340, height: 360)); run()
         precondition(scene(in: hosting)!.bounds.height > 50, "Compact panel must retain a usable viewport")
-        window.setContentSize(NSSize(width: 400, height: 647)); run()
-        print("PASS: packaged resource, shared selection/copy/paste, list/tree toggle, page selection, lazy loading, empty search, query reset, compact panel")
+        window.setContentSize(NSSize(width: 620, height: 800)); run()
+        print("PASS: borderless transparent key window, filtered search, packaged resource, shared selection/copy/paste, list/tree toggle, page selection, lazy loading, empty search, query reset, compact panel")
         fflush(stdout)
         if CommandLine.arguments.contains("--interactive") { app.run() }
         window.orderOut(nil)

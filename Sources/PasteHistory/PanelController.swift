@@ -20,7 +20,8 @@ extension Notification.Name {
 final class PanelController: NSObject, NSWindowDelegate {
     static let shared = PanelController()
 
-    private var panel: NSPanel?
+    private var panel: HistoryPanel?
+    private var isTreePresentation = UserDefaults.standard.object(forKey: "showDesktopTree") as? Bool ?? true
     private var localMonitor: Any?
     private var previousApp: NSRunningApplication?
     /// 唤起面板前系统里聚焦的那个输入框，粘贴后要把焦点还回去
@@ -85,13 +86,13 @@ final class PanelController: NSObject, NSWindowDelegate {
               target?.processIdentifier ?? -1,
               previousFocusElement == nil ? "nil" : "有")
 
-        let placement = place(panel, near: previousFocusElement)
+        let placement = isTreePresentation ? placeTree(panel) : place(panel, near: previousFocusElement)
         lastPlacement = placement
         installKeyMonitor()
         // 每次打开都是一次新的「找」：回到第一条、收起，一屏扫十条
         Self.post(.phPanelWillShow)
         // 没贴到输入框（常见于刚授权完的第一次）就等焦点稳定后再试一次
-        if !placement.anchored { scheduleAnchorRetry() }
+        if !isTreePresentation && !placement.anchored { scheduleAnchorRetry() }
 
         // 出现：0.22s easeOut，opacity 0→1 + scale 0.96→1。
         // 窗口淡入与内容缩放共用同一个 duration，两套时序叠加会出现「先亮后弹」。
@@ -137,7 +138,7 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     /// 淡出结束后真正收起窗口，并把焦点还回唤起面板前的应用
     private func finishHide(generation: Int) {
-        guard let panel else { return }
+        guard let panel, generation == showGeneration, isHiding else { return }
         panel.orderOut(nil)
         panel.alphaValue = 1
         isHiding = false
@@ -173,36 +174,50 @@ final class PanelController: NSObject, NSWindowDelegate {
                 NotificationCenter.default.post(name: .pasteHistoryDidWritePasteboard, object: nil)
             },
             onClose: { [weak self] in self?.hide() },
-            onPreview: { [weak self] in self?.preview.toggle() }
+            onPreview: { [weak self] in self?.preview.toggle() },
+            onTreeModeChanged: { [weak self] enabled in self?.setTreePresentation(enabled) }
         )
 
         let hosting = NSHostingController(rootView: view)
         // 内容顶到窗口上缘：不要让 titlebar 的 safe area 白白吃掉顶部
         hosting.safeAreaRegions = []
-        let panel = NSPanel(contentViewController: hosting)
-        // 默认 400×647（= 400×φ，黄金矩形）；可拖边调整并记住用户选择——
-        // 默认值给设计，自由度给用户。避让收缩只影响本次落位，不回写偏好
-        panel.styleMask = [.titled, .closable, .fullSizeContentView, .nonactivatingPanel, .resizable]
+        let panel = HistoryPanel(contentViewController: hosting)
         panel.title = L10n.panelTitle
-        panel.titlebarAppearsTransparent = true
-        panel.titleVisibility = .hidden
-        // 藏掉红绿灯：这是一张卡片，不是一扇窗户
-        panel.standardWindowButton(.closeButton)?.isHidden = true
-        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        panel.standardWindowButton(.zoomButton)?.isHidden = true
+        panel.applyPresentation(tree: isTreePresentation)
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.hidesOnDeactivate = false
-        panel.isMovableByWindowBackground = true
         panel.isReleasedWhenClosed = false
-        panel.backgroundColor = NSColor.windowBackgroundColor
         // 宽 340~940、高 360~1200：下限是行内解剖与扫读的存活线，上限防呆
         panel.setContentSize(NSSize(width: Panel.width, height: Panel.maxHeight))
         panel.minSize = NSSize(width: Panel.minWidth, height: Panel.minHeight)
         panel.maxSize = NSSize(width: 940, height: 1200)
         panel.delegate = self
         self.panel = panel
+    }
+
+    private func setTreePresentation(_ enabled: Bool) {
+        guard enabled != isTreePresentation else { return }
+        isTreePresentation = enabled
+        guard let panel else { return }
+        preview.close()
+        panel.applyPresentation(tree: enabled)
+        lastPlacement = enabled ? placeTree(panel) : place(panel, near: previousFocusElement)
+        if panel.isVisible { panel.makeKey() }
+    }
+
+    /// The tree stands in the desktop's usable area rather than inside an input-field card.
+    private func placeTree(_ panel: NSPanel) -> Placement {
+        let mouse = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first(where: { $0.frame.contains(mouse) }) ?? NSScreen.main
+        let available = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1000, height: 800)
+        let height = min(850, available.height * 0.90)
+        let width = min(640, available.width * 0.85, height * 0.80)
+        let frame = NSRect(x: available.midX - width / 2, y: available.minY + 16,
+                           width: width, height: height)
+        panel.setFrame(frame, display: true)
+        return Placement(origin: frame.origin, height: height, reason: "desktop-tree", anchored: false)
     }
 
     /// 一次定位的结果。首次没锚上时要用它决定要不要补位。
@@ -381,10 +396,10 @@ final class PanelController: NSObject, NSWindowDelegate {
     /// Electron 应用的焦点也要等它稳定。面板已经出来了就再取一次，
     /// 拿到了带 0.2s 弹簧挪过去——不是瞬移，瞬移没有阻尼感。
     private func scheduleAnchorRetry() {
-        guard Settings.shared.anchorPanel else { return }
+        guard !isTreePresentation, Settings.shared.anchorPanel else { return }
         let generation = showGeneration
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
-            guard let self, self.showGeneration == generation, !self.isHiding,
+            guard let self, !self.isTreePresentation, self.showGeneration == generation, !self.isHiding,
                   let panel = self.panel, panel.isVisible else { return }
             let app = self.previousApp ?? AppTracker.targetApp()
             guard let element = app.flatMap({ AXFocus.focusedElement(pid: $0.processIdentifier) }) else { return }
@@ -431,6 +446,8 @@ final class PanelController: NSObject, NSWindowDelegate {
         let key = Int(event.keyCode)
         let mods = event.modifierFlags.intersection([.command, .shift, .option, .control])
 
+        // Candidate navigation and commit belong to the input method while composing.
+        if isComposingText && [125, 126, 36, 76].contains(key) { return event }
         switch key {
         case 53: // esc：两层退出——预览开着先关预览，再按才收面板
             // 输入法组词中：Esc 是「取消组词」，得还给输入法（顺带修掉老问题——
@@ -512,7 +529,7 @@ final class PanelController: NSObject, NSWindowDelegate {
     /// 用户拖边结束：记住选择。程序化的 setContentSize（避让收缩）不经过这里，
     /// 所以临时收矮不会污染用户偏好
     func windowDidEndLiveResize(_ notification: Notification) {
-        guard let panel, notification.object as? NSWindow === panel else { return }
+        guard !isTreePresentation, let panel, notification.object as? NSWindow === panel else { return }
         Settings.shared.panelWidth = panel.frame.width
         Settings.shared.panelHeight = panel.frame.height
     }
@@ -521,7 +538,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         // 焦点的去向要等一拍才问得出（makeKey 交接有时序）：
         // 交给自己的预览窗（点选里面的文字）不算离开，真去了别的应用再收
         DispatchQueue.main.async { [weak self] in
-            guard let self, let panel = self.panel, panel.isVisible, !self.isHiding else { return }
+            guard let self, let panel = self.panel, panel.isVisible, !panel.isKeyWindow, !self.isHiding else { return }
             if let previewWindow = self.preview.window, NSApp.keyWindow === previewWindow { return }
             self.hide()
         }
