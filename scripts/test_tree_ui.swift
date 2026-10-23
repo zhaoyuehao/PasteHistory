@@ -214,13 +214,63 @@ struct TreeUISmoke {
         precondition(key(49, chars: " ") == nil)
         run(0.3)
         precondition(controller.isPreviewVisible, "Space must preview immediately after search")
+        let followingPreview = NSApp.windows.first { $0.isVisible && $0.title == L10n.previewTitle }!
+        let previousPreviewFrame = followingPreview.frame
         _ = key(125)
-        run(0.2)
+        run(0.04)
+        if !Motion.reduceMotion {
+            precondition(hypot(followingPreview.frame.minX - previousPreviewFrame.minX,
+                               followingPreview.frame.minY - previousPreviewFrame.minY) > 2,
+                         "Arrow selection must visibly move the paper immediately")
+        }
+        run(0.36)
         precondition(controller.panelModel.safeSelection == 1 && controller.isPreviewVisible,
                      "Arrow selection must keep filtered preview open")
+        let nextPin = controller.previewPaper!.paperPin!
+        let nextScreen = NSScreen.screens.first { $0.frame.contains(nextPin) }!
+        let followingTarget = PreviewPanelController.paperFrame(pin: nextPin, visible: nextScreen.visibleFrame,
+                                                               size: previousPreviewFrame.size)
+        print("Arrow preview geometry: before=\(previousPreviewFrame), actual=\(followingPreview.frame), target=\(followingTarget)")
+        precondition(abs(followingPreview.frame.minX - followingTarget.minX) < 2
+            && abs(followingPreview.frame.minY - followingTarget.minY) < 2,
+            "Arrow preview must move to the newly selected paper, not replace content at the previous pin")
+        func assertPreviewFollowsSelection() {
+            let pin = controller.previewPaper!.paperPin!
+            let screen = NSScreen.screens.first { $0.frame.contains(pin) }!
+            let target = PreviewPanelController.paperFrame(pin: pin, visible: screen.visibleFrame,
+                                                          size: previousPreviewFrame.size)
+            precondition(abs(followingPreview.frame.minX - target.minX) < 2
+                && abs(followingPreview.frame.minY - target.minY) < 2,
+                "Preview must settle at the latest selected pin after interrupted navigation")
+            precondition(followingPreview.frame.size == previousPreviewFrame.size,
+                         "Moving the reading paper must preserve its viewport size")
+        }
+        // Reverse before the spring settles, then cross a page boundary while
+        // its new paper windows are still being created.
+        for code: UInt16 in [125, 125, 126, 125, 126] { _ = key(code); run(0.025) }
+        run(0.4)
+        assertPreviewFollowsSelection()
+        controller.panelModel.select(7)
+        run(0.4)
+        _ = key(125)
+        run(0.5)
+        precondition(controller.panelModel.safeSelection == 8)
+        assertPreviewFollowsSelection()
         _ = key(49, chars: " ")
         run(0.2)
         precondition(!controller.isPreviewVisible)
+        controller.panelModel.select(0)
+        run(0.4)
+        _ = key(49, chars: " ")
+        run(0.04)
+        _ = key(125) // redirect an unfinished unfold, not a stationary full-size popup
+        run(0.04)
+        precondition(followingPreview.alphaValue == 0,
+                     "Interrupting the unfold must keep the real window hidden until the moving sheet arrives")
+        run(0.4)
+        assertPreviewFollowsSelection()
+        _ = key(49, chars: " ")
+        run(0.2)
         precondition(key(49, chars: " ", mods: [.shift]) != nil,
                      "Shift-Space must remain available to type multiword queries")
         let liveWindow = NSApp.windows.first { $0.isVisible && $0 is HistoryPanel }!

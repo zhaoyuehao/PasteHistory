@@ -40,9 +40,11 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     private var previewSize = NSSize(width: Preview.width, height: Preview.height)
     private var sink: Any?
     private let paperFlight = PaperPreviewFlight()
+    private let paperFollow = PaperPreviewFollow()
     private var previewedID: UUID?
     private var paperReturnFrame: NSRect?
     private var paperSessionSize: NSSize?
+    private var needsFlightRetarget = false
 
     var window: NSPanel? { panel }
     var isVisible: Bool { (panel?.isVisible ?? false) && !isClosing }
@@ -148,10 +150,12 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
 
     /// Animate a lightweight paper snapshot, not a resizing text layout. The
     /// actual preview stays at its final size; arrow navigation never queues flights.
-    private func openFromPaper(_ panel: NSPanel) {
+    private func openFromPaper(_ panel: NSPanel, continuing: Bool = false) {
         // Choose once per opening. Arrows move the sheet without resizing the
         // text container on every animation frame.
-        paperSessionSize = Self.paperSize(for: model.current)
+        paperFollow.cancel()
+        needsFlightRetarget = false
+        if !continuing { paperSessionSize = Self.paperSize(for: model.current) }
         let target = targetFrame()
         let paper = owner?.previewPaper
         let origin = paperFlight.visibleFrame ?? paper?.frame ?? paperReturnFrame ?? target
@@ -167,13 +171,15 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         let expandedFace = snapshot(panel.contentView)
         paperFlight.animate(from: Motion.reduceMotion ? target : origin, to: target,
                             image: image, endImage: expandedFace, duration: Motion.reduceMotion ? 0.12 : Motion.paperOpenDuration,
-                            opening: true, progress: { _ in }) { [weak panel] in
+                            opening: true, progress: { _ in }) { [weak self, weak panel] in
             panel?.alphaValue = 1
             panel?.ignoresMouseEvents = false
+            self?.followPaper()
         }
     }
 
     private func closeToPaper(_ panel: NSPanel) {
+        paperFollow.cancel()
         if panel.isKeyWindow, owner?.previewAnchorVisible == true { owner?.makePanelKeyAgain() }
         let origin = paperFlight.visibleFrame ?? panel.frame
         let image = paperFlight.visibleImage ?? snapshot(panel.contentView)
@@ -204,6 +210,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     func closeImmediately() {
         closeGeneration += 1
         paperFlight.cancel()
+        paperFollow.cancel()
         owner?.setExpandedPaper(nil)
         panel?.orderOut(nil)
         panel?.alphaValue = 1
@@ -266,17 +273,16 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
 
     func followPaper() {
         guard owner?.previewBesideTree == true, isVisible, !isClosing,
-              paperFlight.visibleFrame == nil, owner?.previewPaper != nil, let panel else { return }
-        let target = targetFrame()
-        let current = panel.frame
-        let positionDelta: CGFloat = abs(current.minX - target.minX) + abs(current.minY - target.minY)
-        let sizeDelta: CGFloat = abs(current.width - target.width) + abs(current.height - target.height)
-        guard positionDelta + sizeDelta > 2 else { return }
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = Motion.reduceMotion ? 0 : 0.14
-            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.18, 0.8, 0.25, 1.1)
-            panel.animator().setFrameOrigin(target.origin)
+              owner?.previewPaper != nil, let panel else { return }
+        if paperFlight.visibleFrame != nil {
+            // A new page may not have laid out its paper when selection changes.
+            // Wait for that actual pin instead of flying to the tree's center.
+            if needsFlightRetarget { openFromPaper(panel, continuing: true) }
+            return
         }
+        let target = targetFrame()
+        paperReturnFrame = owner?.previewPaper?.frame ?? paperReturnFrame
+        paperFollow.move(panel, to: target.origin)
     }
 
     private func buildPanel() {
@@ -357,18 +363,16 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
             previewedID = model.current?.id
             if owner?.previewBesideTree == true { owner?.setExpandedPaper(previewedID) }
             paperReturnFrame = owner?.previewPaper?.frame ?? paperReturnFrame
-            // A new selection takes over immediately; don't show a stale flying card.
-            if paperFlight.visibleFrame != nil {
-                paperFlight.cancel()
-                panel?.alphaValue = 1
-                panel?.ignoresMouseEvents = false
-            }
+            // Retarget an unfinished unfold from its visible sheet, never reveal
+            // the full-size window at the previous card's location.
+            needsFlightRetarget = paperFlight.visibleFrame != nil
         }
         guard (panel?.isVisible ?? false), !isClosing else { return }
         guard model.current != nil else {
             close()   // 列表被删空 / 过滤后无结果：预览不孤儿化
             return
         }
+        followPaper()
         // 窗高不随内容形态切换（默认 640×400 黄金矩形，用户拖边后为其尺寸）——
         // 条目增删后预览跟随下一条，列表空了收窗，窗体几何稳定
     }
