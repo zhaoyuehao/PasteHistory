@@ -8,6 +8,7 @@ let package = Package(
         .executableTarget(
             name: "PasteHistory",
             path: "Sources/PasteHistory",
+            resources: [.copy("Resources/ivory_tree.scn")],
             swiftSettings: [.swiftLanguageMode(.v5)],
             linkerSettings: [
                 .linkedFramework("Carbon"),
@@ -15,6 +16,7 @@ let package = Package(
                 .linkedFramework("SwiftUI"),
                 .linkedFramework("CoreGraphics"),
                 .linkedFramework("Vision"),
+                .linkedFramework("SceneKit"),
                 .linkedLibrary("sqlite3"),
             ]
         )

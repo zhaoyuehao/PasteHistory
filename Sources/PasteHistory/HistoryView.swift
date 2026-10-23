@@ -56,21 +56,25 @@ struct HistoryView: View {
     @Namespace private var selectionSpace
     /// 边界橡皮筋：撞到顶/底时整片内容纵向下沉一下再弹回
     @State private var bounce: CGFloat = 0
+    @AppStorage("showIvoryTree") private var showTree = false
 
     var onPaste: (ClipItem) -> Void
     var onCopyOnly: (ClipItem) -> Void
     var onClose: () -> Void
+    var onPreview: () -> Void
 
     init(store: ClipStore,
          model: HistoryViewModel,
          onPaste: @escaping (ClipItem) -> Void,
          onCopyOnly: @escaping (ClipItem) -> Void,
-         onClose: @escaping () -> Void) {
+         onClose: @escaping () -> Void,
+         onPreview: @escaping () -> Void) {
         self.store = store
         self.model = model
         self.onPaste = onPaste
         self.onCopyOnly = onCopyOnly
         self.onClose = onClose
+        self.onPreview = onPreview
     }
 
     private var results: [ClipItem] { model.results }
@@ -80,7 +84,15 @@ struct HistoryView: View {
         VStack(spacing: 0) {
             searchBar
             hairline
-            content
+            ZStack {
+                if showTree {
+                    IvoryTreeView(model: model, onPaste: onPaste, onCopy: onCopyOnly, onPreview: onPreview)
+                        .transition(Motion.reduceMotion ? .opacity : .move(edge: .trailing).combined(with: .opacity))
+                } else {
+                    content
+                        .transition(Motion.reduceMotion ? .opacity : .move(edge: .leading).combined(with: .opacity))
+                }
+            }.clipped()
         }
         // 高度不写死：贴着输入框放不下时窗口会收，列表跟着滚。
         // 写死 647 的话，窗口被压小后 SwiftUI 会把内容裁掉而不是滚动
@@ -119,8 +131,12 @@ struct HistoryView: View {
             guard let index = note.object as? Int, index < results.count else { return }
             onPaste(results[index])
         }
+        .onReceive(NotificationCenter.default.publisher(for: .phToggleTree)) { _ in toggleTree() }
+        .onChange(of: store.query) { _, _ in model.resetSelection() }
         .onChange(of: store.displayed) { _, _ in model.rebuildSections() }
     }
+
+    private func toggleTree() { withAnimation(Motion.selection) { showTree.toggle() } }
 
     private var current: ClipItem? { model.current }
 
@@ -145,6 +161,14 @@ struct HistoryView: View {
                 .buttonStyle(.plain)
                 .help(L10n.clear)
             }
+            Button(action: toggleTree) {
+                Image(systemName: showTree ? "list.bullet" : "tree")
+                    .font(.system(size: Icon.action))
+                    .foregroundStyle(showTree ? Color.accentColor : Palette.meta)
+            }
+            .buttonStyle(.plain)
+            .help((showTree ? L10n.treeShowList : L10n.wishTree) + "  ⌘L")
+            .accessibilityLabel(showTree ? L10n.treeShowList : L10n.wishTree)
         }
         .padding(.horizontal, Spec.searchPadding)
         .padding(.top, 10)   // ignoresSafeArea 顶掉标题栏后，搜索区需要一点呼吸
@@ -213,7 +237,6 @@ struct HistoryView: View {
                 bounce = CGFloat(model.bounceDirection) * Spec.bounceDistance
                 withAnimation(Motion.bounce) { bounce = 0 }
             }
-            .onChange(of: store.query) { _, _ in model.resetSelection() }
         }
         // 内容区比头部暗一档，两个材质一明一暗，区域自然分开
         .background(Color(NSColor.windowBackgroundColor))

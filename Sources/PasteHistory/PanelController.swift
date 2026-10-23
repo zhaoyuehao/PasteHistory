@@ -8,6 +8,7 @@ extension Notification.Name {
     static let phConfirm = Notification.Name("phConfirm")
     static let phCopyOnly = Notification.Name("phCopyOnly")
     static let phDelete = Notification.Name("phDelete")
+    static let phToggleTree = Notification.Name("phToggleTree")
     static let phPin = Notification.Name("phPin")
     static let phClose = Notification.Name("phClose")
     static let phQuickPaste = Notification.Name("phQuickPaste")
@@ -171,7 +172,8 @@ final class PanelController: NSObject, NSWindowDelegate {
                 PasteService.write(item)
                 NotificationCenter.default.post(name: .pasteHistoryDidWritePasteboard, object: nil)
             },
-            onClose: { [weak self] in self?.hide() }
+            onClose: { [weak self] in self?.hide() },
+            onPreview: { [weak self] in self?.preview.toggle() }
         )
 
         let hosting = NSHostingController(rootView: view)
@@ -463,6 +465,8 @@ final class PanelController: NSObject, NSWindowDelegate {
             Self.post(.phCopyOnly); return nil
         case 51 where mods == [.command]: // ⌘⌫ 删除
             Self.post(.phDelete); return nil
+        case 37 where mods == [.command]: // ⌘L 列表 / 3D 许愿树
+            if !event.isARepeat { Self.post(.phToggleTree) }; return nil
         case 35 where mods == [.command]: // ⌘P 置顶
             Self.post(.phPin); return nil
         case 13 where mods == [.command]: // ⌘W 关闭

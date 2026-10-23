@@ -26,6 +26,19 @@ enum L10n {
         }
     }
 
+    static var wishTree: String { value("许愿树", "許願樹", "Wish Tree") }
+    static var treeShowList: String { value("列表视图", "列表檢視", "List View") }
+    static var treeHint: String { value("拖动旋转 · 点击枝头卡片", "拖動旋轉 · 點擊枝頭卡片", "Drag to rotate · Select a hanging card") }
+    static var treeReset: String { value("重置视角", "重設視角", "Reset View") }
+    static var treeUnavailable: String { value("模型加载失败，请切回列表", "模型載入失敗，請切回列表", "Model unavailable. Switch to List View.") }
+    static var treePrevious: String { value("上一组", "上一組", "Previous Group") }
+    static var treeNext: String { value("下一组", "下一組", "Next Group") }
+    static var treePreviousItem: String { value("上一条", "上一條", "Previous") }
+    static var treeNextItem: String { value("下一条", "下一條", "Next") }
+    static var treePreview: String { value("预览", "預覽", "Preview") }
+    static var treeCopy: String { value("复制", "複製", "Copy") }
+    static var treePaste: String { value("粘贴", "貼上", "Paste") }
+
     static let appName = "PasteHistory"
     static var panelTitle: String { value("剪贴板历史", "剪貼簿歷史", "Clipboard History") }
     static var search: String { value("搜索", "搜尋", "Search") }

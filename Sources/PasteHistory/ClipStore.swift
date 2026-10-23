@@ -41,9 +41,9 @@ final class ClipStore: ObservableObject {
     private var searchDebounce: DispatchWorkItem?
     private let pageSize = 60
 
-    private init() {
+    init(directory: URL? = nil) {
         let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let baseDir = appSupport.appendingPathComponent("PasteHistory", isDirectory: true)
+        let baseDir = directory ?? appSupport.appendingPathComponent("PasteHistory", isDirectory: true)
         imagesDir = baseDir.appendingPathComponent("images", isDirectory: true)
         try? fm.createDirectory(at: imagesDir, withIntermediateDirectories: true)
         syncDatabase = HistoryDatabase(url: baseDir.appendingPathComponent("history.sqlite"))
