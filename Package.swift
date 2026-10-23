@@ -8,12 +8,14 @@ let package = Package(
         .executableTarget(
             name: "PasteHistory",
             path: "Sources/PasteHistory",
+            resources: [.copy("Resources")],
             swiftSettings: [.swiftLanguageMode(.v5)],
             linkerSettings: [
                 .linkedFramework("Carbon"),
                 .linkedFramework("Cocoa"),
                 .linkedFramework("SwiftUI"),
                 .linkedFramework("CoreGraphics"),
+                .linkedFramework("SceneKit"),
                 .linkedFramework("Vision"),
                 .linkedLibrary("sqlite3"),
             ]

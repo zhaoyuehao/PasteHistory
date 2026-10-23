@@ -11,12 +11,22 @@ extension Notification.Name {
     static let phPin = Notification.Name("phPin")
     static let phClose = Notification.Name("phClose")
     static let phQuickPaste = Notification.Name("phQuickPaste")
+    /// 列表 ↔ 线签帘视图切换（⌘L）
+    static let phToggleCurtain = Notification.Name("phToggleCurtain")
     /// 面板即将显示：视图收到后回到第一条
     static let phPanelWillShow = Notification.Name("phPanelWillShow")
 }
 
 @MainActor
 final class PanelController: NSObject, NSWindowDelegate {
+
+    /// borderless 也要能当 key 窗：系统对无 .titled 的窗口默认
+    /// canBecomeKey = false——搜索框聚焦、方向键、⌘N 全靠 key 状态
+    /// （上一笔摘掉 .titled 后面板「失去焦点了」，真机实锤）
+    final class KeyablePanel: NSPanel {
+        override var canBecomeKey: Bool { true }
+    }
+
     static let shared = PanelController()
 
     private var panel: NSPanel?
@@ -106,9 +116,18 @@ final class PanelController: NSObject, NSWindowDelegate {
             view.layer?.add(scale, forKey: "panelAppear")
             view.layer?.transform = CATransform3DIdentity
         }
-        panel.orderFrontRegardless()
-        panel.makeKey()
-        NSApp.activate()
+        // 强激活：accessory 应用普通的 activate() 压不过前台应用（真机
+        // 「失去焦点了」实锤——borderless 面板从未拿到 key，方向键全进了
+        // 别的 App）。ignoringOtherApps 是命令面板类工具的标准做法
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
+        // 焦点自检（下一拍，等 makeKey 生效）：日志里确认 key/active 状态
+        DispatchQueue.main.async {
+            NSLog("[PH] focus: isKey=%@ isActive=%@ style=%lu",
+                  panel.isKeyWindow ? "YES" : "NO",
+                  NSApp.isActive ? "YES" : "NO",
+                  panel.styleMask.rawValue)
+        }
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.22
             ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
@@ -152,6 +171,14 @@ final class PanelController: NSObject, NSWindowDelegate {
     // MARK: - 构建
 
     private func buildPanel() {
+        // ⌘L 切换视图形态时窗口跟着换尺寸（两套偏好互不覆盖），重新落位。
+        // HistoryView 的同通知处理器先同步 Settings，这里延迟一拍再读
+        NotificationCenter.default.addObserver(
+            forName: .phToggleCurtain, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.syncSizeToViewMode() }
+        }
+
         let pasteHandler: (ClipItem) -> Void = { [weak self] item in
             guard let self else { return }
             let target = previousApp
@@ -177,7 +204,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         let hosting = NSHostingController(rootView: view)
         // 内容顶到窗口上缘：不要让 titlebar 的 safe area 白白吃掉顶部
         hosting.safeAreaRegions = []
-        let panel = NSPanel(contentViewController: hosting)
+        let panel = KeyablePanel(contentViewController: hosting)
         // 默认 400×647（= 400×φ，黄金矩形）；可拖边调整并记住用户选择——
         // 默认值给设计，自由度给用户。避让收缩只影响本次落位，不回写偏好
         panel.styleMask = [.titled, .closable, .fullSizeContentView, .nonactivatingPanel, .resizable]
@@ -195,6 +222,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         panel.isMovableByWindowBackground = true
         panel.isReleasedWhenClosed = false
         panel.backgroundColor = NSColor.windowBackgroundColor
+        applyWindowSkin(panel)
         // 宽 340~940、高 360~1200：下限是行内解剖与扫读的存活线，上限防呆
         panel.setContentSize(NSSize(width: Panel.width, height: Panel.maxHeight))
         panel.minSize = NSSize(width: Panel.minWidth, height: Panel.minHeight)
@@ -331,7 +359,7 @@ final class PanelController: NSObject, NSWindowDelegate {
                              y: max(visible.maxY - size.height - 60, visible.minY + 20))
         panel.setFrameOrigin(origin)
         let reason = Settings.shared.anchorPanel ? "fallback-center" : "anchoring-off"
-        self.trace("\(reason) role=\(role) caret=\(Self.fmt(caretAX)) field=\(Self.fmt(fieldAX))")
+        self.trace("\(reason) role=\(role) caret=\(Self.fmt(caretAX)) field=\(Self.fmt(fieldAX)) size=\(Int(Panel.width))x\(Int(Panel.maxHeight))")
         return Placement(origin: origin, height: Panel.maxHeight, reason: reason, anchored: false)
     }
 
@@ -467,6 +495,9 @@ final class PanelController: NSObject, NSWindowDelegate {
             Self.post(.phPin); return nil
         case 13 where mods == [.command]: // ⌘W 关闭
             Self.post(.phClose); return nil
+        case 37 where mods == [.command]: // ⌘L 列表 ↔ 线签帘
+            if event.isARepeat { return nil }
+            Self.post(.phToggleCurtain); return nil
         default:
             break
         }
@@ -503,17 +534,59 @@ final class PanelController: NSObject, NSWindowDelegate {
     /// 与按空格完全同一条路径
     func togglePreview() { preview.toggle() }
 
+    /// ⌘L 切换后按新视图形态换窗皮 + 换尺寸并重新落位（面板可见时；不可见则下次 show 生效）
+    private func syncSizeToViewMode() {
+        guard let panel else { return }
+        applyWindowSkin(panel)
+        guard panel.isVisible, !isHiding else { return }
+        let placement = place(panel, near: previousFocusElement)
+        lastPlacement = placement
+    }
+
+    /// 许愿树直接长在桌面上：真·无边框。仅 isOpaque=false + clear 底不够——
+    /// .titled 窗口 macOS 必画一圈窗框描边（真机反馈「边框还是在呢」），
+    /// curtain 模式连 .titled 一起去掉（borderless），内容层自己圆角。
+    /// borderless 代价：拖角缩放没了（⌘L 回列表可拖；窗口尺寸仍按偏好记忆）
+    private func applyWindowSkin(_ panel: NSPanel) {
+        if Panel.isCurtain {
+            panel.styleMask.remove(.titled)
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            // borderless 是直角矩形：夜色场景的内容层自己圆角（圆的是内容不是窗）
+            if let content = panel.contentViewController?.view {
+                content.wantsLayer = true
+                content.layer?.cornerRadius = 16
+                content.layer?.masksToBounds = true
+            }
+        } else {
+            panel.styleMask.insert(.titled)
+            panel.isOpaque = true
+            panel.backgroundColor = NSColor.windowBackgroundColor
+            if let content = panel.contentViewController?.view {
+                content.layer?.cornerRadius = 0
+                content.layer?.masksToBounds = false
+            }
+        }
+    }
+
     // MARK: - NSWindowDelegate
 
     /// 用户拖边结束：记住选择。程序化的 setContentSize（避让收缩）不经过这里，
-    /// 所以临时收矮不会污染用户偏好
+    /// 所以临时收矮不会污染用户偏好。列表与线签帘各记一套尺寸
     func windowDidEndLiveResize(_ notification: Notification) {
         guard let panel, notification.object as? NSWindow === panel else { return }
-        Settings.shared.panelWidth = panel.frame.width
-        Settings.shared.panelHeight = panel.frame.height
+        if Panel.isCurtain {
+            Settings.shared.curtainWidth = panel.frame.width
+            Settings.shared.curtainHeight = panel.frame.height
+        } else {
+            Settings.shared.panelWidth = panel.frame.width
+            Settings.shared.panelHeight = panel.frame.height
+        }
     }
 
     func windowDidResignKey(_ notification: Notification) {
+        // 冒烟 --no-auto-hide：截图自检用（面板失焦不收起，仅供脚本核验画面）
+        if ProcessInfo.processInfo.arguments.contains("--no-auto-hide") { return }
         // 焦点的去向要等一拍才问得出（makeKey 交接有时序）：
         // 交给自己的预览窗（点选里面的文字）不算离开，真去了别的应用再收
         DispatchQueue.main.async { [weak self] in

@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>黄铜树枝装置 · 3D 预览</title>
+<style>
+  body { margin: 0; background: #1b1510; overflow: hidden; font-family: -apple-system, sans-serif; }
+  model-viewer { width: 100vw; height: 100vh; --poster-color: #1b1510; }
+  .hint { position: fixed; bottom: 12px; right: 16px; color: #e8d5a8; opacity: .6; font-size: 12px; }
+</style>
+</head>
+<body>
+<model-viewer src="brass_tree.glb" camera-controls auto-rotate rotation-per-second="8%"
+  exposure="1.1" shadow-intensity="0" environment-image="neutral" camera-orbit="0deg 75deg 3m"
+  style="background-color: #1b1510"></model-viewer>
+<div class="hint">拖拽旋转 · 滚轮缩放</div>
+<script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer@4.0.0/dist/model-viewer.min.js"></script>
+</body>
+</html>

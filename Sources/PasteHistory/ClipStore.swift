@@ -369,6 +369,9 @@ final class Settings {
         static let anchorPanel = "anchorPanelToInput"
         static let panelWidth = "panelWidth"
         static let panelHeight = "panelHeight"
+        static let panelViewCurtain = "panelViewCurtain"
+        static let curtainWidth = "curtainWidth"
+        static let curtainHeight = "curtainHeight"
     }
 
     var maxItems: Int {
@@ -418,6 +421,24 @@ final class Settings {
     var panelHeight: CGFloat {
         get { let v = defaults.double(forKey: Key.panelHeight); return v <= 0 ? 647 : min(max(v, 360), 1200) }
         set { defaults.set(newValue, forKey: Key.panelHeight) }
+    }
+
+    /// 面板视图形态：false = 列表（默认），true = 线签帘。⌘L 切换并记住
+    var curtainView: Bool {
+        get { defaults.bool(forKey: Key.panelViewCurtain) }
+        set { defaults.set(newValue, forKey: Key.panelViewCurtain) }
+    }
+
+    /// 许愿树的外框记忆：横向枝线结构要横向空间——默认 **809×500 = 500×φ 横过来**，
+    /// 与列表的 400×647（400×φ 竖版）同一 φ 外框族。独立记忆，⌘L 互不覆盖
+    var curtainWidth: CGFloat {
+        get { let v = defaults.double(forKey: Key.curtainWidth); return v <= 0 ? 809 : min(max(v, 340), 1200) }
+        set { defaults.set(newValue, forKey: Key.curtainWidth) }
+    }
+
+    var curtainHeight: CGFloat {
+        get { let v = defaults.double(forKey: Key.curtainHeight); return v <= 0 ? 500 : min(max(v, 360), 940) }
+        set { defaults.set(newValue, forKey: Key.curtainHeight) }
     }
 
     /// iCloud 同步开关（默认开；未登录 iCloud Drive 时自动无效）
