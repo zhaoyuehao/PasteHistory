@@ -85,7 +85,8 @@ final class ClipStore: ObservableObject {
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.loadingMore = false
-                guard !next.isEmpty else { return }
+                guard self.query == query, self.filter == filter, self.displayed.count == offset,
+                      !next.isEmpty else { return }
                 // 去掉可能与当前页重叠的 id（同步导入期间的并发变化）
                 let known = Set(self.displayed.map { $0.id })
                 self.displayed.append(contentsOf: next.filter { !known.contains($0.id) })

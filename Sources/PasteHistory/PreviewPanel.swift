@@ -70,7 +70,8 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         // 内容 scale 就不再叠加了，叠两层会过
         let target = targetFrame()
         // 「减少动态效果」开启时跳过 frame 插值：直接就位 + 淡入（规范 5.5）
-        if let anchor = owner?.previewAnchorFrame, anchor.width > 0, !Motion.reduceMotion {
+        if let anchor = owner?.previewAnchorFrame, anchor.width > 0, !Motion.reduceMotion,
+           owner?.previewBesideTree != true {
             panel.setFrame(anchor, display: false)
         } else {
             panel.setFrame(target, display: false)
@@ -112,7 +113,8 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
             ctx.duration = 0.15
             ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
             // 「减少动态效果」开启时跳过缩回插值，只保留渐隐
-            if let anchor = owner?.previewAnchorFrame, anchor.width > 0, !Motion.reduceMotion {
+            if let anchor = owner?.previewAnchorFrame, anchor.width > 0, !Motion.reduceMotion,
+           owner?.previewBesideTree != true {
                 panel.animator().setFrame(anchor, display: true)
             }
             panel.animator().alphaValue = 0
@@ -186,6 +188,13 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         let cy = anchor.map { $0.midY } ?? visible.midY
         var x = cx - width / 2
         var y = cy - height / 2
+        if owner?.previewBesideTree == true, let anchor {
+            let right = visible.maxX - anchor.maxX
+            let left = anchor.minX - visible.minX
+            x = right >= left ? anchor.maxX + 12 : anchor.minX - width - 12
+            // On smaller screens overlap the outer crown, keeping the root search free.
+            y = anchor.maxY - height - Preview.margin
+        }
         // 夹回屏幕内：挪的是边缘，不是中心
         x = min(max(x, visible.minX + Preview.margin),
                 visible.maxX - Preview.margin - width)
@@ -237,6 +246,8 @@ struct PreviewContentView: View {
 
     /// 切换动画的方向：+1 新内容从下浮入（按 ↓），-1 从上（按 ↑）
     @State private var direction: Int = 1
+    @State private var contentOffset: CGFloat = 0
+    @State private var contentOpacity: Double = 1
     /// 驱动切换动画的内容身份。model 的变化不经过我们的事务，
     /// 切换动画必须由这里的 withAnimation 挂上去
     @State private var displayedID: UUID?
@@ -280,7 +291,8 @@ struct PreviewContentView: View {
                         // 不用交叉淡化——中间没有任何东西在移动，人眼几乎无感，
                         // 和选中高亮用 matchedGeometryEffect 是同一个理由
                         .id(displayedID)
-                        .transition(previewTransition)
+                        .offset(y: contentOffset)
+                        .opacity(contentOpacity)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
@@ -314,10 +326,21 @@ struct PreviewContentView: View {
         } else if displayedID != item.id {
             direction = Self.moveDirection(from: displayedID, to: item.id, in: model.results)
             // 连按压短弹簧，不是关掉——连续移动恰恰最需要阻尼
-            let anim = Date().timeIntervalSince(model.lastMoveAt) < Motion.repeatThreshold
-                ? Motion.selectionFast
-                : Motion.selection
-            withAnimation(anim) { displayedID = item.id }
+            // Replace the old view immediately: rapid navigation must not retain several
+            // expensive text layouts in an outgoing transition.
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                displayedID = item.id
+                contentOffset = Motion.reduceMotion ? 0 : CGFloat(direction) * Preview.slideDistance
+                contentOpacity = Motion.reduceMotion ? 0.6 : 1
+            }
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            withAnimation(Motion.selectionFast) {
+                contentOffset = 0
+                contentOpacity = 1
+            }
         }
         await loadPreviewImage(item)
     }
@@ -346,6 +369,11 @@ struct PreviewContentView: View {
         // 堆在一起抢 CPU，正是预览跟着列表快速切换时风扇转起来的来源
         guard !Task.isCancelled else { return }
         let needsDecode = cached == nil
+        // Coalesce key repeats before starting work that ImageIO cannot cancel.
+        if needsDecode {
+            do { try await Task.sleep(for: .milliseconds(55)) } catch { return }
+        }
+        guard !Task.isCancelled else { return }
         // 降采样解码放后台：预览窗就 640 宽，8000px 整图进内存是风扇测试
         let decoded = await Task.detached(priority: .userInitiated) {
             (image: needsDecode ? Self.downsampledImage(at: url, maxPixel: Preview.maxImagePixel) : nil,
@@ -406,13 +434,6 @@ struct PreviewContentView: View {
               let oldIndex = results.firstIndex(where: { $0.id == old }),
               let newIndex = results.firstIndex(where: { $0.id == new }) else { return 1 }
         return newIndex > oldIndex ? 1 : -1
-    }
-
-    private var previewTransition: AnyTransition {
-        .asymmetric(
-            insertion: .offset(y: CGFloat(direction) * Preview.slideDistance).combined(with: .opacity),
-            removal: .opacity
-        )
     }
 
     // MARK: - 头部
@@ -500,14 +521,7 @@ struct PreviewContentView: View {
     private func textContent(_ item: ClipItem) -> some View {
         let text = item.text ?? ""
         let isTruncated = text.count > Preview.maxTextLength
-        return ScrollView {
-            // 文字可选中：对齐原生 Quick Look，部分复制不用先粘出去
-            Text(String(text.prefix(Preview.maxTextLength)))
-                .font(.system(size: Scale.body))
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(Rhythm.xxl)
-        }
+        return PreviewTextView(text: String(text.prefix(Preview.maxTextLength)), identity: item.id)
         .overlay(alignment: .bottom) {
             if isTruncated { truncatedBar }
         }
@@ -606,6 +620,43 @@ struct PreviewContentView: View {
             parts.append(Self.formatBytes(bytes))
         }
         return parts.joined(separator: " · ")
+    }
+}
+
+/// NSTextView lays out visible paragraphs on demand. A large clip no longer
+/// builds a 100,000-character SwiftUI selectable Text during every key repeat.
+private struct PreviewTextView: NSViewRepresentable {
+    let text: String
+    let identity: UUID
+    final class Coordinator { var identity: UUID?; var text = "" }
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeNSView(context: Context) -> NSScrollView {
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true
+        scroll.drawsBackground = false
+        let view = NSTextView(frame: scroll.bounds)
+        view.isEditable = false
+        view.isSelectable = true
+        view.drawsBackground = false
+        view.font = .systemFont(ofSize: Scale.body)
+        view.textColor = .labelColor
+        view.textContainerInset = NSSize(width: Rhythm.xxl, height: Rhythm.xxl)
+        view.isVerticallyResizable = true
+        view.isHorizontallyResizable = false
+        view.autoresizingMask = [.width]
+        view.textContainer?.widthTracksTextView = true
+        view.textContainer?.containerSize = NSSize(width: scroll.bounds.width, height: .greatestFiniteMagnitude)
+        view.layoutManager?.allowsNonContiguousLayout = true
+        scroll.documentView = view
+        return scroll
+    }
+    func updateNSView(_ scroll: NSScrollView, context: Context) {
+        guard context.coordinator.identity != identity || context.coordinator.text != text,
+              let view = scroll.documentView as? NSTextView else { return }
+        context.coordinator.identity = identity
+        context.coordinator.text = text
+        view.string = text
+        view.scrollToBeginningOfDocument(nil)
     }
 }
 

@@ -39,6 +39,7 @@ final class IvoryTreeSceneView: SCNView {
     private var sway: CGFloat = 0
     private var appearedAt: CFTimeInterval = 0
     private var lastStep: CFTimeInterval = 0
+    private var appliedGrowthHeight: Float = 12
     private var downPoint = NSPoint.zero
     private var previousScreenPoint = NSPoint.zero
     private var dragged = false
@@ -53,6 +54,14 @@ final class IvoryTreeSceneView: SCNView {
     override var isOpaque: Bool { false }
     override var mouseDownCanMoveWindow: Bool { false }
     override var acceptsFirstResponder: Bool { false }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: NSEvent.modifierFlags.contains(.option) ? .crosshair : .openHand)
+    }
+
+    override func flagsChanged(with event: NSEvent) {
+        window?.invalidateCursorRects(for: self)
+    }
 
     init(url: URL?) {
         super.init(frame: .zero, options: nil)
@@ -222,19 +231,21 @@ final class IvoryTreeSceneView: SCNView {
         previousScreenPoint =
             window?.convertPoint(toScreen: event.locationInWindow) ?? event.locationInWindow
         dragged = false
-        let root = projectPoint(sculpture.convertPosition(SCNVector3(0, 0.45, 0), to: nil))
-        movingWindow =
-            event.modifierFlags.contains(.option)
-            || (abs(downPoint.x - root.x) < 55 && abs(downPoint.y - root.y) < 70
-                && entryID(at: downPoint) == nil)
+        // A single, explicit gesture contract anywhere on the sculpture or paper.
+        movingWindow = !event.modifierFlags.contains(.option)
+        window?.makeKey()
     }
     override func mouseDragged(with event: NSEvent) {
         guard let window else { return }
         let screen = window.convertPoint(toScreen: event.locationInWindow)
         let dx = screen.x - previousScreenPoint.x
         let dy = screen.y - previousScreenPoint.y
+        if !dragged {
+            guard hypot(screen.x - previousScreenPoint.x, screen.y - previousScreenPoint.y) > 4 else { return }
+            dragged = true
+        }
         if movingWindow {
-            if abs(dx) + abs(dy) > 0 { dragged = true }
+            NSCursor.closedHand.set()
             let proposed = NSPoint(x: window.frame.minX + dx, y: window.frame.minY + dy)
             window.setFrameOrigin(Self.clampedOrigin(proposed, size: window.frame.size))
         } else {
@@ -255,6 +266,7 @@ final class IvoryTreeSceneView: SCNView {
             y: min(max(origin.y, available.minY), max(available.minY, available.maxY - size.height)))
     }
     override func mouseUp(with event: NSEvent) {
+        NSCursor.openHand.set()
         guard !dragged else { return }
         if let id = entryID(at: convert(event.locationInWindow, from: nil)) {
             onSelect?(id)
@@ -280,7 +292,14 @@ final class IvoryTreeSceneView: SCNView {
         timer?.invalidate()
         timer = nil
     }
-    private func applyRotation() { pivot.eulerAngles = SCNVector3(pitch, yaw, 0) }
+    private func applyRotation() {
+        let rotation = SCNVector3(pitch, yaw, 0)
+        guard pivot.eulerAngles.x != rotation.x || pivot.eulerAngles.y != rotation.y else { return }
+        SCNTransaction.begin()
+        SCNTransaction.disableActions = true
+        pivot.eulerAngles = rotation
+        SCNTransaction.commit()
+    }
     private func startSettling() {
         guard timer == nil else { return }
         lastStep = CACurrentMediaTime()
@@ -307,10 +326,17 @@ final class IvoryTreeSceneView: SCNView {
         advance(&pitch, &pitchVelocity, targetPitch)
         sway = reduced ? 0 : (sway - yawVelocity * 28) * pow(0.84, steps)
         applyRotation()
-        growthProgress = min(1, CGFloat((now - appearedAt) / (reduced ? 0.15 : 0.42)))
+        growthProgress = min(1, CGFloat((now - appearedAt) / (reduced ? 0.12 : 0.22)))
         let height: Float = reduced ? 12 : Float(10 * (1 - pow(1 - growthProgress, 2)))
-        growthMaterials.forEach { $0.setValue(height, forKey: "growthHeight") }
-        sculpture.opacity = reduced ? growthProgress : 1
+        let opacity: CGFloat = reduced ? growthProgress : 1
+        if height != appliedGrowthHeight || sculpture.opacity != opacity {
+            SCNTransaction.begin()
+            SCNTransaction.disableActions = true
+            growthMaterials.forEach { $0.setValue(height, forKey: "growthHeight") }
+            sculpture.opacity = opacity
+            SCNTransaction.commit()
+            appliedGrowthHeight = height
+        }
         updatePaper(dt: dt)
         let error =
             abs(yaw - targetYaw) + abs(pitch - targetPitch) + abs(yawVelocity) + abs(pitchVelocity)

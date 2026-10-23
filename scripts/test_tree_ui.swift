@@ -76,12 +76,12 @@ struct TreeUISmoke {
         precondition(
             surface.colorAt(x: 0, y: 0)!.alphaComponent < 0.01, "Hosting view must not add an opaque panel")
         var keyboard = HistoryKeyboardState()
-        precondition(!keyboard.spacePreviews(query: "two words", composing: false, tree: true))
+        precondition(keyboard.spacePreviews(query: "two words", composing: false, tree: true))
         keyboard.navigate()
         precondition(keyboard.spacePreviews(query: "two words", composing: false, tree: true))
         precondition(!keyboard.spacePreviews(query: "two words", composing: true, tree: true))
         keyboard.edit()
-        precondition(!keyboard.spacePreviews(query: "two words", composing: false, tree: true))
+        precondition(keyboard.spacePreviews(query: "two words", composing: false, tree: true))
         let first = model.current!.id
         post(.phMoveDown)
         precondition(model.safeSelection == 1)
@@ -132,11 +132,80 @@ struct TreeUISmoke {
         let removed = model.current!.id
         post(.phDelete)
         precondition(!model.results.contains { $0.id == removed } && store.matchCount == 71 && store.syncDatabase.get(id: removed) == nil)
+        // Exercise the real controller/preview/key routing with the same isolated store.
+        window.orderOut(nil)
+        let controller = PanelController(store: store)
+        controller.show()
+        run(0.5)
+        func key(_ code: UInt16, chars: String = "", mods: NSEvent.ModifierFlags = []) -> NSEvent? {
+            controller.handle(NSEvent.keyEvent(with: .keyDown, location: .zero,
+                modifierFlags: mods, timestamp: 0, windowNumber: 0, context: nil,
+                characters: chars, charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code)!)
+        }
+        store.query = "设计"
+        run(0.7)
+        precondition(controller.panelModel.results.count == 24)
+        precondition(key(49, chars: " ") == nil)
+        run(0.3)
+        precondition(controller.isPreviewVisible, "Space must preview immediately after search")
+        _ = key(125)
+        run(0.2)
+        precondition(controller.panelModel.safeSelection == 1 && controller.isPreviewVisible,
+                     "Arrow selection must keep filtered preview open")
+        _ = key(49, chars: " ")
+        run(0.2)
+        precondition(!controller.isPreviewVisible)
+        precondition(key(49, chars: " ", mods: [.shift]) != nil,
+                     "Shift-Space must remain available to type multiword queries")
+        let liveWindow = NSApp.windows.first { $0.isVisible && $0 is HistoryPanel }!
+        let liveScene = scene(in: liveWindow.contentView!)!
+        let clickedID = controller.panelModel.results[3].id
+        let rect = liveScene.cardFrames[clickedID]!
+        let clickPoint = NSPoint(x: rect.midX, y: liveScene.bounds.height - rect.midY)
+        let hit = liveWindow.contentView!.hitTest(liveScene.convert(clickPoint, to: liveWindow.contentView!))
+        precondition(hit === liveScene, "Search must not overlay the tree's mouse hit area")
+        func mouse(_ type: NSEvent.EventType) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: liveScene.convert(clickPoint, to: nil),
+                modifierFlags: [], timestamp: 0, windowNumber: liveWindow.windowNumber,
+                context: nil, eventNumber: 1, clickCount: 1, pressure: 1)!
+        }
+        liveScene.mouseDown(with: mouse(.leftMouseDown))
+        liveScene.mouseUp(with: mouse(.leftMouseUp))
+        run(0.2)
+        precondition(controller.panelModel.current?.id == clickedID, "Filtered paper click must select")
+        _ = key(49, chars: " ")
+        run(0.2)
+        precondition(controller.isPreviewVisible)
+        // A realistic long clip exercises the native, non-contiguous text layout.
+        let longText = String(repeating: "设计：长文本预览应按可见段落排版，方向键直接切换。\n", count: 4000)
+        store.syncDatabase.upsert(ClipItem(kind: .text, text: longText, sourceApp: "Regression"))
+        store.refresh()
+        run(0.3)
+        controller.panelModel.select(0)
+        run(0.3)
+        var slowest: TimeInterval = 0
+        for _ in 0..<8 {
+            let start = Date()
+            _ = key(125)
+            run(0.04)
+            _ = key(126)
+            run(0.04)
+            slowest = max(slowest, Date().timeIntervalSince(start))
+        }
+        precondition(controller.isPreviewVisible && controller.panelModel.safeSelection == 0)
+        print("Preview 100k-text navigation: slowest down/up pair = \(Int(slowest*1000)) ms")
+        _ = key(53)
+        run(0.2)
+        precondition(!controller.isPreviewVisible && controller.isVisible)
+        store.query = ""
+        run(0.5)
         print(
             "PASS: borderless transparent key window, filtered search, packaged resource, shared selection/copy/paste/pin/delete, list/tree toggle, page selection, lazy loading, empty search, query reset, compact panel"
         )
         fflush(stdout)
         if CommandLine.arguments.contains("--interactive") { app.run() }
+        controller.hide()
+        run(0.2)
         window.orderOut(nil)
         try? FileManager.default.removeItem(at: temporary)
     }

@@ -21,7 +21,7 @@ extension Notification.Name {
 
 @MainActor
 final class PanelController: NSObject, NSWindowDelegate {
-    static let shared = PanelController()
+    static let shared = PanelController(store: .shared)
 
     private var panel: HistoryPanel?
     private var isTreePresentation = UserDefaults.standard.object(forKey: "showDesktopTree") as? Bool ?? true
@@ -32,9 +32,9 @@ final class PanelController: NSObject, NSWindowDelegate {
     /// 唤起面板前系统里聚焦的那个输入框，粘贴后要把焦点还回去
     private var previousFocusElement: AXUIElement?
     private var onPasteHandler: ((ClipItem) -> Void)?
-    private let store = ClipStore.shared
+    private let store: ClipStore
     /// 面板与预览大窗共用的列表状态：预览内容直接跟着选中走
-    private let panelModel = HistoryViewModel(store: ClipStore.shared)
+    let panelModel: HistoryViewModel
     private var previewStorage: PreviewPanelController?
     /// 惰性创建：构造它需要 self（owner），不能在属性初始化期拿到
     private var preview: PreviewPanelController {
@@ -43,6 +43,12 @@ final class PanelController: NSObject, NSWindowDelegate {
         previewStorage = created
         return created
     }
+    init(store: ClipStore) {
+        self.store = store
+        self.panelModel = HistoryViewModel(store: store)
+        super.init()
+    }
+
     /// 上一次定位的结果，用来判断补位时到底有没有挪动
     private var lastPlacement: Placement?
     /// 冒烟用：`--fake-field x,y,w,h` 直接喂一个输入框矩形（AX 坐标），
@@ -118,7 +124,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         panel.makeKey()
         NSApp.activate()
         NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.22
+            ctx.duration = isTreePresentation ? 0.10 : 0.22
             ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().alphaValue = 1
         }
@@ -462,7 +468,8 @@ final class PanelController: NSObject, NSWindowDelegate {
         NotificationCenter.default.post(name: name, object: object)
     }
 
-    private func handle(_ event: NSEvent) -> NSEvent? {
+    /// Shared dispatch path, also exercised by isolated keyboard regression tests.
+    func handle(_ event: NSEvent) -> NSEvent? {
         let key = Int(event.keyCode)
         let mods = event.modifierFlags.intersection([.command, .shift, .option, .control])
 
@@ -479,6 +486,9 @@ final class PanelController: NSObject, NSWindowDelegate {
                 Self.post(.phClose)
             }
             return nil
+        case 49 where isTreePresentation && mods == [.shift]:
+            keyboardState.edit()
+            return event
         case 49 where mods == []:
             guard keyboardState.spacePreviews(query: store.query, composing: isComposingText,
                                               tree: isTreePresentation) else { return event }
@@ -549,6 +559,7 @@ final class PanelController: NSObject, NSWindowDelegate {
     // MARK: - 预览窗联动（PreviewPanelController 回调）
 
     var previewAnchorFrame: NSRect? { panel?.frame }
+    var previewBesideTree: Bool { isTreePresentation }
     var previewAnchorVisible: Bool { (panel?.isVisible ?? false) && !isHiding }
     func makePanelKeyAgain() { panel?.makeKey() }
     func dismissAllFromPreview() { hide() }

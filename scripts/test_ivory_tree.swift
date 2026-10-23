@@ -78,8 +78,8 @@ struct TreeSmoke {
         precondition(
             growing < full * 3 / 4,
             "Growth must reveal geometry from the root, not simply show the whole tree")
-        run(0.5)
-        precondition(view.growthProgress == 1)
+        run(0.20)
+        precondition(view.growthProgress == 1, "Tree must finish growing within 250 ms")
         let original = view.cardFrames[entries[0].id]!
         let point = NSPoint(x: original.midX, y: view.bounds.height - original.midY)
         precondition(view.entryID(at: point) == entries[0].id)
@@ -97,30 +97,32 @@ struct TreeSmoke {
         precondition(selected == entries[0].id)
         let pivot = view.scene!.rootNode.childNodes[0]
         let originalYaw = pivot.eulerAngles.y
-        view.mouseDown(with: event(.leftMouseDown, NSPoint(x: 400, y: 500)))
-        view.mouseDragged(with: event(.leftMouseDragged, NSPoint(x: 510, y: 500)))
-        view.mouseUp(with: event(.leftMouseUp, NSPoint(x: 510, y: 500)))
+        view.mouseDown(with: event(.leftMouseDown, NSPoint(x: 400, y: 500), mods: [.option]))
+        view.mouseDragged(with: event(.leftMouseDragged, NSPoint(x: 510, y: 500), mods: [.option]))
+        view.mouseUp(with: event(.leftMouseUp, NSPoint(x: 510, y: 500), mods: [.option]))
         run(0.8)
         precondition(abs(pivot.eulerAngles.y - originalYaw) > 0.8)
         precondition(
             abs(view.cardFrames[entries[0].id]!.midX - original.midX) > 20,
             "Paper must follow the rotating attachment")
         try capture("angle.png")
-        view.mouseDown(with: event(.leftMouseDown, NSPoint(x: 400, y: 500)))
-        view.mouseDragged(with: event(.leftMouseDragged, NSPoint(x: 1200, y: 500)))
-        view.mouseUp(with: event(.leftMouseUp, NSPoint(x: 1200, y: 500)))
+        view.mouseDown(with: event(.leftMouseDown, NSPoint(x: 400, y: 500), mods: [.option]))
+        view.mouseDragged(with: event(.leftMouseDragged, NSPoint(x: 1200, y: 500), mods: [.option]))
+        view.mouseUp(with: event(.leftMouseUp, NSPoint(x: 1200, y: 500), mods: [.option]))
         run(0.9)
         precondition(
             pivot.eulerAngles.y - originalYaw > 2 * .pi, "Yaw must allow more than a full revolution")
         view.resetView()
         run(0.9)
         precondition(abs(pivot.eulerAngles.y - originalYaw) < 0.01)
-        // Option-drag moves the actual window without rotating the tree.
+        // Plain drag moves the window; only Option-drag rotates. Tiny pointer jitter is a click.
         let start = window.frame.origin
-        view.mouseDown(with: event(.leftMouseDown, NSPoint(x: 400, y: 500), mods: [.option]))
-        view.mouseDragged(with: event(.leftMouseDragged, NSPoint(x: 440, y: 520), mods: [.option]))
-        view.mouseUp(with: event(.leftMouseUp, NSPoint(x: 440, y: 520), mods: [.option]))
+        view.mouseDown(with: event(.leftMouseDown, NSPoint(x: 400, y: 500)))
+        view.mouseDragged(with: event(.leftMouseDragged, NSPoint(x: 440, y: 520)))
+        view.mouseUp(with: event(.leftMouseUp, NSPoint(x: 440, y: 520)))
         precondition(window.frame.origin != start)
+        run(0.1)
+        precondition(abs(pivot.eulerAngles.y - originalYaw) < 0.01, "Moving must not rotate")
         let second = entries.map { IvoryTreeEntry(id: UUID(), title: $0.title, index: $0.index + 8) }
         view.update(entries: second, selectedID: second[0].id)
         run(0.07)

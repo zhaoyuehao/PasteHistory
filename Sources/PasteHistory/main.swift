@@ -89,7 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 仅供冒烟测试：--show 启动即打开面板
         if ProcessInfo.processInfo.arguments.contains("--show") {
-            PanelController.shared.show()
+            DispatchQueue.main.async { PanelController.shared.show() }
         }
 
         // 仅供冒烟测试：--show-pair 启动即打开手机同步配对面板
@@ -171,6 +171,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+    }
+
+    // Opening the installed app again should reveal the overlay even when the
+    // menu-bar process is already running (startup arguments aren't replayed).
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        PanelController.shared.show()
+        return true
     }
 
     func applicationWillTerminate(_ notification: Notification) {

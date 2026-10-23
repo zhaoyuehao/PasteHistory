@@ -13,7 +13,7 @@ struct IvoryTreeView: View {
         return (pageStart..<pageEnd).map {
             let item = model.results[$0]
             return IvoryTreeEntry(
-                id: item.id, title: item.text ?? item.ocrText ?? item.summary, index: $0,
+                id: item.id, title: String((item.text ?? item.ocrText ?? item.summary).prefix(500)), index: $0,
                 source: item.sourceApp ?? "",
                 date: item.createdAt.formatted(date: .abbreviated, time: .shortened),
                 pinned: item.pinned, thumbnail: item.thumbnailData)
