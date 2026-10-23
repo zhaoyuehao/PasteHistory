@@ -3,6 +3,9 @@ import QuartzCore
 import SwiftUI
 
 extension Notification.Name {
+    static let phPageUp = Notification.Name("phPageUp")
+    static let phPageDown = Notification.Name("phPageDown")
+    static let phResetTree = Notification.Name("phResetTree")
     static let phMoveUp = Notification.Name("phMoveUp")
     static let phMoveDown = Notification.Name("phMoveDown")
     static let phConfirm = Notification.Name("phConfirm")
@@ -23,6 +26,7 @@ final class PanelController: NSObject, NSWindowDelegate {
     private var panel: HistoryPanel?
     private var isTreePresentation = UserDefaults.standard.object(forKey: "showDesktopTree") as? Bool ?? true
     private var localMonitor: Any?
+    private var keyboardState = HistoryKeyboardState()
     private var previousApp: NSRunningApplication?
     /// 唤起面板前系统里聚焦的那个输入框，粘贴后要把焦点还回去
     private var previousFocusElement: AXUIElement?
@@ -68,6 +72,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         // 否则快速收起后再按 ⇧⌘C，那个延迟激活会把面板顶掉 → resignKey → 面板立刻又消失
         showGeneration += 1
         isHiding = false
+        keyboardState.edit()
         // 面板重开是一次新的会话：预览不跨会话存活
         preview.close()
 
@@ -447,7 +452,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         let mods = event.modifierFlags.intersection([.command, .shift, .option, .control])
 
         // Candidate navigation and commit belong to the input method while composing.
-        if isComposingText && [125, 126, 36, 76].contains(key) { return event }
+        if isComposingText && [125, 126, 36, 76, 116, 121].contains(key) { return event }
         switch key {
         case 53: // esc：两层退出——预览开着先关预览，再按才收面板
             // 输入法组词中：Esc 是「取消组词」，得还给输入法（顺带修掉老问题——
@@ -459,23 +464,29 @@ final class PanelController: NSObject, NSWindowDelegate {
                 Self.post(.phClose)
             }
             return nil
-        case 49 where mods == []: // 空格：查询框为空时是预览开关；有文字时照常输入
-            // 按住空格的 key repeat 不能反复开关，否则会闪
-            if event.isARepeat { return nil }
-            guard store.query.isEmpty else { return event }
-            // 拼音打到一半：空格是「选第一个候选词」，此时劫走会打断组词
-            // 还弹出一个莫名的窗（真机实测踩到：组词中的 a 还没提交，query 是空的）
-            if isComposingText { return event }
-            preview.toggle()
+        case 49 where mods == []:
+            guard keyboardState.spacePreviews(query: store.query, composing: isComposingText,
+                                              tree: isTreePresentation) else { return event }
+            if !event.isARepeat { preview.toggle() }
             return nil
         case 16 where mods == [.command]: // ⌘Y：预览的兜底别名，任何时候可用
             if event.isARepeat { return nil }
             preview.toggle()
             return nil
         case 126: // ↑
+            keyboardState.navigate()
             Self.post(.phMoveUp); return nil
         case 125: // ↓
+            keyboardState.navigate()
             Self.post(.phMoveDown); return nil
+        case 116 where isTreePresentation && mods == []: // Page Up / fn↑
+            keyboardState.navigate()
+            Self.post(.phPageUp); return nil
+        case 121 where isTreePresentation && mods == []: // Page Down / fn↓
+            keyboardState.navigate()
+            Self.post(.phPageDown); return nil
+        case 15 where isTreePresentation && mods == [.command]: // ⌘R
+            if !event.isARepeat { Self.post(.phResetTree) }; return nil
         case 36, 76: // return / enter
             Self.post(.phConfirm); return nil
         case 8 where mods == [.command]: // ⌘C 仅复制
@@ -499,6 +510,10 @@ final class PanelController: NSObject, NSWindowDelegate {
                 Self.post(.phQuickPaste, object: n - 1)
                 return nil
             }
+        }
+        if !mods.contains(.command) && !mods.contains(.control),
+           key == 51 || !(event.characters ?? "").isEmpty {
+            keyboardState.edit()
         }
         return event
     }

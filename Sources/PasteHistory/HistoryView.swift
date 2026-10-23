@@ -87,7 +87,7 @@ struct HistoryView: View {
         ZStack {
             if showTree {
                 ZStack(alignment: .bottom) {
-                    IvoryTreeView(model: model, onPaste: onPaste, onCopy: onCopyOnly, onPreview: onPreview)
+                    IvoryTreeView(model: model, onPaste: onPaste)
                         .padding(.bottom, 62)
                     desktopSearch
                         .padding(.bottom, 12)
@@ -117,6 +117,8 @@ struct HistoryView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .phMoveDown)) { _ in model.move(1) }
         .onReceive(NotificationCenter.default.publisher(for: .phMoveUp)) { _ in model.move(-1) }
+        .onReceive(NotificationCenter.default.publisher(for: .phPageDown)) { _ in model.move(6) }
+        .onReceive(NotificationCenter.default.publisher(for: .phPageUp)) { _ in model.move(-6) }
         .onReceive(NotificationCenter.default.publisher(for: .phConfirm)) { _ in
             guard let item = current else { return }
             onPaste(item)
@@ -159,36 +161,6 @@ struct HistoryView: View {
                 .textFieldStyle(.plain)
                 .focused($searchFocused)
                 .accessibilityLabel(L10n.search)
-            if !store.query.isEmpty {
-                Button { store.query = "" } label: { Image(systemName: "xmark.circle.fill") }
-                    .accessibilityLabel(L10n.clear)
-            }
-            if results.isEmpty && !store.query.isEmpty {
-                Image(systemName: "magnifyingglass.circle").foregroundStyle(.secondary)
-                    .accessibilityLabel(L10n.noMatch)
-            }
-            Button { model.select(max(0, safeSelection / 6 * 6 - 6)) } label: {
-                Image(systemName: "chevron.left")
-            }.disabled(safeSelection < 6).accessibilityLabel(L10n.treePrevious)
-            Button { model.select(safeSelection / 6 * 6 + 6) } label: {
-                Image(systemName: "chevron.right")
-            }.disabled(safeSelection / 6 * 6 + 6 >= results.count).accessibilityLabel(L10n.treeNext)
-            Menu {
-                if let item = current {
-                    Button(L10n.treePreview, action: onPreview)
-                    Button(L10n.treeCopy) { onCopyOnly(item) }
-                    Button(L10n.treePaste) { onPaste(item) }
-                    Divider()
-                    Button(L10n.pinItem) { model.togglePinCurrent() }
-                    Button(L10n.deleteItem) { model.deleteCurrent() }
-                    Divider()
-                }
-                Button(L10n.treeShowList, action: toggleTree)
-            } label: { Image(systemName: "ellipsis") }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .accessibilityLabel(L10n.treeActions)
         }
         .font(.system(size: 13))
         .buttonStyle(.plain)

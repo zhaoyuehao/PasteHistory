@@ -3,8 +3,6 @@ import SwiftUI
 struct IvoryTreeView: View {
     @ObservedObject var model: HistoryViewModel
     var onPaste: (ClipItem) -> Void
-    var onCopy: (ClipItem) -> Void
-    var onPreview: () -> Void
     @State private var resetToken = 0
     @State private var unavailable = false
     private var pageStart: Int { model.safeSelection / 6 * 6 }
@@ -21,22 +19,7 @@ struct IvoryTreeView: View {
                         unavailable: $unavailable, onSelect: select, onActivate: activate)
             .accessibilityLabel(L10n.wishTree)
             .accessibilityValue(model.current?.summary ?? L10n.noMatch)
-            .contextMenu {
-                if let item = model.current {
-                    Button(L10n.treePreview, action: onPreview)
-                    Button(L10n.treeCopy) { onCopy(item) }
-                    Button(L10n.treePaste) { onPaste(item) }
-                    Divider()
-                    Button(L10n.pinItem) { model.togglePinCurrent() }
-                    Button(L10n.deleteItem) { model.deleteCurrent() }
-                }
-                Divider()
-                Button(L10n.treePrevious) { model.select(max(0, pageStart - 6)) }
-                    .disabled(pageStart == 0)
-                Button(L10n.treeNext) { model.select(pageEnd) }
-                    .disabled(pageEnd >= model.results.count)
-                Button(L10n.treeReset) { resetToken += 1 }
-            }
+            .onReceive(NotificationCenter.default.publisher(for: .phResetTree)) { _ in resetToken += 1 }
             .onChange(of: unavailable) { _, failed in
                 // Preserve access to history if the resource cannot be loaded.
                 if failed { NotificationCenter.default.post(name: .phToggleTree, object: nil) }

@@ -47,6 +47,13 @@ struct TreeUISmoke {
         let surface = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds)!
         hosting.cacheDisplay(in: hosting.bounds, to: surface)
         precondition(surface.colorAt(x: 0, y: 0)!.alphaComponent < 0.01, "Hosting view must not add an opaque panel")
+        var keyboard = HistoryKeyboardState()
+        precondition(!keyboard.spacePreviews(query: "two words", composing: false, tree: true))
+        keyboard.navigate()
+        precondition(keyboard.spacePreviews(query: "two words", composing: false, tree: true))
+        precondition(!keyboard.spacePreviews(query: "two words", composing: true, tree: true))
+        keyboard.edit()
+        precondition(!keyboard.spacePreviews(query: "two words", composing: false, tree: true))
         let first = model.current!.id
         post(.phMoveDown)
         precondition(model.safeSelection == 1)
@@ -64,6 +71,10 @@ struct TreeUISmoke {
         store.query = "设计草稿"; run(0.8)
         precondition(!model.results.isEmpty && model.results.allSatisfy { $0.summary.contains("设计草稿") })
         store.query = ""; run(0.8)
+        post(.phPageDown)
+        precondition(model.safeSelection == 6, "Keyboard paging must reach the next branch group")
+        post(.phPageUp)
+        precondition(model.safeSelection == 0)
         model.select(6); run()
         let seventh = model.current!.id
         precondition(seventh != first)
