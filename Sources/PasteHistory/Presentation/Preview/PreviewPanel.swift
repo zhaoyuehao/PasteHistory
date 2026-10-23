@@ -388,6 +388,9 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         let visible = screen.visibleFrame
         let screenMaximum = max(1, min((visible.width - 24) / base.width, (visible.height - 24) / base.height))
         let maximum = min(2, screenMaximum)
+        if phase.contains(.began) {
+            AnchorTrace.write("preview-pinch began delta=\(delta) scale=\(paperMagnification) maximum=\(maximum)")
+        }
         if phase.contains(.began) { gestureMagnification = paperMagnification }
         paperScaleReturn.cancel()
         gestureMagnification = min(maximum * 1.5, max(0.5, gestureMagnification * (1 + delta)))
@@ -396,6 +399,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         let elastic = min(screenMaximum, bounded + (gestureMagnification - bounded) * 0.12)
         applyPaperMagnification(elastic)
         if phase.contains(.ended) || phase.contains(.cancelled) {
+            AnchorTrace.write("preview-pinch ended scale=\(bounded) width=\(panel.frame.width)")
             gestureMagnification = bounded
             paperScaleReturn.settle(from: paperMagnification, to: bounded) { [weak self] scale in
                 self?.applyPaperMagnification(scale)

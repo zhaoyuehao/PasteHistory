@@ -83,6 +83,7 @@ PasteHistory.app/Contents/MacOS/PasteHistory --restore-images   # 从 iCloud 恢
 - `main.swift` 是组合入口，负责注入图片目录、网页内容与用户提示呈现器；`Shared/Localization.swift` 为各层共用文案。
 - 数据操作仍经过 HistoryViewModel / ClipStore；图片纸签只展示图片，OCR 继续用于搜索，展开预览时展示文字。
 - 树模式预览在自身窗口内接收双指缩放，无需点击；整张纸签及图文一起等比缩放，不叠加内部图片/正文缩放。阅读逻辑尺寸固定、滚动仍可用；同次预览切换记录保留倍率，关闭后重新打开复位，不持久化。手势不能扩展到树体或桌面。
+- 捏合通过纸签根视图的原生 NSMagnificationGestureRecognizer 接入，保留 AppKit 事件分发。回归测试必须覆盖注册与 target/action 链；直接调用缩放函数或模拟 action 不能当作真实触控板接收验收。`anchor_trace.log` 的 `preview-pinch` 行仅记录手势阶段、倍率和窗口宽度，不记录剪贴内容。
 - 修改结构后运行 `python3 scripts/check_architecture.py` 与 `./scripts/test_tree_ui.sh`。SwiftPM 自动递归发现源文件；独立脚本也必须递归收集，不能恢复旧的顶层 `*.swift` 假设。
 - 保持同一 executable target；目录分层由边界检查约束。改变数据模型、SQLite、同步协议和剪贴板载荷必须明确说明，不能夹在视觉调整里。
 
