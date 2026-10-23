@@ -10,21 +10,44 @@ struct TreeUISmoke {
         // This harness has its own bundle ID. Disable external sync before any action.
         Settings.shared.iCloudSync = false
         UserDefaults.standard.set(true, forKey: "showDesktopTree")
-        let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("ivory-ui-"+UUID().uuidString)
+        let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "ivory-ui-" + UUID().uuidString)
         let store = ClipStore(directory: temporary)
+        let sampleImage = NSImage(size: NSSize(width: 80, height: 60))
+        sampleImage.lockFocus()
+        NSColor(red: 0.6, green: 0.7, blue: 0.65, alpha: 1).setFill()
+        NSRect(x: 0, y: 0, width: 80, height: 60).fill()
+        NSColor(red: 0.88, green: 0.85, blue: 0.72, alpha: 1).setFill()
+        NSBezierPath(ovalIn: NSRect(x: 35, y: 12, width: 32, height: 32)).fill()
+        sampleImage.unlockFocus()
+        let thumbnail = NSBitmapImageRep(data: sampleImage.tiffRepresentation!)!
+            .representation(using: .png, properties: [:])!
         for index in 0..<72 {
-            let titles = ["记下灵感，让它生长", "A quieter place for ideas", "今天的设计草稿", "https://example.com", "把想法留在枝头", "明天，也有新枝"]
-            store.syncDatabase.upsert(ClipItem(kind: .text, text: titles[index % 6]+" · \(index+1)", sourceApp: "Demo", createdAt: Date().addingTimeInterval(Double(-index))))
+            let titles = [
+                "记下灵感，让它生长。纸签系在真实的枝头，保留分枝之间的空隙。",
+                "A quieter place for ideas. Keep the tree visible and the words readable.",
+                "今天的设计草稿：八条记录，短绳悬挂，旋转时仍可阅读。", "https://example.com/design\n阅读、检索与灵感收藏",
+                "把想法留在枝头\n周五下午三点讨论设计方案。", "明天，也有新枝。先保存灵感，再在需要时迅速找回。",
+            ]
+            store.syncDatabase.upsert(
+                ClipItem(
+                    kind: index % 6 == 5 ? .image : .text, text: titles[index % 6] + " · \(index+1)",
+                    sourceApp: ["备忘录", "Safari", "微信", "Obsidian", "访达", "邮件"][index % 6],
+                    createdAt: Date().addingTimeInterval(Double(-index)),
+                    thumbnailData: index % 6 == 5 ? thumbnail : nil))
         }
         store.refresh()
         let model = HistoryViewModel(store: store)
         var copied: UUID?
         var pasted: UUID?
-        let window = HistoryPanel(contentRect: NSRect(x: 100, y: 100, width: 620, height: 800), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        let root = HistoryView(store: store, model: model,
-                               onPaste: { pasted = $0.id }, onCopyOnly: { copied = $0.id },
-                               onClose: { window.orderOut(nil) }, onPreview: {},
-                               onTreeModeChanged: { window.applyPresentation(tree: $0) })
+        let window = HistoryPanel(
+            contentRect: NSRect(x: 100, y: 100, width: 860, height: 900),
+            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        let root = HistoryView(
+            store: store, model: model,
+            onPaste: { pasted = $0.id }, onCopyOnly: { copied = $0.id },
+            onClose: { window.orderOut(nil) }, onPreview: {},
+            onTreeModeChanged: { window.applyPresentation(tree: $0) })
         let hosting = NSHostingView(rootView: root)
         window.title = "PasteHistory — Desktop Tree Preview"
         window.contentView = hosting
@@ -32,7 +55,10 @@ struct TreeUISmoke {
         window.makeKeyAndOrderFront(nil)
         app.activate(ignoringOtherApps: true)
         func run(_ seconds: Double = 0.4) { RunLoop.main.run(until: Date().addingTimeInterval(seconds)) }
-        func post(_ name: Notification.Name) { NotificationCenter.default.post(name: name, object: nil); run() }
+        func post(_ name: Notification.Name) {
+            NotificationCenter.default.post(name: name, object: nil)
+            run()
+        }
         func scene(in view: NSView) -> IvoryTreeSceneView? {
             if let tree = view as? IvoryTreeSceneView { return tree }
             return view.subviews.lazy.compactMap { scene(in: $0) }.first
@@ -41,12 +67,14 @@ struct TreeUISmoke {
         precondition(scene(in: hosting)?.loadError == nil)
         precondition(scene(in: hosting) != nil, "Packaged scene must appear")
         precondition(!window.isOpaque && !window.hasShadow && !window.styleMask.contains(.titled))
-        precondition(window.canBecomeKey && window.isKeyWindow, "Borderless search must receive keyboard input")
+        precondition(
+            window.canBecomeKey && window.isKeyWindow, "Borderless search must receive keyboard input")
         let corner = NSBitmapImageRep(data: scene(in: hosting)!.snapshot().tiffRepresentation!)!
         precondition(corner.colorAt(x: 0, y: 0)!.alphaComponent < 0.01, "Tree background must be transparent")
         let surface = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds)!
         hosting.cacheDisplay(in: hosting.bounds, to: surface)
-        precondition(surface.colorAt(x: 0, y: 0)!.alphaComponent < 0.01, "Hosting view must not add an opaque panel")
+        precondition(
+            surface.colorAt(x: 0, y: 0)!.alphaComponent < 0.01, "Hosting view must not add an opaque panel")
         var keyboard = HistoryKeyboardState()
         precondition(!keyboard.spacePreviews(query: "two words", composing: false, tree: true))
         keyboard.navigate()
@@ -61,6 +89,11 @@ struct TreeUISmoke {
         precondition(copied == model.current?.id)
         post(.phConfirm)
         precondition(pasted == model.current?.id)
+        let pinned = model.current!.id
+        post(.phPin)
+        precondition(model.results.first?.id == pinned && model.results.first?.pinned == true)
+        post(.phPin)
+        model.select(1); run()
         post(.phToggleTree)
         precondition(scene(in: hosting) == nil, "List toggle must remove 3D renderer")
         precondition(model.safeSelection == 1)
@@ -68,27 +101,40 @@ struct TreeUISmoke {
         post(.phToggleTree)
         precondition(scene(in: hosting) != nil)
         precondition(!window.isOpaque && !window.styleMask.contains(.titled))
-        store.query = "设计草稿"; run(0.8)
+        store.query = "设计草稿"
+        run(0.8)
         precondition(!model.results.isEmpty && model.results.allSatisfy { $0.summary.contains("设计草稿") })
-        store.query = ""; run(0.8)
+        store.query = ""
+        run(0.8)
         post(.phPageDown)
-        precondition(model.safeSelection == 6, "Keyboard paging must reach the next branch group")
+        precondition(model.safeSelection == 8, "Keyboard paging must reach the next branch group")
         post(.phPageUp)
         precondition(model.safeSelection == 0)
-        model.select(6); run()
+        model.select(8)
+        run()
         let seventh = model.current!.id
         precondition(seventh != first)
-        precondition(scene(in: hosting)?.scene?.rootNode.childNode(withName: seventh.uuidString, recursively: true) != nil, "Next page must contain selected record")
-        model.select(59); run(1)
+        precondition(scene(in: hosting)?.cardFrames[seventh] != nil, "Next page must contain selected record")
+        model.select(59)
+        run(1)
         precondition(model.results.count == 72, "Tree navigation must load remaining records")
-        store.query = "no-such-entry-xyz"; run(0.8)
+        store.query = "no-such-entry-xyz"
+        run(0.8)
         precondition(model.results.isEmpty && model.current == nil)
-        store.query = ""; run(0.8)
+        store.query = ""
+        run(0.8)
         precondition(model.safeSelection == 0 && model.current?.id == first)
-        window.setContentSize(NSSize(width: 340, height: 360)); run()
+        window.setContentSize(NSSize(width: 340, height: 360))
+        run()
         precondition(scene(in: hosting)!.bounds.height > 50, "Compact panel must retain a usable viewport")
-        window.setContentSize(NSSize(width: 620, height: 800)); run()
-        print("PASS: borderless transparent key window, filtered search, packaged resource, shared selection/copy/paste, list/tree toggle, page selection, lazy loading, empty search, query reset, compact panel")
+        window.setContentSize(NSSize(width: 860, height: 900))
+        run()
+        let removed = model.current!.id
+        post(.phDelete)
+        precondition(!model.results.contains { $0.id == removed } && store.matchCount == 71 && store.syncDatabase.get(id: removed) == nil)
+        print(
+            "PASS: borderless transparent key window, filtered search, packaged resource, shared selection/copy/paste/pin/delete, list/tree toggle, page selection, lazy loading, empty search, query reset, compact panel"
+        )
         fflush(stdout)
         if CommandLine.arguments.contains("--interactive") { app.run() }
         window.orderOut(nil)

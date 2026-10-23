@@ -56,6 +56,7 @@ struct HistoryView: View {
     @Namespace private var selectionSpace
     /// 边界橡皮筋：撞到顶/底时整片内容纵向下沉一下再弹回
     @State private var bounce: CGFloat = 0
+    @State private var treeRoot = CGPoint.zero
     @AppStorage("showDesktopTree") private var showTree = true
 
     var onPaste: (ClipItem) -> Void
@@ -86,11 +87,13 @@ struct HistoryView: View {
     var body: some View {
         ZStack {
             if showTree {
-                ZStack(alignment: .bottom) {
-                    IvoryTreeView(model: model, onPaste: onPaste)
-                        .padding(.bottom, 62)
-                    desktopSearch
-                        .padding(.bottom, 12)
+                GeometryReader { geometry in
+                    ZStack(alignment: .topLeading) {
+                        IvoryTreeView(model: model, onPaste: onPaste, onRootPosition: { treeRoot = $0 })
+                        desktopSearch
+                            .position(x: treeRoot == .zero ? geometry.size.width/2 : treeRoot.x,
+                                      y: min(geometry.size.height-55, (treeRoot == .zero ? geometry.size.height-112 : treeRoot.y)+55))
+                    }
                 }
                 .transition(Motion.reduceMotion ? .opacity : .scale(scale: 0.94).combined(with: .opacity))
             } else {
@@ -117,8 +120,8 @@ struct HistoryView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .phMoveDown)) { _ in model.move(1) }
         .onReceive(NotificationCenter.default.publisher(for: .phMoveUp)) { _ in model.move(-1) }
-        .onReceive(NotificationCenter.default.publisher(for: .phPageDown)) { _ in model.move(6) }
-        .onReceive(NotificationCenter.default.publisher(for: .phPageUp)) { _ in model.move(-6) }
+        .onReceive(NotificationCenter.default.publisher(for: .phPageDown)) { _ in model.move(IvoryTreeLayout.pageSize) }
+        .onReceive(NotificationCenter.default.publisher(for: .phPageUp)) { _ in model.move(-IvoryTreeLayout.pageSize) }
         .onReceive(NotificationCenter.default.publisher(for: .phConfirm)) { _ in
             guard let item = current else { return }
             onPaste(item)
@@ -155,19 +158,32 @@ struct HistoryView: View {
     private var current: ClipItem? { model.current }
 
     private var desktopSearch: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField(L10n.search, text: $store.query)
-                .textFieldStyle(.plain)
-                .focused($searchFocused)
-                .accessibilityLabel(L10n.search)
+        VStack(spacing: 4) {
+            Rectangle().fill(Color(red: 0.76, green: 0.72, blue: 0.62)).frame(width: 1, height: 14)
+            VStack(spacing: 4) {
+                Circle().fill(Color.black.opacity(0.4)).frame(width: 3.5, height: 3.5)
+                Image(systemName: "magnifyingglass").font(.system(size: 12))
+                    .foregroundStyle(Color(red: 0.43, green: 0.41, blue: 0.36))
+                TextField("", text: $store.query, axis: .vertical)
+                    .lineLimit(1...3)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14, weight: .medium))
+                    .multilineTextAlignment(.center)
+                    .focused($searchFocused)
+                    .accessibilityLabel(L10n.search)
+                    .frame(minHeight: 25)
+                Text(store.matchCount == 0 ? "0 / 0" : "\(safeSelection / IvoryTreeLayout.pageSize + 1) / \((store.matchCount + IvoryTreeLayout.pageSize - 1) / IvoryTreeLayout.pageSize) · \(store.matchCount)")
+                    .font(.system(size: 11).monospacedDigit())
+                    .foregroundStyle(Color(red: 0.39, green: 0.37, blue: 0.32))
+                    .padding(.top, 2)
+            }
+            .foregroundStyle(Color(red: 0.19, green: 0.18, blue: 0.16))
+            .padding(.horizontal, 10).padding(.top, 5).padding(.bottom, 9)
+            .frame(width: 116)
+            .background(Color(red: 0.93, green: 0.91, blue: 0.85), in: RootSearchTag())
+            .shadow(color: .black.opacity(0.18), radius: 5, x: 1, y: 3)
         }
-        .font(.system(size: 13))
-        .buttonStyle(.plain)
-        .padding(.horizontal, 15)
-        .frame(width: 300, height: 40)
-        .background(.regularMaterial, in: Capsule())
-        .shadow(color: .black.opacity(0.15), radius: 10, y: 3)
+        .frame(width: 116)
     }
 
     // MARK: - 搜索
@@ -535,5 +551,16 @@ private struct RowActionButton: View {
         .help(label)
         .accessibilityLabel(label)
         .onHover { hovering = $0 }
+    }
+}
+
+/// Clipped shoulders and a punched hole make search part of the hanging paper family.
+private struct RootSearchTag: Shape {
+    func path(in rect: CGRect) -> Path {
+        Path { p in
+            p.move(to: CGPoint(x: 12, y: 0)); p.addLine(to: CGPoint(x: rect.width-12, y: 0))
+            p.addLine(to: CGPoint(x: rect.width, y: 12)); p.addLine(to: CGPoint(x: rect.width, y: rect.height))
+            p.addLine(to: CGPoint(x: 0, y: rect.height)); p.addLine(to: CGPoint(x: 0, y: 12)); p.closeSubpath()
+        }
     }
 }

@@ -1,36 +1,55 @@
 import AppKit
 import SceneKit
 
+enum IvoryTreeLayout {
+    static let pageSize = 8
+    static let cardWidth: CGFloat = 158
+    static let cardHeight: CGFloat = 74
+    static let selectedHeight: CGFloat = 112
+}
+
 struct IvoryTreeEntry: Equatable {
     let id: UUID
     let title: String
     let index: Int
+    var source: String = ""
+    var date: String = ""
+    var pinned: Bool = false
+    var thumbnail: Data? = nil
 }
 
-/// Native geometry, perspective projection and hit testing; no rendered tree image.
+/// The sculpture is native geometry. Readable paper billboards follow actual mesh
+/// attachment points; their cords are projected from those same points every frame.
 final class IvoryTreeSceneView: SCNView {
     private let pivot = SCNNode()
-    private let tags = SCNNode()
+    private let sculpture = SCNNode()
     private let cameraNode = SCNNode()
-    private let selectionNode = SCNNode()
+    private let paper = IvoryTreePaperView()
+    private var anchors: [SCNVector3] = []
+    private var growthMaterials: [SCNMaterial] = []
     private var entries: [IvoryTreeEntry] = []
     private var selectedID: UUID?
-    private var positions: [UUID: SCNVector3] = [:]
     private var timer: Timer?
     private var yaw: CGFloat = -0.24
     private var pitch: CGFloat = -0.04
     private var targetYaw: CGFloat = -0.24
     private var targetPitch: CGFloat = -0.04
-    private var yawVelocity: CGFloat = 0.0
-    private var pitchVelocity: CGFloat = 0.0
-    private var selectionTarget = SCNVector3Zero
-    private var selectionVelocity = SCNVector3Zero
+    private var yawVelocity: CGFloat = 0
+    private var pitchVelocity: CGFloat = 0
+    private var sway: CGFloat = 0
+    private var appearedAt: CFTimeInterval = 0
+    private var lastStep: CFTimeInterval = 0
     private var downPoint = NSPoint.zero
-    private var previousPoint = NSPoint.zero
+    private var previousScreenPoint = NSPoint.zero
     private var dragged = false
+    private var movingWindow = false
     var onSelect: ((UUID) -> Void)?
     var onActivate: ((UUID) -> Void)?
+    var onRootPosition: ((CGPoint) -> Void)?
     private(set) var loadError: Error?
+    private(set) var growthProgress: CGFloat = 1
+    var cardFrames: [UUID: NSRect] { paper.cardFrames }
+    var isTurningPage: Bool { paper.isTurningPage }
     override var isOpaque: Bool { false }
     override var mouseDownCanMoveWindow: Bool { false }
     override var acceptsFirstResponder: Bool { false }
@@ -44,28 +63,42 @@ final class IvoryTreeSceneView: SCNView {
         wantsLayer = true
         layer?.isOpaque = false
         layer?.backgroundColor = NSColor.clear.cgColor
-        antialiasingMode = .multisampling8X
+        antialiasingMode = .multisampling4X
         preferredFramesPerSecond = 60
         autoenablesDefaultLighting = false
         scene.rootNode.addChildNode(pivot)
         pivot.position.y = 4.4
-        let sculpture = SCNNode()
         sculpture.position.y = -4.4
         pivot.addChildNode(sculpture)
         do {
             guard let url else { throw CocoaError(.fileNoSuchFile) }
             let asset = try SCNScene(url: url, options: [.checkConsistency: true])
+            anchors = Self.surfaceAnchors(in: asset)
             for node in asset.rootNode.childNodes { sculpture.addChildNode(node) }
+            sculpture.enumerateChildNodes { [self] node, _ in
+                guard let geometry = node.geometry else { return }
+                geometry.materials = geometry.materials.map { material in
+                    let copy = material.copy() as! SCNMaterial
+                    copy.shaderModifiers = [
+                        .geometry: """
+                        #pragma varyings
+                        float treeHeight;
+                        #pragma body
+                        out.treeHeight = (scn_node.modelTransform * _geometry.position).y;
+                        """,
+                        .fragment: """
+                        #pragma arguments
+                        float growthHeight;
+                        #pragma body
+                        if (in.treeHeight > growthHeight) { discard_fragment(); }
+                        """,
+                    ]
+                    copy.setValue(Float(12), forKey: "growthHeight")
+                    growthMaterials.append(copy)
+                    return copy
+                }
+            }
         } catch { loadError = error }
-        sculpture.addChildNode(tags)
-        sculpture.addChildNode(selectionNode)
-        let frame = SCNBox(width: 1.20, height: 0.62, length: 0.045, chamferRadius: 0.065)
-        let accent = SCNMaterial()
-        accent.diffuse.contents = NSColor(red: 0.35, green: 0.69, blue: 0.8, alpha: 1)
-        accent.emission.contents = NSColor(red: 0.08, green: 0.22, blue: 0.27, alpha: 1)
-        frame.materials = [accent]
-        selectionNode.geometry = frame
-        selectionNode.isHidden = true
         cameraNode.camera = SCNCamera()
         cameraNode.camera?.fieldOfView = 38
         cameraNode.camera?.zNear = 0.1
@@ -78,15 +111,18 @@ final class IvoryTreeSceneView: SCNView {
         addLight(type: .directional, intensity: 850, position: SCNVector3(-5, 10, 8), shadows: true)
         addLight(type: .omni, intensity: 220, position: SCNVector3(5, 5, -3))
         addLight(type: .ambient, intensity: 230, position: .init())
+        addSubview(paper)
+        paper.autoresizingMask = [.width, .height]
+        paper.onSelect = { [weak self] id in self?.onSelect?(id) }
         applyRotation()
-        setAccessibilityElement(true)
-        setAccessibilityRole(.image)
+        setAccessibilityElement(false)
     }
-
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     deinit { timer?.invalidate() }
 
-    private func addLight(type: SCNLight.LightType, intensity: CGFloat, position: SCNVector3, shadows: Bool = false) {
+    private func addLight(
+        type: SCNLight.LightType, intensity: CGFloat, position: SCNVector3, shadows: Bool = false
+    ) {
         let node = SCNNode()
         node.light = SCNLight()
         node.light?.type = type
@@ -96,146 +132,189 @@ final class IvoryTreeSceneView: SCNView {
         node.light?.shadowRadius = 5
         node.light?.shadowSampleCount = 16
         node.light?.shadowMapSize = CGSize(width: 2048, height: 2048)
-        node.light?.shadowColor = NSColor(white: 0, alpha: 0.4)
+        node.light?.shadowColor = NSColor(white: 0, alpha: 0.35)
         node.light?.orthographicScale = 12
         node.position = position
         if type == .directional { node.look(at: SCNVector3(0, 4, 0)) }
         scene?.rootNode.addChildNode(node)
     }
-
     override func layout() {
         super.layout()
+        paper.frame = bounds
         let aspect = max(0.2, bounds.width / max(bounds.height, 1))
-        let distance = max(5.1 / tan(19 * .pi / 180), 4.2 / (tan(19 * .pi / 180) * aspect)) + 1.5
-        cameraNode.position = SCNVector3(0, 4.4, distance)
+        let distance = max(5.25 / tan(19 * .pi / 180), 4.1 / (tan(19 * .pi / 180) * aspect))
+        cameraNode.position = SCNVector3(0, 4.15, distance)
+        updatePaper(dt: 1.0 / 60)
+        startSettling()
     }
 
-    // Branch coordinates match the Blender exporter. Y becomes vertical, -depth becomes Z.
-    private static let anchors: [(Double, Double)] = [(-1.70, 1.25), (2.16, 1.98), (-2.32, 2.77), (2.03, 3.60), (-2.04, 5.58), (1.92, 6.05)]
+    // These are only search seeds. The final attachments are vertices on the
+    // imported tree surface, so export/deformation changes cannot leave cords floating.
+    private static let seeds: [(Double, Double)] = [
+        (-0.78, 7.75), (1.37, 7.02), (1.92, 6.05), (-2.04, 5.58), (2.03, 3.60), (-2.32, 2.77),
+        (2.16, 1.98), (-1.70, 1.25),
+    ]
     static func anchor(_ slot: Int) -> SCNVector3 {
-        let (x, y) = anchors[slot % anchors.count]
-        let depth = 0.42*x*sin(y*1.1)+0.35*(sin(x*1.7+y*0.2)-sin(y*0.2))
-        return SCNVector3(x, y, -depth + 0.2)
+        let (x, y) = seeds[slot % seeds.count]
+        let depth = 0.42 * x * sin(y * 1.1) + 0.35 * (sin(x * 1.7 + y * 0.2) - sin(y * 0.2))
+        return SCNVector3(x, y, -depth)
     }
-
-    func update(entries: [IvoryTreeEntry], selectedID: UUID?) {
-        if self.entries != entries {
-            self.entries = entries
-            tags.childNodes.forEach { $0.removeFromParentNode() }
-            positions.removeAll()
-            for (slot, entry) in entries.enumerated() {
-                let anchor = Self.anchor(slot)
-                let container = SCNNode()
-                container.name = entry.id.uuidString
-                container.position = SCNVector3(anchor.x, anchor.y - 0.55, anchor.z)
-                positions[entry.id] = container.position
-                let card = SCNBox(width: 1.10, height: 0.52, length: 0.07, chamferRadius: 0.045)
-                let material = SCNMaterial()
-                material.diffuse.contents = Self.labelImage(entry)
-                material.roughness.contents = 0.85
-                card.materials = [material]
-                container.geometry = card
-                tags.addChildNode(container)
-                let cord = SCNNode(geometry: SCNCylinder(radius: 0.012, height: 0.32))
-                cord.position = SCNVector3(0, 0.40, 0)
-                cord.geometry?.firstMaterial?.diffuse.contents = NSColor(white: 0.68, alpha: 1)
-                container.addChildNode(cord)
+    private static func surfaceAnchors(in asset: SCNScene) -> [SCNVector3] {
+        let seeds = (0..<IvoryTreeLayout.pageSize).map(anchor)
+        var found = seeds
+        var distances = Array(repeating: CGFloat.greatestFiniteMagnitude, count: seeds.count)
+        asset.rootNode.childNode(withName: "Tree", recursively: true)?.enumerateChildNodes { node, _ in
+            guard let source = node.geometry?.sources(for: .vertex).first, source.usesFloatComponents,
+                source.bytesPerComponent == 4
+            else { return }
+            source.data.withUnsafeBytes { bytes in
+                for i in 0..<source.vectorCount {
+                    let start = source.dataOffset + i * source.dataStride
+                    let x = bytes.loadUnaligned(fromByteOffset: start, as: Float.self)
+                    let y = bytes.loadUnaligned(fromByteOffset: start + 4, as: Float.self)
+                    let z = bytes.loadUnaligned(fromByteOffset: start + 8, as: Float.self)
+                    let p = node.convertPosition(SCNVector3(x, y, z), to: asset.rootNode)
+                    for j in seeds.indices {
+                        let d = seeds[j]
+                        let dx = p.x - d.x
+                        let dy = p.y - d.y
+                        let dz = p.z - d.z
+                        let distance = dx * dx + dy * dy + dz * dz * 0.2
+                        if distance < distances[j] {
+                            distances[j] = distance
+                            found[j] = p
+                        }
+                    }
+                }
             }
         }
-        let changedSelection = self.selectedID != selectedID
+        return found
+    }
+    func attachmentPosition(_ slot: Int) -> SCNVector3 {
+        sculpture.convertPosition(
+            anchors.isEmpty ? Self.anchor(slot) : anchors[slot % anchors.count], to: nil)
+    }
+    func update(entries: [IvoryTreeEntry], selectedID: UUID?) {
+        let changed = self.entries != entries
+        self.entries = entries
         self.selectedID = selectedID
-        if let selectedID, let position = positions[selectedID] {
-            selectionTarget = SCNVector3(position.x, position.y, position.z - 0.045)
-            if selectionNode.isHidden { selectionNode.position = selectionTarget }
-            selectionNode.isHidden = false
-            if changedSelection && NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-                selectionNode.position = selectionTarget
-                selectionVelocity = SCNVector3Zero
-                selectionNode.opacity = 0
-                selectionNode.runAction(.fadeIn(duration: 0.15), forKey: "selectionFade")
-            }
-            startSettling()
-        } else { selectionNode.isHidden = true }
+        paper.update(entries: entries, selectedID: selectedID, turnPage: changed)
+        updatePaper(dt: 1.0 / 60)
+        startSettling()
     }
-
-    private static func labelImage(_ entry: IvoryTreeEntry) -> NSImage {
-        let image = NSImage(size: NSSize(width: 440, height: 208))
-        image.lockFocus()
-        NSColor(red: 0.83, green: 0.79, blue: 0.69, alpha: 1).setFill()
-        NSRect(x: 0, y: 0, width: 440, height: 208).fill()
-        let style = NSMutableParagraphStyle()
-        style.lineBreakMode = .byTruncatingTail
-        (String(entry.index + 1) as NSString).draw(at: NSPoint(x: 26, y: 139), withAttributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 29, weight: .medium), .foregroundColor: NSColor.darkGray])
-        (String(entry.title.prefix(40)) as NSString).draw(in: NSRect(x: 26, y: 25, width: 388, height: 95), withAttributes: [.font: NSFont.systemFont(ofSize: 35, weight: .medium), .foregroundColor: NSColor(white: 0.15, alpha: 1), .paragraphStyle: style])
-        image.unlockFocus()
-        return image
+    func present() {
+        appearedAt = CACurrentMediaTime()
+        growthProgress = 0
+        startSettling()
     }
-
+    private func updatePaper(dt: CGFloat) {
+        let attachments = entries.indices.map { slot -> IvoryTreePaperView.Attachment in
+            let world = attachmentPosition(slot)
+            let p = projectPoint(world)
+            return .init(point: NSPoint(x: p.x, y: bounds.height - p.y), height: world.y, depth: world.z)
+        }
+        paper.advance(attachments: attachments, sway: sway, growth: growthProgress, dt: dt)
+        let root = projectPoint(sculpture.convertPosition(SCNVector3(0, 0.25, 0), to: nil))
+        onRootPosition?(CGPoint(x: root.x, y: bounds.height - root.y))
+    }
     override func mouseDown(with event: NSEvent) {
         downPoint = convert(event.locationInWindow, from: nil)
-        previousPoint = downPoint
+        previousScreenPoint =
+            window?.convertPoint(toScreen: event.locationInWindow) ?? event.locationInWindow
         dragged = false
+        let root = projectPoint(sculpture.convertPosition(SCNVector3(0, 0.45, 0), to: nil))
+        movingWindow =
+            event.modifierFlags.contains(.option)
+            || (abs(downPoint.x - root.x) < 55 && abs(downPoint.y - root.y) < 70
+                && entryID(at: downPoint) == nil)
     }
     override func mouseDragged(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        if hypot(point.x-downPoint.x, point.y-downPoint.y) > 4 { dragged = true }
-        targetYaw = min(1.15, max(-1.15, targetYaw + (point.x-previousPoint.x)*0.009))
-        targetPitch = min(0.28, max(-0.28, targetPitch - (point.y-previousPoint.y)*0.006))
-        previousPoint = point
-        startSettling()
+        guard let window else { return }
+        let screen = window.convertPoint(toScreen: event.locationInWindow)
+        let dx = screen.x - previousScreenPoint.x
+        let dy = screen.y - previousScreenPoint.y
+        if movingWindow {
+            if abs(dx) + abs(dy) > 0 { dragged = true }
+            let proposed = NSPoint(x: window.frame.minX + dx, y: window.frame.minY + dy)
+            window.setFrameOrigin(Self.clampedOrigin(proposed, size: window.frame.size))
+        } else {
+            let point = convert(event.locationInWindow, from: nil)
+            if hypot(point.x - downPoint.x, point.y - downPoint.y) > 4 { dragged = true }
+            targetYaw += dx * 0.009  // deliberately unbounded: repeated full turns work
+            targetPitch = min(0.32, max(-0.32, targetPitch - dy * 0.005))
+            startSettling()
+        }
+        previousScreenPoint = screen
+    }
+    static func clampedOrigin(_ origin: NSPoint, size: NSSize) -> NSPoint {
+        let center = NSPoint(x: origin.x + size.width / 2, y: origin.y + size.height / 2)
+        let screen = NSScreen.screens.first(where: { $0.frame.contains(center) }) ?? NSScreen.main
+        guard let available = screen?.visibleFrame else { return origin }
+        return NSPoint(
+            x: min(max(origin.x, available.minX), max(available.minX, available.maxX - size.width)),
+            y: min(max(origin.y, available.minY), max(available.minY, available.maxY - size.height)))
     }
     override func mouseUp(with event: NSEvent) {
         guard !dragged else { return }
-        let point = convert(event.locationInWindow, from: nil)
-        if let id = entryID(at: point) {
+        if let id = entryID(at: convert(event.locationInWindow, from: nil)) {
             onSelect?(id)
             if event.clickCount == 2 { onActivate?(id) }
         }
     }
     func entryID(at point: NSPoint) -> UUID? {
-        for hit in hitTest(point, options: [.searchMode: SCNHitTestSearchMode.all.rawValue]) {
-            var node: SCNNode? = hit.node
-            while let current = node {
-                if let name = current.name, let id = UUID(uuidString: name), positions[id] != nil { return id }
-                node = current.parent
-            }
-        }
-        return nil
+        paper.entryID(at: NSPoint(x: point.x, y: bounds.height - point.y))
     }
     func resetView() {
-        targetYaw = -0.24; targetPitch = -0.04
+        // Take the shortest path home even after several full revolutions.
+        let turns = ((yaw + 0.24) / (2 * .pi)).rounded()
+        yaw -= turns * 2 * .pi
+        targetYaw = -0.24
+        targetPitch = -0.04
         startSettling()
     }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window == nil { stopRendering() }
+        if window == nil { stopRendering() } else { present() }
     }
-    func stopRendering() { timer?.invalidate(); timer = nil }
+    func stopRendering() {
+        timer?.invalidate()
+        timer = nil
+    }
     private func applyRotation() { pivot.eulerAngles = SCNVector3(pitch, yaw, 0) }
     private func startSettling() {
         guard timer == nil else { return }
-        let timer = Timer(timeInterval: 1.0/60, repeats: true) { [weak self] _ in self?.step() }
+        lastStep = CACurrentMediaTime()
+        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in self?.step() }
         self.timer = timer
         RunLoop.main.add(timer, forMode: .common)
     }
     private func step() {
-        guard window?.isVisible == true else { stopRendering(); return }
+        guard window?.isVisible == true else {
+            stopRendering()
+            return
+        }
+        let now = CACurrentMediaTime()
+        let dt = CGFloat(min(1.0 / 30, max(1.0 / 240, now - lastStep)))
+        lastStep = now
         let reduced = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        let damping: CGFloat = reduced ? 0.0 : 0.71
+        let steps = dt * 60
+        let damping = pow(0.71, steps)
         func advance(_ value: inout CGFloat, _ velocity: inout CGFloat, _ target: CGFloat) {
-            velocity = (velocity + (target-value)*0.18)*damping
-            value += reduced ? (target-value)*0.5 : velocity
+            velocity = (velocity + (target - value) * 0.18 * steps) * damping
+            value += reduced ? target - value : velocity * steps
         }
         advance(&yaw, &yawVelocity, targetYaw)
         advance(&pitch, &pitchVelocity, targetPitch)
+        sway = reduced ? 0 : (sway - yawVelocity * 28) * pow(0.84, steps)
         applyRotation()
-        var p = selectionNode.position
-        advance(&p.x, &selectionVelocity.x, selectionTarget.x)
-        advance(&p.y, &selectionVelocity.y, selectionTarget.y)
-        advance(&p.z, &selectionVelocity.z, selectionTarget.z)
-        selectionNode.position = p
-        let error = abs(yaw-targetYaw)+abs(pitch-targetPitch)+abs(p.x-selectionTarget.x)+abs(p.y-selectionTarget.y)+abs(p.z-selectionTarget.z)
-        let speed = abs(yawVelocity)+abs(pitchVelocity)+abs(selectionVelocity.x)+abs(selectionVelocity.y)+abs(selectionVelocity.z)
-        if error+speed < 0.0001 { stopRendering() }
+        growthProgress = min(1, CGFloat((now - appearedAt) / (reduced ? 0.15 : 0.42)))
+        let height: Float = reduced ? 12 : Float(10 * (1 - pow(1 - growthProgress, 2)))
+        growthMaterials.forEach { $0.setValue(height, forKey: "growthHeight") }
+        sculpture.opacity = reduced ? growthProgress : 1
+        updatePaper(dt: dt)
+        let error =
+            abs(yaw - targetYaw) + abs(pitch - targetPitch) + abs(yawVelocity) + abs(pitchVelocity)
+            + abs(sway)
+        if error < 0.0001 && growthProgress >= 1 && !paper.isAnimating { stopRendering() }
     }
 }

@@ -25,6 +25,7 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     private var panel: HistoryPanel?
     private var isTreePresentation = UserDefaults.standard.object(forKey: "showDesktopTree") as? Bool ?? true
+    private var placingTree = false
     private var localMonitor: Any?
     private var keyboardState = HistoryKeyboardState()
     private var previousApp: NSRunningApplication?
@@ -103,7 +104,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         // 窗口淡入与内容缩放共用同一个 duration，两套时序叠加会出现「先亮后弹」。
         // 「减少动态效果」开启时跳过缩放，只保留淡入（规范 5.5：降级不是静止）
         panel.alphaValue = 0
-        if !Motion.reduceMotion, let view = panel.contentView {
+        if !isTreePresentation && !Motion.reduceMotion, let view = panel.contentView {
             view.wantsLayer = true
             let scale = CABasicAnimation(keyPath: "transform.scale")
             scale.fromValue = 0.96
@@ -207,22 +208,36 @@ final class PanelController: NSObject, NSWindowDelegate {
         isTreePresentation = enabled
         guard let panel else { return }
         preview.close()
+        // Changing window chrome can itself emit a move notification. Preserve
+        // the user's tree position while switching back from the list.
+        placingTree = true
         panel.applyPresentation(tree: enabled)
         lastPlacement = enabled ? placeTree(panel) : place(panel, near: previousFocusElement)
+        placingTree = false
         if panel.isVisible { panel.makeKey() }
     }
 
     /// The tree stands in the desktop's usable area rather than inside an input-field card.
     private func placeTree(_ panel: NSPanel) -> Placement {
+        let saved = UserDefaults.standard.string(forKey: "desktopTreeOrigin").map(NSPointFromString)
         let mouse = NSEvent.mouseLocation
-        let screen = NSScreen.screens.first(where: { $0.frame.contains(mouse) }) ?? NSScreen.main
+        let screen = saved.flatMap { origin in NSScreen.screens.first { $0.visibleFrame.contains(origin) } }
+            ?? NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
         let available = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1000, height: 800)
-        let height = min(850, available.height * 0.90)
-        let width = min(640, available.width * 0.85, height * 0.80)
-        let frame = NSRect(x: available.midX - width / 2, y: available.minY + 16,
-                           width: width, height: height)
-        panel.setFrame(frame, display: true)
-        return Placement(origin: frame.origin, height: height, reason: "desktop-tree", anchored: false)
+        let height = min(920, available.height * 0.94)
+        let width = min(880, available.width * 0.94, height * 1.04)
+        let preferred = saved ?? NSPoint(x: available.midX-width/2, y: available.minY+12)
+        let origin = NSPoint(x: min(max(preferred.x, available.minX), available.maxX-width),
+                             y: min(max(preferred.y, available.minY), available.maxY-height))
+        placingTree = true
+        panel.setFrame(NSRect(origin: origin, size: NSSize(width: width, height: height)), display: true)
+        placingTree = false
+        return Placement(origin: origin, height: height, reason: "desktop-tree", anchored: false)
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        guard isTreePresentation, !placingTree, let panel, panel.isVisible else { return }
+        UserDefaults.standard.set(NSStringFromPoint(panel.frame.origin), forKey: "desktopTreeOrigin")
     }
 
     /// 一次定位的结果。首次没锚上时要用它决定要不要补位。
@@ -486,7 +501,12 @@ final class PanelController: NSObject, NSWindowDelegate {
             keyboardState.navigate()
             Self.post(.phPageDown); return nil
         case 15 where isTreePresentation && mods == [.command]: // ⌘R
-            if !event.isARepeat { Self.post(.phResetTree) }; return nil
+            if !event.isARepeat {
+                UserDefaults.standard.removeObject(forKey: "desktopTreeOrigin")
+                if let panel { _ = placeTree(panel) }
+                Self.post(.phResetTree)
+            }
+            return nil
         case 36, 76: // return / enter
             Self.post(.phConfirm); return nil
         case 8 where mods == [.command]: // ⌘C 仅复制
