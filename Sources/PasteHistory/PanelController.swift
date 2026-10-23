@@ -526,15 +526,29 @@ final class PanelController: NSObject, NSWindowDelegate {
         lastPlacement = placement
     }
 
-    /// 许愿树直接长在桌面上：窗口全透明（只剩投影浮着），没有「大容器框」；
-    /// 列表模式换回正常窗皮
+    /// 许愿树直接长在桌面上：真·无边框。仅 isOpaque=false + clear 底不够——
+    /// .titled 窗口 macOS 必画一圈窗框描边（真机反馈「边框还是在呢」），
+    /// curtain 模式连 .titled 一起去掉（borderless），内容层自己圆角。
+    /// borderless 代价：拖角缩放没了（⌘L 回列表可拖；窗口尺寸仍按偏好记忆）
     private func applyWindowSkin(_ panel: NSPanel) {
         if Panel.isCurtain {
+            panel.styleMask.remove(.titled)
             panel.isOpaque = false
             panel.backgroundColor = .clear
+            // borderless 是直角矩形：夜色场景的内容层自己圆角（圆的是内容不是窗）
+            if let content = panel.contentViewController?.view {
+                content.wantsLayer = true
+                content.layer?.cornerRadius = 16
+                content.layer?.masksToBounds = true
+            }
         } else {
+            panel.styleMask.insert(.titled)
             panel.isOpaque = true
             panel.backgroundColor = NSColor.windowBackgroundColor
+            if let content = panel.contentViewController?.view {
+                content.layer?.cornerRadius = 0
+                content.layer?.masksToBounds = false
+            }
         }
     }
 
