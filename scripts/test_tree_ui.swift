@@ -197,7 +197,7 @@ struct TreeUISmoke {
         precondition(!model.results.contains { $0.id == removed } && store.matchCount == 71 && store.syncDatabase.get(id: removed) == nil)
         // Exercise the real controller/preview/key routing with the same isolated store.
         window.orderOut(nil)
-        let controller = PanelController(store: store)
+        let controller = PanelController(store: store, observesDesktopFocus: false)
         controller.show()
         run(0.5)
         func key(_ code: UInt16, chars: String = "", mods: NSEvent.ModifierFlags = []) -> NSEvent? {
@@ -260,6 +260,64 @@ struct TreeUISmoke {
         run(0.3)
         precondition(controller.isPreviewVisible)
         precondition(!NSApp.windows.contains { $0.isVisible && $0.title == "纸签预览过渡" }, "No stale flight may survive rapid toggling")
+        let expanded = NSApp.windows.first { $0.isVisible && $0.title == L10n.previewTitle }!
+        let paperPin = controller.previewPaper!.paperPin!
+        let screen = NSScreen.screens.first { $0.frame.contains(paperPin) }!
+        let expected = PreviewPanelController.paperFrame(pin: paperPin, visible: screen.visibleFrame,
+            size: PreviewPanelController.paperSize(for: controller.panelModel.current))
+        precondition(abs(expanded.frame.midX-expected.midX) < 2 && abs(expanded.frame.maxY-expected.maxY) < 2,
+                     "Expanded paper stays at its hanging hole, subject only to screen-edge clamping")
+        precondition(controller.previewPaper?.alphaValue == 0 && controller.previewPaper?.ignoresMouseEvents == true,
+                     "The source paper must not remain as a second interactive copy")
+        precondition(abs(expanded.frame.width / expanded.frame.height - 1.61803398875) < 0.004,
+                     "Expanded paper retains a golden rectangle")
+        precondition(!expanded.styleMask.contains(.titled) && !expanded.isMovable,
+                     "Tree preview must have paper chrome and cannot be dragged away from its branch")
+        let face = expanded.contentView!
+        face.layoutSubtreeIfNeeded()
+        let faceBitmap = face.bitmapImageRepForCachingDisplay(in: face.bounds)!
+        face.cacheDisplay(in: face.bounds, to: faceBitmap)
+        let paperColor = faceBitmap.colorAt(x: 12, y: faceBitmap.pixelsHigh/2)!.usingColorSpace(.deviceRGB)!
+        let expectedColor = IvoryPaperStyle.fill.usingColorSpace(.deviceRGB)!
+        precondition(abs(paperColor.redComponent-expectedColor.redComponent) < 0.035 && abs(paperColor.blueComponent-expectedColor.blueComponent) < 0.035,
+                     "Expanded face uses the same ivory paper, not the system preview background")
+        let composed = NSImage(size: treeWindow.frame.size)
+        composed.lockFocus()
+        liveScene.snapshot().draw(in: liveScene.bounds)
+        let base = treeWindow.contentView!
+        let baseBitmap = base.bitmapImageRepForCachingDisplay(in: base.bounds)!
+        base.cacheDisplay(in: base.bounds, to: baseBitmap)
+        NSImage(cgImage: baseBitmap.cgImage!, size: base.bounds.size).draw(in: base.bounds)
+        for child in treeWindow.islands where child.isVisible && child.alphaValue > 0 {
+            guard let view = child.contentView, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { continue }
+            view.cacheDisplay(in: view.bounds, to: rep)
+            NSImage(cgImage: rep.cgImage!, size: view.bounds.size).draw(in: treeWindow.convertFromScreen(child.frame))
+        }
+        NSImage(cgImage: faceBitmap.cgImage!, size: face.bounds.size).draw(in: treeWindow.convertFromScreen(expanded.frame))
+        composed.unlockFocus()
+        let composedBitmap = NSBitmapImageRep(data: composed.tiffRepresentation!)!
+        try composedBitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: ".build/expanded-paper-preview.png"))
+        // Geometry also covers multiple displays, edge cards and small screens.
+        for visible in [NSRect(x: -1440, y: 100, width: 1440, height: 900), NSRect(x: 0, y: 0, width: 360, height: 500)] {
+            for pin in [NSPoint(x: visible.minX+5, y: visible.minY+5), NSPoint(x: visible.maxX-5, y: visible.maxY-5), NSPoint(x: visible.midX, y: visible.midY)] {
+                let fitted = PreviewPanelController.paperFrame(pin: pin, visible: visible)
+                precondition(visible.contains(fitted))
+                precondition(abs(fitted.width / fitted.height - 1.61803398875) < 0.004, "Screen fitting scales both dimensions together")
+            }
+        }
+        // Observe actual NSWindow geometry, including its small overshoot and settling.
+        _ = key(49, chars: " ")
+        run(0.2)
+        _ = key(49, chars: " ")
+        let settlingPaper = NSApp.windows.first { $0.isVisible && $0.title == "纸签预览过渡" }!
+        var widest: CGFloat = 0
+        for _ in 0..<11 {
+            run(0.025)
+            if settlingPaper.isVisible { widest = max(widest, settlingPaper.frame.width) }
+        }
+        precondition(widest > expected.width && widest < expected.width * 1.025,
+                     "Paper must gently overshoot and settle, not just fade or snap")
+        precondition(!settlingPaper.isVisible && abs(expanded.frame.width-expected.width) < 1)
         // A realistic long clip exercises the native, non-contiguous text layout.
         let longText = String(repeating: "设计：长文本预览应按可见段落排版，方向键直接切换。\n", count: 4000)
         store.syncDatabase.upsert(ClipItem(kind: .text, text: longText, sourceApp: "Regression"))
@@ -267,6 +325,7 @@ struct TreeUISmoke {
         run(0.3)
         controller.panelModel.select(0)
         run(0.3)
+        let stablePreviewSize = expanded.frame.size
         var slowest: TimeInterval = 0
         for _ in 0..<8 {
             let start = Date()
@@ -277,9 +336,11 @@ struct TreeUISmoke {
             slowest = max(slowest, Date().timeIntervalSince(start))
         }
         precondition(controller.isPreviewVisible && controller.panelModel.safeSelection == 0)
+        precondition(expanded.frame.size == stablePreviewSize, "Arrow navigation must not repeatedly reflow long text by resizing the paper")
         print("Preview 100k-text navigation: slowest down/up pair = \(Int(slowest*1000)) ms")
         _ = key(53)
         run(0.2)
+        precondition(controller.previewPaper?.alphaValue == 1, "Closing restores the hanging paper")
         precondition(!controller.isPreviewVisible && controller.isVisible,
                      "Esc must close only preview: preview=\(controller.isPreviewVisible), tree=\(controller.isVisible)")
         // A rejected/missing payload cancels the click and never moves the tree.
@@ -363,7 +424,7 @@ struct TreeUISmoke {
         let parentBitmap = parent.bitmapImageRepForCachingDisplay(in: parent.bounds)!
         parent.cacheDisplay(in: parent.bounds, to: parentBitmap)
         NSImage(cgImage: parentBitmap.cgImage!, size: parent.bounds.size).draw(in: parent.bounds)
-        for child in treeWindow.islands where child.isVisible {
+        for child in treeWindow.islands where child.isVisible && child.alphaValue > 0 {
             guard let view = child.contentView,
                   let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { continue }
             view.cacheDisplay(in: view.bounds, to: bitmap)

@@ -39,6 +39,7 @@ final class PanelController: NSObject, NSWindowDelegate {
     private var previousFocusElement: AXUIElement?
     private var onPasteHandler: ((ClipItem) -> Void)?
     private let store: ClipStore
+    private let observesDesktopFocus: Bool
     /// 面板与预览大窗共用的列表状态：预览内容直接跟着选中走
     let panelModel: HistoryViewModel
     private var previewStorage: PreviewPanelController?
@@ -49,8 +50,9 @@ final class PanelController: NSObject, NSWindowDelegate {
         previewStorage = created
         return created
     }
-    init(store: ClipStore) {
+    init(store: ClipStore, observesDesktopFocus: Bool = true) {
         self.store = store
+        self.observesDesktopFocus = observesDesktopFocus
         self.panelModel = HistoryViewModel(store: store)
         super.init()
         layoutObservers = [
@@ -239,6 +241,7 @@ final class PanelController: NSObject, NSWindowDelegate {
             let directory = self.store.imagesDirectory
             return { ClipDragPayload.writers(for: item, imagesDirectory: directory) }
         }
+        panel.onPaperLayout = { [weak self] in self?.previewStorage?.followPaper() }
         panel.onDragUnavailable = { Toast.show("原内容不可读取，无法拖出", duration: 2) }
         panel.onDragBegan = { [weak self] in self?.preview.closeImmediately() }
         panel.onDragEnded = { [weak self] operation in
@@ -519,15 +522,19 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     private func installKeyMonitor() {
         removeKeyMonitor()
-        outsideMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
-            self?.hide(restoreFocus: false)
-        }
-        activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
-        ) { [weak self] note in
-            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-                  app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
-            self?.hide(restoreFocus: false)
+        // Isolated UI regression runs may omit real desktop observers so unrelated
+        // user activity doesn't dismiss synthetic windows during assertions.
+        if observesDesktopFocus {
+            outsideMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
+                self?.hide(restoreFocus: false)
+            }
+            activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+            ) { [weak self] note in
+                guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                      app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
+                self?.hide(restoreFocus: false)
+            }
         }
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
@@ -652,6 +659,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         guard isTreePresentation, let id = panelModel.current?.id else { return nil }
         return panel?.paper(for: id)
     }
+    func setExpandedPaper(_ id: UUID?) { panel?.expandedPaperID = id }
     var previewBesideTree: Bool { isTreePresentation }
     var previewAnchorVisible: Bool { (panel?.isVisible ?? false) && !isHiding }
     func makePanelKeyAgain() { panel?.makeKey(); panel?.focusSearch() }

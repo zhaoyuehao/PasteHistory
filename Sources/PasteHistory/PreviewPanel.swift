@@ -22,6 +22,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     private let model: HistoryViewModel
     private weak var owner: PanelController?
     private var panel: NSPanel?
+    private var hosting: NSHostingController<PreviewContentView>?
     /// 淡出进行中：窗口还没 orderOut，但逻辑上已经算关了
     private var isClosing = false
     /// 关窗动画的代际号：关到一半又开（连按空格）时，作废在排队的 orderOut
@@ -41,6 +42,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     private let paperFlight = PaperPreviewFlight()
     private var previewedID: UUID?
     private var paperReturnFrame: NSRect?
+    private var paperSessionSize: NSSize?
 
     var window: NSPanel? { panel }
     var isVisible: Bool { (panel?.isVisible ?? false) && !isClosing }
@@ -67,6 +69,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         closeGeneration += 1
         isClosing = false
         panel.ignoresMouseEvents = false
+        configureAppearance()
         if owner?.previewBesideTree == true {
             openFromPaper(panel)
             return
@@ -145,20 +148,24 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     /// Animate a lightweight paper snapshot, not a resizing text layout. The
     /// actual preview stays at its final size; arrow navigation never queues flights.
     private func openFromPaper(_ panel: NSPanel) {
+        // Choose once per opening. Arrows move the sheet without resizing the
+        // text container on every animation frame.
+        paperSessionSize = Self.paperSize(for: model.current)
         let target = targetFrame()
         let paper = owner?.previewPaper
         let origin = paperFlight.visibleFrame ?? paper?.frame ?? paperReturnFrame ?? target
         let image = (paper?.contentView as? TreePaperSurface)?.paperImage()
         previewedID = model.current?.id
+        owner?.setExpandedPaper(previewedID)
         paperReturnFrame = paper?.frame
         panel.setFrame(target, display: false)
         panel.alphaValue = 0
         panel.ignoresMouseEvents = true
         panel.orderFrontRegardless()
         paperFlight.animate(from: Motion.reduceMotion ? target : origin, to: target,
-                            image: image, duration: Motion.reduceMotion ? 0.12 : 0.22,
+                            image: image, duration: Motion.reduceMotion ? 0.12 : Motion.paperOpenDuration,
                             opening: true) { [weak panel] progress in
-            panel?.alphaValue = max(0, (progress - 0.45) / 0.55)
+            panel?.alphaValue = max(0, (progress - 0.75) / 0.25)
         } completion: { [weak panel] in
             panel?.alphaValue = 1
             panel?.ignoresMouseEvents = false
@@ -174,13 +181,14 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         panel.ignoresMouseEvents = true
         panel.alphaValue = 0
         paperFlight.animate(from: origin, to: Motion.reduceMotion ? origin : destination,
-                            image: image, endImage: paper, duration: Motion.reduceMotion ? 0.1 : 0.17,
+                            image: image, endImage: paper, duration: Motion.reduceMotion ? 0.1 : Motion.paperCloseDuration,
                             opening: false, progress: { _ in }) { [weak self] in
             guard let self else { return }
             self.panel?.orderOut(nil)
             self.panel?.alphaValue = 1
             self.panel?.ignoresMouseEvents = false
             self.isClosing = false
+            self.owner?.setExpandedPaper(nil)
         }
     }
 
@@ -195,6 +203,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     func closeImmediately() {
         closeGeneration += 1
         paperFlight.cancel()
+        owner?.setExpandedPaper(nil)
         panel?.orderOut(nil)
         panel?.alphaValue = 1
         panel?.ignoresMouseEvents = false
@@ -203,11 +212,78 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
 
     // MARK: - 构建
 
+    private func configureAppearance() {
+        guard let panel else { return }
+        let paper = owner?.previewBesideTree == true
+        hosting?.rootView = PreviewContentView(model: model, paperStyle: paper)
+        panel.styleMask = paper ? [.borderless, .nonactivatingPanel]
+            : [.titled, .closable, .fullSizeContentView, .nonactivatingPanel, .resizable]
+        panel.minSize = paper ? NSSize(width: 1, height: 1) : NSSize(width: Preview.minWidth, height: Preview.minHeight)
+        panel.isMovable = !paper
+        panel.isMovableByWindowBackground = !paper
+        panel.isOpaque = !paper
+        panel.backgroundColor = paper ? .clear : .windowBackgroundColor
+        panel.appearance = paper ? NSAppearance(named: .aqua) : nil
+        panel.hasShadow = true
+        panel.contentView?.wantsLayer = true
+        panel.contentView?.layer?.backgroundColor = paper ? NSColor.clear.cgColor : nil
+        panel.contentView?.layer?.cornerRadius = paper ? IvoryPaperStyle.radius : 0
+        panel.contentView?.layer?.masksToBounds = paper
+        panel.standardWindowButton(.closeButton)?.isHidden = true
+        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        panel.standardWindowButton(.zoomButton)?.isHidden = true
+    }
+
+    /// Keep the hole on the branch while the paper unfolds below it. Only
+    /// screen-edge clamping may shift this point; never choose a side of the tree.
+    static func paperSize(for item: ClipItem?) -> NSSize {
+        let sizes = [NSSize(width: 340, height: 210), NSSize(width: 400, height: 247), NSSize(width: 480, height: 297)]
+        guard let item else { return sizes[1] }
+        switch item.kind {
+        case .text:
+            let text = String((item.text ?? "").prefix(3000)) as NSString
+            for size in sizes {
+                let measured = text.boundingRect(with: NSSize(width: size.width - 42, height: 1000),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading],
+                    attributes: [.font: NSFont.systemFont(ofSize: 15)]).height
+                if ceil(measured) + 84 <= size.height { return size }
+            }
+            return sizes[2]
+        case .files: return (item.filePaths?.count ?? 0) > 3 ? sizes[2] : sizes[1]
+        case .image: return sizes[2]
+        }
+    }
+
+    static func paperFrame(pin: NSPoint, visible: NSRect, size: NSSize = NSSize(width: 400, height: 247)) -> NSRect {
+        let scale = min(1, max(1, visible.width - 24) / size.width, max(1, visible.height - 24) / size.height)
+        let width = size.width * scale
+        let height = size.height * scale
+        let x = min(max(pin.x - width / 2, visible.minX + 12), visible.maxX - width - 12)
+        let y = min(max(pin.y + IvoryPaperStyle.pinInset - height, visible.minY + 12), visible.maxY - height - 12)
+        return NSRect(x: x, y: y, width: width, height: height)
+    }
+
+    func followPaper() {
+        guard owner?.previewBesideTree == true, isVisible, !isClosing,
+              paperFlight.visibleFrame == nil, owner?.previewPaper != nil, let panel else { return }
+        let target = targetFrame()
+        let current = panel.frame
+        let positionDelta: CGFloat = abs(current.minX - target.minX) + abs(current.minY - target.minY)
+        let sizeDelta: CGFloat = abs(current.width - target.width) + abs(current.height - target.height)
+        guard positionDelta + sizeDelta > 2 else { return }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Motion.reduceMotion ? 0 : 0.14
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.18, 0.8, 0.25, 1.1)
+            panel.animator().setFrameOrigin(target.origin)
+        }
+    }
+
     private func buildPanel() {
         let view = PreviewContentView(model: model)
         let hosting = NSHostingController(rootView: view)
         hosting.safeAreaRegions = []
-        let panel = NSPanel(contentViewController: hosting)
+        self.hosting = hosting
+        let panel = PaperPreviewPanel(contentViewController: hosting)
         // 与面板同一套窗口语言：透明标题栏、藏红绿灯、可拖动背景——一张卡片，不是一扇窗户
         panel.styleMask = [.titled, .closable, .fullSizeContentView, .nonactivatingPanel, .resizable]
         panel.titleVisibility = .hidden
@@ -239,7 +315,8 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     /// 用户的视线就在面板上，侧边落位会把视线拽走（用户明确不要）。
     /// 面板中心拿不到才退当前屏居中。屏幕放不下就收高，不挪中心。
     private func targetFrame() -> NSRect {
-        let anchor = owner?.previewAnchorFrame
+        let paper = owner?.previewBesideTree == true ? owner?.previewPaper : nil
+        let anchor = paper?.frame ?? owner?.previewAnchorFrame
         let screen = anchor.flatMap { a in
             NSScreen.screens.first { $0.frame.intersects(a) }
         } ?? NSScreen.main ?? NSScreen.screens.first
@@ -247,6 +324,11 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
             return NSRect(x: 0, y: 0, width: previewSize.width, height: previewSize.height)
         }
         let visible = screen.visibleFrame
+        if owner?.previewBesideTree == true {
+            let pin = paper?.paperPin ?? anchor.map { NSPoint(x: $0.midX, y: $0.maxY - IvoryPaperStyle.pinInset) }
+                ?? NSPoint(x: visible.midX, y: visible.midY)
+            return Self.paperFrame(pin: pin, visible: visible, size: paperSessionSize ?? Self.paperSize(for: nil))
+        }
 
         // 窗高：用户拖边后的尺寸或默认 640×400（黄金矩形）；塞不下收到恰好放得下
         let wanted = previewSize.height
@@ -259,13 +341,6 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         let cy = anchor.map { $0.midY } ?? visible.midY
         var x = cx - width / 2
         var y = cy - height / 2
-        if owner?.previewBesideTree == true, let anchor {
-            let right = visible.maxX - anchor.maxX
-            let left = anchor.minX - visible.minX
-            x = right >= left ? anchor.maxX + 12 : anchor.minX - width - 12
-            // On smaller screens overlap the outer crown, keeping the root search free.
-            y = anchor.maxY - height - Preview.margin
-        }
         // 夹回屏幕内：挪的是边缘，不是中心
         x = min(max(x, visible.minX + Preview.margin),
                 visible.maxX - Preview.margin - width)
@@ -279,6 +354,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     private func syncAfterModelChange() {
         if isVisible, previewedID != model.current?.id {
             previewedID = model.current?.id
+            if owner?.previewBesideTree == true { owner?.setExpandedPaper(previewedID) }
             paperReturnFrame = owner?.previewPaper?.frame ?? paperReturnFrame
             // A new selection takes over immediately; don't show a stale flying card.
             if paperFlight.visibleFrame != nil {
@@ -304,7 +380,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     /// 记下来 previewSize 就被面板几何污染（预览一会大一会小的根因）
     func windowDidEndLiveResize(_ notification: Notification) {
         guard let panel, notification.object as? NSWindow === panel else { return }
-        guard frameAnimationsInFlight == 0 else { return }
+        guard frameAnimationsInFlight == 0, owner?.previewBesideTree != true else { return }
         previewSize = panel.frame.size
     }
 
@@ -350,13 +426,16 @@ private final class PaperPreviewFlight {
         let host = NSView(frame: NSRect(origin: .zero, size: from.size))
         if opening {
             host.wantsLayer = true
-            host.layer?.backgroundColor = NSColor(red: 0.94, green: 0.92, blue: 0.86, alpha: 1).cgColor
-            host.layer?.cornerRadius = 5
+            host.layer?.backgroundColor = IvoryPaperStyle.fill.cgColor
+            host.layer?.cornerRadius = IvoryPaperStyle.radius
+            host.layer?.borderColor = IvoryPaperStyle.edge.cgColor
+            host.layer?.borderWidth = 1.5
         }
         let sheet = NSImageView(frame: host.bounds)
         sheet.image = image
         // Unfold the sheet without stretching its short excerpt into giant text.
         sheet.imageScaling = opening ? .scaleProportionallyDown : .scaleAxesIndependently
+        sheet.imageAlignment = opening ? .alignTop : .alignCenter
         sheet.autoresizingMask = [.width, .height]
         host.addSubview(sheet)
         let destination = NSImageView(frame: host.bounds)
@@ -371,13 +450,13 @@ private final class PaperPreviewFlight {
             MainActor.assumeIsolated {
             guard let self, let panel else { timer.invalidate(); return }
             let t = min(1, CGFloat((CACurrentMediaTime() - start) / duration))
-            let p = 1 - pow(1 - t, 3)
+            let p = Motion.reduceMotion ? t : Motion.paperProgress(t, opening: opening)
             let rect = NSRect(x: from.minX + (to.minX-from.minX)*p,
                               y: from.minY + (to.minY-from.minY)*p,
                               width: from.width + (to.width-from.width)*p,
                               height: from.height + (to.height-from.height)*p)
             panel.setFrame(rect, display: true)
-            if opening { panel.alphaValue = 1 - max(0, (t-0.45)/0.55) }
+            if opening { panel.alphaValue = 1 - max(0, (t-0.75)/0.25) }
             else if endImage != nil {
                 sheet.alphaValue = 1-t; destination.alphaValue = t
                 panel.alphaValue = 1 - max(0, (t-0.8)/0.2)
@@ -394,10 +473,16 @@ private final class PaperPreviewFlight {
     }
 }
 
+private final class PaperPreviewPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+}
+
 // MARK: - 预览内容
 
 struct PreviewContentView: View {
     @ObservedObject var model: HistoryViewModel
+    var paperStyle = false
 
     /// 切换动画的方向：+1 新内容从下浮入（按 ↓），-1 从上（按 ↑）
     @State private var direction: Int = 1
@@ -438,8 +523,8 @@ struct PreviewContentView: View {
     var body: some View {
         if let item = displayedItem {
             VStack(spacing: 0) {
-                header(item)
-                hairline
+                if paperStyle { paperHeader(item) }
+                else { header(item); hairline }
                 ZStack {
                     content(item)
                         // 身份变化驱动切换：旧内容淡出，新内容从按键方向浮入。
@@ -453,10 +538,25 @@ struct PreviewContentView: View {
                 .clipped()
                 // 撞到顶/底：预览内容与面板列表一起被推——像一个整体
                 .offset(y: bounceOffset)
+                if paperStyle {
+                    Text(item.createdAt.formatted(date: .abbreviated, time: .shortened))
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color(IvoryPaperStyle.meta))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, Rhythm.xxl).padding(.bottom, Rhythm.xl)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .ignoresSafeArea()
-            .background(Color(NSColor.windowBackgroundColor))
+            .background(Color(paperStyle ? IvoryPaperStyle.fill : NSColor.windowBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: paperStyle ? IvoryPaperStyle.radius : 0))
+            .overlay {
+                if paperStyle {
+                    RoundedRectangle(cornerRadius: IvoryPaperStyle.radius)
+                        .strokeBorder(Color(IvoryPaperStyle.edge), lineWidth: 1.5)
+                        .allowsHitTesting(false)
+                }
+            }
             .task(id: model.current?.id) {
                 await step(to: model.current)
             }
@@ -595,6 +695,22 @@ struct PreviewContentView: View {
 
     /// 标题栏即元信息：类型图标 + 摘要 + 来源·时间·尺寸。
     /// 这三样正是扫列表时的抓手，大窗里保持在场。切换时头部保持稳定，只有内容在走
+    private func paperHeader(_ item: ClipItem) -> some View {
+        VStack(spacing: 0) {
+            Circle().fill(Color(IvoryPaperStyle.meta).opacity(0.7))
+                .frame(width: 3.4, height: 3.4).padding(.top, 5.3)
+            HStack {
+                let index = model.results.firstIndex { $0.id == item.id } ?? 0
+                Text(String(format: "%02d", index + 1) + (item.pinned ? " · ↟ " : " · ") + (item.sourceApp ?? "—"))
+                    .font(.system(size: 11, weight: .medium))
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+            }
+            .foregroundStyle(Color(IvoryPaperStyle.meta))
+            .padding(.horizontal, Rhythm.xxl).padding(.top, Rhythm.l).padding(.bottom, Rhythm.m)
+        }
+    }
+
     private func header(_ item: ClipItem) -> some View {
         HStack(spacing: 10) {
             Image(systemName: Self.kindSymbol(item.kind))
@@ -676,7 +792,7 @@ struct PreviewContentView: View {
     private func textContent(_ item: ClipItem) -> some View {
         let text = item.text ?? ""
         let isTruncated = text.count > Preview.maxTextLength
-        return PreviewTextView(text: String(text.prefix(Preview.maxTextLength)), identity: item.id)
+        return PreviewTextView(text: String(text.prefix(Preview.maxTextLength)), identity: item.id, paperStyle: paperStyle)
         .overlay(alignment: .bottom) {
             if isTruncated { truncatedBar }
         }
@@ -783,6 +899,7 @@ struct PreviewContentView: View {
 private struct PreviewTextView: NSViewRepresentable {
     let text: String
     let identity: UUID
+    var paperStyle = false
     final class Coordinator { var identity: UUID?; var text = "" }
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeNSView(context: Context) -> NSScrollView {
@@ -793,9 +910,9 @@ private struct PreviewTextView: NSViewRepresentable {
         view.isEditable = false
         view.isSelectable = true
         view.drawsBackground = false
-        view.font = .systemFont(ofSize: Scale.body)
-        view.textColor = .labelColor
-        view.textContainerInset = NSSize(width: Rhythm.xxl, height: Rhythm.xxl)
+        view.font = .systemFont(ofSize: paperStyle ? 15 : Scale.body)
+        view.textColor = paperStyle ? IvoryPaperStyle.ink : .labelColor
+        view.textContainerInset = NSSize(width: Rhythm.xxl, height: paperStyle ? Rhythm.l : Rhythm.xxl)
         view.isVerticallyResizable = true
         view.isHorizontallyResizable = false
         view.autoresizingMask = [.width]
@@ -806,6 +923,11 @@ private struct PreviewTextView: NSViewRepresentable {
         return scroll
     }
     func updateNSView(_ scroll: NSScrollView, context: Context) {
+        if let view = scroll.documentView as? NSTextView {
+            view.font = .systemFont(ofSize: paperStyle ? 15 : Scale.body)
+            view.textColor = paperStyle ? IvoryPaperStyle.ink : .labelColor
+            view.textContainerInset = NSSize(width: Rhythm.xxl, height: paperStyle ? Rhythm.l : Rhythm.xxl)
+        }
         guard context.coordinator.identity != identity || context.coordinator.text != text,
               let view = scroll.documentView as? NSTextView else { return }
         context.coordinator.identity = identity

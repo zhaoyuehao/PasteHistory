@@ -1,5 +1,15 @@
 import AppKit
 
+/// Shared by the hanging card, its expanded face and the moving paper.
+enum IvoryPaperStyle {
+    static let fill = NSColor(red: 0.94, green: 0.92, blue: 0.86, alpha: 1)
+    static let ink = NSColor(white: 0.16, alpha: 1)
+    static let meta = NSColor(white: 0.36, alpha: 1)
+    static let edge = NSColor(red: 0.66, green: 0.77, blue: 0.72, alpha: 1)
+    static let radius: CGFloat = 4
+    static let pinInset: CGFloat = 7
+}
+
 /// Screen-facing paper keeps the system font readable at every viewing angle.
 /// A paper's suspension point always comes from the corresponding 3D branch.
 final class IvoryTreePaperView: NSView {
@@ -47,6 +57,7 @@ final class IvoryTreePaperView: NSView {
             owner.resumePaperUpdates = { [weak self] in self?.syncIslands() }
             return
         }
+        owner.onPaperAppearanceChanged = { [weak self] in self?.needsDisplay = true }
         let current = visuals()
         let ids = Set(current.map { $0.entry.id })
         for id in Array(islands.keys) where !ids.contains(id) {
@@ -68,7 +79,8 @@ final class IvoryTreePaperView: NSView {
             // Rectangular paper footprint (including its small tilt and shadow).
             // Cords, branches and the rest of the desktop never acquire a window.
             let a = card.tilt * .pi / 180
-            let center = NSPoint(x: card.rect.midX, y: card.rect.minY + 7)
+            let center = NSPoint(x: card.rect.midX, y: card.rect.minY + IvoryPaperStyle.pinInset)
+            panel.paperPin = owner.convertPoint(toScreen: convert(center, to: nil))
             let corners: [NSPoint] = [NSPoint(x: card.rect.minX, y: card.rect.minY),
                           NSPoint(x: card.rect.maxX, y: card.rect.minY),
                           NSPoint(x: card.rect.minX, y: card.rect.maxY),
@@ -85,7 +97,8 @@ final class IvoryTreePaperView: NSView {
             panel.setFrame(owner.convertToScreen(convert(frame, to: nil)), display: false)
             // Visible transitional papers consume a click without activating a new
             // record or accidentally clicking the app beneath the departing paper.
-            panel.enabled = card.opacity > 0.01
+            panel.alphaValue = owner.expandedPaperID == id ? 0 : 1
+            panel.enabled = card.opacity > 0.01 && owner.expandedPaperID != id
             surface.enabled = !layoutEditing && !isTurningPage && card.opacity > 0.9
                 && cards.contains { $0.entry.id == id }
             surface.recordID = id
@@ -105,6 +118,7 @@ final class IvoryTreePaperView: NSView {
             surface.needsDisplay = true
             owner.showIslandIfNeeded(panel)
         }
+        owner.onPaperLayout?()
     }
 
     var cardFrames: [UUID: NSRect] {
@@ -244,12 +258,13 @@ final class IvoryTreePaperView: NSView {
             }
             context.restoreGState()
         }
-        if let card = cards.first(where: { $0.entry.id == selectedID }), card.opacity > 0 {
+        if let card = cards.first(where: { $0.entry.id == selectedID }), card.opacity > 0,
+           (window as? HistoryPanel)?.expandedPaperID != card.entry.id {
             context.saveGState()
             context.setAlpha(
                 min(1, CGFloat(CACurrentMediaTime() - turnStart) / 0.23) * card.opacity * selectionFade)
             transform(selectionRect, tilt: selectionTilt, fold: 1, context: context)
-            NSColor(red: 0.66, green: 0.77, blue: 0.72, alpha: 1).setStroke()
+            IvoryPaperStyle.edge.setStroke()
             let border = NSBezierPath(roundedRect: selectionRect, xRadius: 5, yRadius: 5)
             border.lineWidth = 1.5
             border.stroke()
@@ -272,7 +287,7 @@ final class IvoryTreePaperView: NSView {
         shadow.shadowOffset = NSSize(width: 1, height: 3)
         shadow.set()
         (selected
-            ? NSColor(red: 0.94, green: 0.92, blue: 0.86, alpha: 1)
+            ? IvoryPaperStyle.fill
             : NSColor(red: 0.79, green: 0.77, blue: 0.71, alpha: 1)).setFill()
         NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4).fill()
         NSGraphicsContext.restoreGraphicsState()

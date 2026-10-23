@@ -7,6 +7,7 @@ final class TreeInteractionPanel: NSPanel {
     enum Role { case paper, search, layout }
     let role: Role
     weak var owner: HistoryPanel?
+    var paperPin: NSPoint?
     var enabled = true { didSet { ignoresMouseEvents = !enabled } }
     override var canBecomeKey: Bool { role != .paper }
     override var canBecomeMain: Bool { false }

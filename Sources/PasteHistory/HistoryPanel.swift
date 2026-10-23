@@ -12,6 +12,18 @@ final class HistoryPanel: NSPanel {
     var onDragBegan: (() -> Void)?
     var onDragEnded: ((NSDragOperation) -> Void)?
     var dragInProgress = false
+    var expandedPaperID: UUID? {
+        didSet {
+            for island in islands where island.role == .paper {
+                let expanded = (island.contentView as? TreePaperSurface)?.recordID == expandedPaperID && expandedPaperID != nil
+                island.alphaValue = expanded ? 0 : 1
+                island.enabled = !expanded
+            }
+            onPaperAppearanceChanged?()
+        }
+    }
+    var onPaperAppearanceChanged: (() -> Void)?
+    var onPaperLayout: (() -> Void)?
     var resumePaperUpdates: (() -> Void)?
     func finishPaperDrag(operation: NSDragOperation) {
         dragInProgress = false
