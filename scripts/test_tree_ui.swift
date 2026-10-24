@@ -394,23 +394,23 @@ struct TreeUISmoke {
         let textZoom = zoomViews(in: expanded.contentView!).first!
         let textWidth = textZoom.documentVisibleRect.width
         let zoomPanel = expanded as! PaperPreviewPanel
-        // Exercise AppKit's registered target/action path, not just the window's
-        // scaling helper. Hardware recognition still requires a physical pinch.
+        // Exercise the same window/point routing gate as real local events.
+        // In particular, preview must remain non-key before and after the pinch.
         func nativePinch(_ panel: PaperPreviewPanel, by delta: CGFloat) {
-            let surface = panel.contentView as! PaperPreviewSurface
-            let registered = surface.paperPinch
-            precondition(registered.isEnabled && registered.view === surface && registered.target === surface,
-                         "A native magnification recognizer must cover the entire live paper")
-            let gesture = TestPaperPinch(target: registered.target, action: registered.action)
-            surface.addGestureRecognizer(gesture)
-            gesture.recognize(delta: delta)
-            precondition(NSApp.sendAction(registered.action!, to: registered.target, from: gesture))
+            let point = NSPoint(x: panel.frame.width / 2, y: panel.frame.height / 2)
+            precondition(panel.routeMagnification(from: panel, at: point, delta: delta, phase: .began))
             run(0.02)
-            gesture.finish()
-            precondition(NSApp.sendAction(registered.action!, to: registered.target, from: gesture))
+            precondition(panel.routeMagnification(from: panel, at: NSPoint(x: 20, y: 20), delta: 0, phase: .ended))
             run(0.02)
-            surface.removeGestureRecognizer(gesture)
         }
+        treeWindow.focusSearch()
+        precondition(!zoomPanel.isKeyWindow && NSApp.keyWindow !== zoomPanel,
+                     "Regression must start with search focused and preview unclicked")
+        let rejectedFrame = zoomPanel.frame
+        precondition(!zoomPanel.routeMagnification(from: treeWindow, at: NSPoint(x: 20, y: 20), delta: 0.5, phase: .began))
+        precondition(!zoomPanel.routeMagnification(from: nil, at: NSPoint(x: 20, y: 20), delta: 0.5, phase: .began))
+        precondition(!zoomPanel.routeMagnification(from: zoomPanel, at: NSPoint(x: -5, y: 20), delta: 0.5, phase: .began))
+        precondition(zoomPanel.frame == rejectedFrame, "Foreign windows and outside points must never zoom the paper")
         let unscaledPaperFrame = expanded.frame
         let textSize = textZoom.convert(NSRect(x: 0, y: 0, width: 100, height: 20), to: nil).size
         let keyBeforePinch = NSApp.keyWindow
@@ -457,7 +457,7 @@ struct TreeUISmoke {
         print("Preview 100k-text navigation: slowest down/up pair = \(Int(slowest*1000)) ms")
         _ = key(53)
         run(0.2)
-        precondition(!zoomPanel.magnifyPaper(by: 0.5, phase: .began), "Hidden preview cannot consume a pinch")
+        precondition(!zoomPanel.handlesPaperPinch && !zoomPanel.routeMagnification(from: zoomPanel, at: NSPoint(x: 20, y: 20), delta: 0.5, phase: .began), "Closing must remove the monitor, not just hide its window")
         precondition(controller.previewPaper?.alphaValue == 1, "Closing restores the hanging paper")
         precondition(!controller.isPreviewVisible && controller.isVisible,
                      "Esc must close only preview: preview=\(controller.isPreviewVisible), tree=\(controller.isVisible)")
@@ -665,7 +665,7 @@ struct TreeUISmoke {
         let listSurface = expanded.contentView as! PaperPreviewSurface
         precondition(listSurface.readingSize == nil && abs(listSurface.bounds.width - listSurface.frame.width) < 1,
                      "List previews must not inherit the tree's scaled coordinate system")
-        precondition(!listSurface.paperPinch.isEnabled, "List previews must not intercept native document pinch")
+        precondition(!zoomPanel.handlesPaperPinch, "List previews must not intercept native document pinch")
         precondition(zoomViews(in: expanded.contentView!).allSatisfy { $0.allowsMagnification },
                      "List previews retain their native document magnification")
         _ = key(53)
@@ -698,24 +698,5 @@ struct TreeUISmoke {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { inspectionWindow.orderFrontRegardless(); inspectionWindow.makeKey() }
         }
         return true
-    }
-}
-
-// A recognizer subclass may drive its state to exercise AppKit action dispatch.
-// This deliberately does not pretend to synthesize physical trackpad touches.
-@MainActor
-private final class TestPaperPinch: NSMagnificationGestureRecognizer {
-    private var fixtureState: NSGestureRecognizer.State = .possible
-    override var state: NSGestureRecognizer.State {
-        get { fixtureState }
-        set { fixtureState = newValue }
-    }
-    func recognize(delta: CGFloat) {
-        magnification = delta
-        state = .began
-    }
-    func finish() {
-        magnification = 0
-        state = .ended
     }
 }

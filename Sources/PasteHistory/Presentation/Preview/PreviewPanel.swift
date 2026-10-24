@@ -154,6 +154,9 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     /// Animate a lightweight paper snapshot, not a resizing text layout. The
     /// actual preview stays at its final size; arrow navigation never queues flights.
     private func openFromPaper(_ panel: NSPanel, continuing: Bool = false) {
+        if !continuing {
+            AnchorTrace.write("preview-input open pid=\(ProcessInfo.processInfo.processIdentifier) active=\(NSApp.isActive) key=\(panel.isKeyWindow)")
+        }
         // Choose once per opening. Arrows move the sheet without resizing the
         // text container on every animation frame.
         paperFollow.cancel()
@@ -164,6 +167,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
             paperMagnification = 1
             gestureMagnification = 1
         }
+        (panel as? PaperPreviewPanel)?.beginPaperPinch()
         (panel.contentView as? PaperPreviewSurface)?.readingSize = paperSessionSize
         let target = targetFrame()
         let paper = owner?.previewPaper
@@ -188,6 +192,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     }
 
     private func closeToPaper(_ panel: NSPanel) {
+        (panel as? PaperPreviewPanel)?.endPaperPinch()
         paperFollow.cancel()
         paperScaleReturn.cancel()
         if panel.isKeyWindow, owner?.previewAnchorVisible == true { owner?.makePanelKeyAgain() }
@@ -218,6 +223,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     }
 
     func closeImmediately() {
+        (panel as? PaperPreviewPanel)?.endPaperPinch()
         closeGeneration += 1
         paperFlight.cancel()
         paperFollow.cancel()
@@ -234,7 +240,10 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     private func configureAppearance() {
         guard let panel else { return }
         let paper = owner?.previewBesideTree == true
-        if !paper { (panel.contentView as? PaperPreviewSurface)?.readingSize = nil }
+        if !paper {
+            (panel.contentView as? PaperPreviewSurface)?.readingSize = nil
+            (panel as? PaperPreviewPanel)?.endPaperPinch()
+        }
         hosting?.rootView = PreviewContentView(model: model, mediaLoader: mediaLoader, paperStyle: paper)
         panel.styleMask = paper ? [.borderless, .nonactivatingPanel]
             : [.titled, .closable, .fullSizeContentView, .nonactivatingPanel, .resizable]
@@ -389,7 +398,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         let screenMaximum = max(1, min((visible.width - 24) / base.width, (visible.height - 24) / base.height))
         let maximum = min(2, screenMaximum)
         if phase.contains(.began) {
-            AnchorTrace.write("preview-pinch began delta=\(delta) scale=\(paperMagnification) maximum=\(maximum)")
+            AnchorTrace.write("preview-pinch began delta=\(delta) scale=\(paperMagnification) maximum=\(maximum) key=\(panel.isKeyWindow)")
         }
         if phase.contains(.began) { gestureMagnification = paperMagnification }
         paperScaleReturn.cancel()
