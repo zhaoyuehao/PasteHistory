@@ -26,6 +26,27 @@ enum Motion {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 
+    static let paperOpenDuration: TimeInterval = 0.22
+    static let paperCloseDuration: TimeInterval = 0.17
+    static let paperFollowFrequency: CGFloat = 46
+    static let paperFollowDamping: CGFloat = 0.86
+    static let paperScaleReturnDuration: TimeInterval = 0.15
+
+    /// Damped step response: about 1.1% overshoot when opening, then settling.
+    /// Travel stays visible; reduced-motion callers use opacity instead.
+    static func paperProgress(_ fraction: CGFloat, opening: Bool) -> CGFloat {
+        let t = min(1, max(0, fraction))
+        if t == 0 || t == 1 { return t }
+        let damping: CGFloat = opening ? 0.82 : 0.9
+        let frequency: CGFloat = opening ? 7.2 : 8
+        let root = sqrt(1 - damping * damping)
+        let phase = frequency * root * t
+        let response = 1 - exp(-damping * frequency * t) * (cos(phase) + damping / root * sin(phase))
+        let endPhase = frequency * root
+        let end = 1 - exp(-damping * frequency) * (cos(endPhase) + damping / root * sin(endPhase))
+        return response / end
+    }
+
     /// 选中态与跟随滚动：dampingFraction 0.78 有约 4% 过冲，滑过头再回来
     static var selection: Animation {
         reduceMotion ? .easeOut(duration: 0.18)

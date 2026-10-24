@@ -18,6 +18,7 @@ final class WebSyncServer {
     private let queue = DispatchQueue(label: "com.verdent.pastehistory.websync")
     private let db: HistoryDatabase   // 读连接（与主库同一文件，WAL 并发读安全）
     private let fm = FileManager.default
+    private var pageHTML = Data()
     private let iconPNG: Data?        // 主屏图标（CoreGraphics 画一次缓存）
     /// 启动失败原因（端口被占用等），二维码面板要提示给用户
     private(set) var lastError: String?
@@ -77,6 +78,10 @@ final class WebSyncServer {
     // MARK: - 生命周期（从主线程调用）
 
     private(set) var isRunning = false
+
+    func configurePage(html: String) {
+        queue.sync { pageHTML = Data(html.utf8) }
+    }
 
     func start() {
         guard listener == nil else { return }
@@ -207,7 +212,7 @@ final class WebSyncServer {
         switch req.path {
         case "/", "/index.html":
             respond(conn, status: "200 OK", contentType: "text/html; charset=utf-8",
-                    body: Data(WebSyncPage.html.utf8))
+                    body: pageHTML)
             return
         case "/favicon.ico":
             respond(conn, status: "204 No Content", contentType: "image/x-icon", body: Data())

@@ -11,6 +11,7 @@ rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 
 cp ".build/release/PasteHistory" "$APP_DIR/Contents/MacOS/PasteHistory"
+cp -R ".build/release/PasteHistory_PasteHistory.bundle" "$APP_DIR/Contents/Resources/"
 cp "Resources/Info.plist" "$APP_DIR/Contents/Info.plist"
 
 # 签名身份优先级：Apple Development（稳定，TCC 授权跨重建保留）> 自签名 PasteHistory > ad-hoc
