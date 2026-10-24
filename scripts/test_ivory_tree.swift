@@ -73,13 +73,10 @@ struct TreeSmoke {
         let full = occupiedPixels()
         view.present()
         run(0.055)
-        precondition(view.growthProgress < 1)
-        let growing = occupiedPixels()
-        precondition(
-            growing < full * 3 / 4,
-            "Growth must reveal geometry from the root, not simply show the whole tree")
+        let appeared = occupiedPixels()
+        precondition(abs(appeared-full) < max(20, full / 20),
+                     "Entrance must keep the entire sculpture intact, without a height-cut reveal")
         run(0.20)
-        precondition(view.growthProgress == 1, "Tree must finish growing within 250 ms")
         let original = view.cardFrames[entries[0].id]!
         let point = NSPoint(x: original.midX, y: view.bounds.height - original.midY)
         precondition(view.entryID(at: point) == entries[0].id)
@@ -123,7 +120,7 @@ struct TreeSmoke {
         view.update(entries: entries, selectedID: entries[0].id)
         run(0.4)
         print(
-            "PASS: five birds, true depth, transparent scene, root growth pixels, 8 attached papers, display-only pointer boundary, interruptible paging, empty results"
+            "PASS: five birds, true depth, transparent scene, intact entrance geometry, 8 attached papers, display-only pointer boundary, interruptible paging, empty results"
         )
         fflush(stdout)
         if args.contains("--interactive") { app.run() }

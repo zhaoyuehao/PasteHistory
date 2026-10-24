@@ -27,6 +27,7 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     private var panel: HistoryPanel?
     private var isTreePresentation = UserDefaults.standard.object(forKey: "showDesktopTree") as? Bool ?? true
+    private let treeEntrance = TreeEntrance()
     private var placingTree = false
     private var localMonitor: Any?
     private var outsideMouseMonitor: Any?
@@ -94,6 +95,11 @@ final class PanelController: NSObject, NSWindowDelegate {
         guard panel?.dragInProgress != true else { return }
         if panel == nil { buildPanel() }
         guard let panel else { return }
+        if panel.isVisible && !isHiding {
+            panel.focusSearch()
+            return
+        }
+        let continuingOrigin = isTreePresentation && panel.isVisible ? panel.frame.origin : nil
         // 作废上一次 hide() 排队的 previousApp.activate()：
         // 否则快速收起后再按 ⇧⌘C，那个延迟激活会把面板顶掉 → resignKey → 面板立刻又消失
         showGeneration += 1
@@ -129,7 +135,11 @@ final class PanelController: NSObject, NSWindowDelegate {
         // 出现：0.22s easeOut，opacity 0→1 + scale 0.96→1。
         // 窗口淡入与内容缩放共用同一个 duration，两套时序叠加会出现「先亮后弹」。
         // 「减少动态效果」开启时跳过缩放，只保留淡入（规范 5.5：降级不是静止）
-        panel.alphaValue = 0
+        if isTreePresentation {
+            if continuingOrigin == nil { panel.treeOpacity = 0 }
+        } else {
+            panel.alphaValue = 0
+        }
         if !isTreePresentation && !Motion.reduceMotion, let view = panel.contentView {
             view.wantsLayer = true
             let scale = CABasicAnimation(keyPath: "transform.scale")
@@ -147,8 +157,14 @@ final class PanelController: NSObject, NSWindowDelegate {
             guard let self, self.isVisible, !self.layoutEditing else { return }
             self.panel?.focusSearch()
         }
+        if isTreePresentation {
+            // Start the motion clock after ordering/activation, not before that
+            // synchronous work can consume most of the 200 ms entrance.
+            treeEntrance.present(panel, target: placement.origin, from: continuingOrigin)
+            return
+        }
         NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = isTreePresentation ? 0.10 : 0.22
+            ctx.duration = 0.22
             ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().alphaValue = 1
         }
@@ -166,6 +182,12 @@ final class PanelController: NSObject, NSWindowDelegate {
         // Child input windows disappear immediately: an invisible fading paper
         // must never keep intercepting the desktop.
         panel.suspendIslands()
+        if isTreePresentation {
+            treeEntrance.dismiss(panel) { [weak self] in
+                self?.finishHide(generation: generation, restoreFocus: restoreFocus)
+            }
+            return
+        }
         // 消失：0.15s 只做 opacity，不缩放。缩小消失会读出「弹回」，廉价
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.15
@@ -180,6 +202,7 @@ final class PanelController: NSObject, NSWindowDelegate {
     private func finishHide(generation: Int, restoreFocus: Bool) {
         guard let panel, generation == showGeneration, isHiding else { return }
         panel.orderOut(nil)
+        panel.treeOpacity = 1
         panel.alphaValue = 1
         isHiding = false
         guard restoreFocus, let app = previousApp else { return }
@@ -263,6 +286,8 @@ final class PanelController: NSObject, NSWindowDelegate {
         // Changing window chrome can itself emit a move notification. Preserve
         // the user's tree position while switching back from the list.
         placingTree = true
+        treeEntrance.cancel()
+        panel.treeOpacity = 1
         panel.applyPresentation(tree: enabled)
         lastPlacement = enabled ? placeTree(panel) : place(panel, near: previousFocusElement)
         placingTree = false
@@ -295,6 +320,8 @@ final class PanelController: NSObject, NSWindowDelegate {
         if !isTreePresentation { Self.post(.phToggleTree) }
         preview.closeImmediately()
         panel?.makeKey()
+        treeEntrance.cancel()
+        panel?.treeOpacity = 1
         presentation.treeLayoutEditing = true
         panel?.layoutEditing = true
     }

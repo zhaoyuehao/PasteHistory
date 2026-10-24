@@ -29,7 +29,6 @@ final class IvoryTreeSceneView: SCNView {
     private let cameraNode = SCNNode()
     private let paper = IvoryTreePaperView()
     private var anchors: [SCNVector3] = []
-    private var growthMaterials: [SCNMaterial] = []
     private var entries: [IvoryTreeEntry] = []
     private var selectedID: UUID?
     private var timer: Timer?
@@ -40,15 +39,12 @@ final class IvoryTreeSceneView: SCNView {
     private var yawVelocity: CGFloat = 0
     private var pitchVelocity: CGFloat = 0
     private var sway: CGFloat = 0
-    private var appearedAt: CFTimeInterval = 0
     private var lastStep: CFTimeInterval = 0
-    private var appliedGrowthHeight: Float = 12
     var onSelect: ((UUID) -> Void)?
     var onPreview: ((UUID) -> Void)?
     var layoutEditing = false { didSet { paper.layoutEditing = layoutEditing; startSettling() } }
     var onRootPosition: ((CGPoint) -> Void)?
     private(set) var loadError: Error?
-    private(set) var growthProgress: CGFloat = 1
     var cardFrames: [UUID: NSRect] { paper.cardFrames }
     var isTurningPage: Bool { paper.isTurningPage }
     override var isOpaque: Bool { false }
@@ -76,29 +72,6 @@ final class IvoryTreeSceneView: SCNView {
             let asset = try SCNScene(url: url, options: [.checkConsistency: true])
             anchors = Self.surfaceAnchors(in: asset)
             for node in asset.rootNode.childNodes { sculpture.addChildNode(node) }
-            sculpture.enumerateChildNodes { [self] node, _ in
-                guard let geometry = node.geometry else { return }
-                geometry.materials = geometry.materials.map { material in
-                    let copy = material.copy() as! SCNMaterial
-                    copy.shaderModifiers = [
-                        .geometry: """
-                        #pragma varyings
-                        float treeHeight;
-                        #pragma body
-                        out.treeHeight = (scn_node.modelTransform * _geometry.position).y;
-                        """,
-                        .fragment: """
-                        #pragma arguments
-                        float growthHeight;
-                        #pragma body
-                        if (in.treeHeight > growthHeight) { discard_fragment(); }
-                        """,
-                    ]
-                    copy.setValue(Float(12), forKey: "growthHeight")
-                    growthMaterials.append(copy)
-                    return copy
-                }
-            }
         } catch { loadError = error }
         cameraNode.camera = SCNCamera()
         cameraNode.camera?.fieldOfView = 38
@@ -205,8 +178,7 @@ final class IvoryTreeSceneView: SCNView {
         startSettling()
     }
     func present() {
-        appearedAt = CACurrentMediaTime()
-        growthProgress = 0
+        paper.finishEntrance()
         startSettling()
     }
     private func updatePaper(dt: CGFloat) {
@@ -215,7 +187,7 @@ final class IvoryTreeSceneView: SCNView {
             let p = projectPoint(world)
             return .init(point: NSPoint(x: p.x, y: bounds.height - p.y), height: world.y, depth: world.z)
         }
-        paper.advance(attachments: attachments, sway: sway, growth: growthProgress, dt: dt)
+        paper.advance(attachments: attachments, sway: sway, dt: dt)
         let root = projectPoint(sculpture.convertPosition(SCNVector3(0, 0.25, 0), to: nil))
         onRootPosition?(CGPoint(x: root.x, y: bounds.height - root.y))
     }
@@ -284,21 +256,10 @@ final class IvoryTreeSceneView: SCNView {
         advance(&pitch, &pitchVelocity, targetPitch)
         sway = reduced ? 0 : (sway - yawVelocity * 28) * pow(0.84, steps)
         applyRotation()
-        growthProgress = min(1, CGFloat((now - appearedAt) / (reduced ? 0.12 : TreeMotion.growthDuration)))
-        let height: Float = reduced ? 12 : Float(10 * (1 - pow(1 - growthProgress, 2)))
-        let opacity: CGFloat = reduced ? growthProgress : 1
-        if height != appliedGrowthHeight || sculpture.opacity != opacity {
-            SCNTransaction.begin()
-            SCNTransaction.disableActions = true
-            growthMaterials.forEach { $0.setValue(height, forKey: "growthHeight") }
-            sculpture.opacity = opacity
-            SCNTransaction.commit()
-            appliedGrowthHeight = height
-        }
         updatePaper(dt: dt)
         let error =
             abs(yaw - targetYaw) + abs(pitch - targetPitch) + abs(yawVelocity) + abs(pitchVelocity)
             + abs(sway)
-        if error < 0.0001 && growthProgress >= 1 && !paper.isAnimating { stopRendering() }
+        if error < 0.0001 && !paper.isAnimating { stopRendering() }
     }
 }

@@ -26,7 +26,6 @@ final class IvoryTreePaperView: NSView {
     private var selectionRect = NSRect.zero
     private var selectionTilt: CGFloat = 0
     private var heights: [UUID: CGFloat] = [:]
-    private var lastGrowth: CGFloat = 1
     private var selectionFade: CGFloat = 1
     private(set) var isAnimating = false
     var onSelect: ((UUID) -> Void)?
@@ -70,7 +69,7 @@ final class IvoryTreePaperView: NSView {
             // Cords, branches and the rest of the desktop never acquire a window.
             let a = card.tilt * .pi / 180
             let center = NSPoint(x: card.rect.midX, y: card.rect.minY + IvoryPaperStyle.pinInset)
-            panel.paperPin = owner.convertPoint(toScreen: convert(center, to: nil))
+
             let corners: [NSPoint] = [NSPoint(x: card.rect.minX, y: card.rect.minY),
                           NSPoint(x: card.rect.maxX, y: card.rect.minY),
                           NSPoint(x: card.rect.minX, y: card.rect.maxY),
@@ -85,9 +84,22 @@ final class IvoryTreePaperView: NSView {
                                width: points.map(\.x).max()!-left+6,
                                height: points.map(\.y).max()!-top+6)
             panel.setFrame(owner.convertToScreen(convert(frame, to: nil)), display: false)
+            panel.paperPin = owner.convertPoint(toScreen: convert(center, to: nil))
+            panel.paperSize = NSSize(width: card.rect.width * card.fold, height: card.rect.height)
+            panel.paperAngle = -a
+            panel.paperFace = { [weak self] in
+                guard let self else { return nil }
+                var face = card
+                face.rect.origin = .zero
+                let image = NSImage(size: face.rect.size)
+                image.lockFocusFlipped(true)
+                self.drawPaper(face)
+                image.unlockFocus()
+                return image
+            }
             // Visible transitional papers consume a click without activating a new
             // record or accidentally clicking the app beneath the departing paper.
-            panel.alphaValue = owner.expandedPaperID == id ? 0 : 1
+            panel.alphaValue = owner.expandedPaperID == id ? 0 : owner.treeOpacity
             panel.enabled = card.opacity > 0.01 && owner.expandedPaperID != id
             surface.enabled = !layoutEditing && !isTurningPage && card.opacity > 0.9
                 && cards.contains { $0.entry.id == id }
@@ -126,7 +138,7 @@ final class IvoryTreePaperView: NSView {
             // transition instead of queuing old pages or reviving invisible cards.
             outgoing = Array(visuals().suffix(16))
             turnDirection = (entries.first?.index ?? 0) >= (self.entries.first?.index ?? 0) ? 1 : -1
-            turnStart = CACurrentMediaTime()
+            turnStart = self.entries.isEmpty ? 0 : CACurrentMediaTime()
             self.entries = entries
             heights = heights.filter { key, _ in entries.contains { $0.id == key } }
             let ids = Set((entries + outgoing.map(\.entry)).map(\.id))
@@ -141,7 +153,11 @@ final class IvoryTreePaperView: NSView {
         self.selectedID = selectedID
         if accessibilityChanged { rebuildAccessibility() }
     }
-    func advance(attachments: [Attachment], sway: CGFloat, growth: CGFloat, dt: CGFloat) {
+    func finishEntrance() {
+        turnStart = 0
+        outgoing.removeAll()
+    }
+    func advance(attachments: [Attachment], sway: CGFloat, dt: CGFloat) {
         let reduced = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         let blend = TreeMotion.followBlend(dt: dt)
         var next: [Card] = []
@@ -154,7 +170,7 @@ final class IvoryTreePaperView: NSView {
             let restingHeight = entry.imageFirst ? IvoryTreeLayout.imageCardHeight : IvoryTreeLayout.cardHeight
             let expandedHeight = entry.imageFirst ? IvoryTreeLayout.selectedImageHeight : IvoryTreeLayout.selectedHeight
             let target = entry.id == selectedID ? expandedHeight : restingHeight
-            let old = heights[entry.id] ?? restingHeight
+            let old = heights[entry.id] ?? target
             let height = reduced ? target : old + (target - old) * blend
             heights[entry.id] = height
             unsettled += abs(target - height)
@@ -168,14 +184,12 @@ final class IvoryTreePaperView: NSView {
                 rect.origin.y = prior.rect.maxY + 9
             }
             rect.origin.y = max(8, min(bounds.height - height - 8, rect.minY))
-            let opacity: CGFloat = reduced ? growth : (a.height <= 10 * (1 - pow(1 - growth, 2)) ? 1 : 0)
             next.append(
                 Card(
                     entry: entry, rect: rect, anchor: a.point, tilt: reduced ? 0 : tilts[slot % 8] + sway,
-                    opacity: opacity))
+                    opacity: 1))
         }
         cards = next
-        lastGrowth = growth
         if let selected = cards.first(where: { $0.entry.id == selectedID }) {
             let target = selected.rect.insetBy(dx: -2, dy: -2)
             if selectionRect == .zero || reduced {

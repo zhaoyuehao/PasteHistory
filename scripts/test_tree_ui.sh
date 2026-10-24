@@ -9,7 +9,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 SOURCES=(Sources/PasteHistory/**/*.swift)
 SOURCES=("${(@)SOURCES:#Sources/PasteHistory/main.swift}")
 swiftc -swift-version 5 -parse-as-library "${SOURCES[@]}" \
-  "$BIN_DIR/PasteHistory.build/DerivedSources/resource_bundle_accessor.swift" scripts/test_tree_ui.swift \
+  "$BIN_DIR/PasteHistory.build/DerivedSources/resource_bundle_accessor.swift" scripts/test_tree_ui.swift scripts/test_paper_motion.swift \
   -o "$APP/Contents/MacOS/IvoryTreePreview" -framework AppKit -framework SceneKit -framework Carbon -framework Vision -lsqlite3 \
   > .build/tree-ui-compile.log 2>&1
 cp -R "$BIN_DIR/PasteHistory_PasteHistory.bundle" "$APP/Contents/Resources/"

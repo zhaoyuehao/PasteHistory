@@ -9,6 +9,7 @@ final class PaperPreviewFollow {
     private var target = NSPoint.zero
     private var position = NSPoint.zero
     private var velocity = NSPoint.zero
+    var currentVelocity: NSPoint { velocity }
     private var timer: Timer?
     private var lastStep: CFTimeInterval = 0
 

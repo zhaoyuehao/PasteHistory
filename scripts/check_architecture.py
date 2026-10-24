@@ -5,7 +5,7 @@ import re
 
 root = Path(__file__).resolve().parents[1] / "Sources/PasteHistory"
 errors = []
-ui_symbols = r"\b(?:Motion|TreeMotion|PaperPreviewFlight|HistorySelectionMotion|Palette|Scale|IvoryPaperStyle|PreviewContentView|PanelController|HistoryPanel|IvoryTreeSceneView|Toast|WebSyncPage|NSWindow|NSPanel|NSView|NSHostingView|NSHostingController|withAnimation)\b"
+ui_symbols = r"\b(?:Motion|TreeMotion|PaperPreviewFlight|PaperPose|PaperFlightView|TreeEntrance|SettlingTrack|HistorySelectionMotion|Palette|Scale|IvoryPaperStyle|PreviewContentView|PanelController|HistoryPanel|IvoryTreeSceneView|Toast|WebSyncPage|NSWindow|NSPanel|NSView|NSHostingView|NSHostingController|withAnimation)\b"
 for layer in ("Domain", "Application", "Infrastructure"):
     for source in (root / layer).rglob("*.swift"):
         text = source.read_text()

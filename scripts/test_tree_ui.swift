@@ -7,6 +7,7 @@ struct TreeUISmoke {
     @MainActor static func main() throws {
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
+        checkPaperMotion()
         // This harness has its own bundle ID. Disable external sync before any action.
         Settings.shared.iCloudSync = false
         UserDefaults.standard.set(true, forKey: "showDesktopTree")
@@ -203,6 +204,49 @@ struct TreeUISmoke {
         let controller = PanelController(store: store, observesDesktopFocus: false)
         controller.show()
         run(0.5)
+        // Reopening a warm scene must move all native paper windows with the
+        // tree, keep the full silhouette, and never replay individual folds.
+        let entranceTree = NSApp.windows.first { $0 is HistoryPanel && $0.isVisible } as! HistoryPanel
+        let restingFrame = entranceTree.frame
+        controller.hide(restoreFocus: false)
+        run(0.2)
+        controller.show()
+        let startingY = entranceTree.frame.minY
+        if !Motion.reduceMotion { precondition(abs(restingFrame.minY-startingY-12) < 1) }
+        let relativePins = Dictionary(uniqueKeysWithValues: entranceTree.islands.filter { $0.role == .paper }.map {
+            ($0.windowNumber, ($0.paperPin!.y-entranceTree.frame.minY, $0.frame.size))
+        })
+        run(0.055)
+        // Window ordering may occupy the first run-loop pass in this debug
+        // harness. Observe a delivered frame rather than assuming a timer fired.
+        let firstFrameDeadline = Date().addingTimeInterval(0.10)
+        while !Motion.reduceMotion && entranceTree.frame.minY == startingY && Date() < firstFrameDeadline { run(0.005) }
+        let midY = entranceTree.frame.minY
+        if !Motion.reduceMotion {
+            precondition(midY > startingY && midY < restingFrame.minY,
+                         "Entrance must show intermediate movement before settling")
+        }
+        for island in entranceTree.islands where island.role == .paper {
+            if let original = relativePins[island.windowNumber] {
+                precondition(abs(island.paperPin!.y-entranceTree.frame.minY-original.0) < 1)
+                precondition(abs(island.frame.width-original.1.width) < 1,
+                             "Entrance papers must not run their page-fold animation")
+                precondition(abs(island.alphaValue-entranceTree.alphaValue) < 0.01)
+            }
+        }
+        controller.show() // Already visible: neither geometry nor opacity restarts.
+        precondition(entranceTree.frame.minY == midY)
+        run(0.17)
+        precondition(entranceTree.frame == restingFrame && entranceTree.alphaValue == 1)
+        controller.hide(restoreFocus: false)
+        run(0.04)
+        let interruptedY = entranceTree.frame.minY
+        let interruptedAlpha = entranceTree.alphaValue
+        controller.show()
+        precondition(entranceTree.frame.minY == interruptedY)
+        precondition(abs(entranceTree.alphaValue-interruptedAlpha) < 0.001)
+        run(0.25)
+        precondition(controller.isVisible && entranceTree.frame == restingFrame && entranceTree.alphaValue == 1)
         func key(_ code: UInt16, chars: String = "", mods: NSEvent.ModifierFlags = []) -> NSEvent? {
             controller.handle(NSEvent.keyEvent(with: .keyDown, location: .zero,
                 modifierFlags: mods, timestamp: 0, windowNumber: 0, context: nil,
@@ -358,16 +402,20 @@ struct TreeUISmoke {
                 precondition(abs(fitted.width / fitted.height - 1.61803398875) < 0.004, "Screen fitting scales both dimensions together")
             }
         }
-        // Observe actual NSWindow geometry, including its small overshoot and settling.
+        // Observe actual paper motion: visible travel, monotone settling, exact live-view handoff.
         _ = key(49, chars: " ")
         run(0.2)
         _ = key(49, chars: " ")
         let settlingPaper = NSApp.windows.first { $0.isVisible && $0.title == "纸签预览过渡" }!
         var widest: CGFloat = 0
+        var priorWidth: CGFloat = 0
         var motionFrames: [(NSImage, NSSize)] = []
         for sample in 0..<11 {
             run(0.025)
             if settlingPaper.isVisible {
+                precondition(settlingPaper.frame.width >= priorWidth - 1,
+                             "An uninterrupted unfold must not bounce or shrink before settling")
+                priorWidth = settlingPaper.frame.width
                 widest = max(widest, settlingPaper.frame.width)
                 if sample % 2 == 0, let view = settlingPaper.contentView,
                    let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
@@ -388,8 +436,8 @@ struct TreeUISmoke {
         }
         strip.unlockFocus()
         try NSBitmapImageRep(data: strip.tiffRepresentation!)!.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: ".build/preview-motion-frames.png"))
-        precondition(widest > expected.width && widest < expected.width * 1.025,
-                     "Paper must gently overshoot and settle, not just fade or snap")
+        precondition(widest > expected.width * 0.95 && widest <= expected.width + 1,
+                     "Paper must travel to its reading size without ornamental overshoot")
         precondition(!settlingPaper.isVisible && abs(expanded.frame.width-expected.width) < 1)
         let textZoom = zoomViews(in: expanded.contentView!).first!
         let textWidth = textZoom.documentVisibleRect.width

@@ -7,7 +7,17 @@ final class TreeInteractionPanel: NSPanel {
     enum Role { case paper, search, layout }
     let role: Role
     weak var owner: HistoryPanel?
-    var paperPin: NSPoint?
+    private var localPin: NSPoint?
+    var paperPin: NSPoint? {
+        get { localPin.map { convertPoint(toScreen: $0) } }
+        set { localPin = newValue.map { convertPoint(fromScreen: $0) } }
+    }
+    var paperSize: NSSize = .zero
+    var paperAngle: CGFloat = 0
+    var paperFace: (() -> NSImage?)?
+    var paperPose: PaperPose? {
+        paperPin.map { PaperPose(pin: $0, size: paperSize, angle: paperAngle, padding: 3) }
+    }
     var enabled = true { didSet { ignoresMouseEvents = !enabled } }
     override var canBecomeKey: Bool { role != .paper }
     override var canBecomeMain: Bool { false }
