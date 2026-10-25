@@ -74,26 +74,18 @@ PasteHistory.app/Contents/MacOS/PasteHistory --restore-images   # 从 iCloud 恢
   必要时 `git update-ref refs/remotes/origin/main <sha>` 校正。
 - 远端 main 领先时（用户在 GitHub 上合并了 PR）：`git fetch <url> main && git rebase FETCH_HEAD`，不要 force push。
 
-## 模块职责
+## 目录与依赖边界
 
-| 文件 | 职责 |
-|---|---|
-| `main.swift` | AppDelegate、菜单栏、iCloud/WebSync 启动、维护参数 |
-| `ClipboardMonitor.swift` | NSPasteboard changeCount 轮询，接力/保密类型识别 |
-| `HistoryDatabase.swift` | SQLite3 C API（WAL、分页、串行队列） |
-| `ClipStore.swift` | 分页门面、Settings（UserDefaults） |
-| `PanelController.swift` | ⇧⌘C 面板（NSHostingController 承载 SwiftUI）、键监视器（空格/⌘Y 预览开关在此分发） |
-| `HistoryView.swift` | 面板 UI（搜索 / 列表 / 键盘导航） |
-| `PreviewPanel.swift` | 空格/⌘Y 预览大窗：不夺焦点的 NSPanel（贴面板右侧）+ 三类内容视图，随面板选中联动 |
-| `Theme.swift` | 字号 / 图标 / 间距档位（Scale / Icon / Rhythm）与语义色（`Palette.meta` / `.warning` 按 WCAG AA 反解） |
-| `Motion.swift` | 动效令牌（选中 / 连按 / 边界回弹 / 悬停），View 与 ViewModel 共用 |
-| `PasteService.swift` / `AXFocus.swift` | 回写剪贴板、AX 权限、捕获并还原聚焦输入框、模拟 ⌘V |
-| `PasteCycler.swift` | ⇧⌘V 循环粘贴：不开面板，⌘Z 撤回上一条再贴更早一条 |
-| `OCRIndexer.swift` | Vision 文字识别 + 场景分类 |
-| `iCloudSync.swift` | 一记录一文件导出/导入 + 墓碑 + 对账 |
-| `WebSyncServer.swift` | Network.framework 手写 HTTP 服务（局域网） |
-| `WebSyncPage.swift` | 手机端单文件 HTML/JS（含纯 JS 加密回退） |
-| `QRPairPanel.swift` | 配对二维码面板 |
+- `Domain/`：记录与内容指纹、搜索字段；不得依赖界面框架或 Presentation 类型。
+- `Application/`：ClipStore、Settings、HistoryViewModel 与输入规则。状态只发布结果和输入时序，不能调用 `withAnimation` 或动画令牌。
+- `Infrastructure/`：Persistence、Clipboard、Media、Sync。允许 AppKit 的 NSImage/NSPasteboard 等系统适配，不创建界面窗口，不依赖 Presentation。
+- `Presentation/`：Tree、History、Preview、Windows、Sync、Shared、Style。布局与输入绑定在此；所有通用动效参数和纸面过渡实现在 `Animation/`。
+- `main.swift` 是组合入口，负责注入图片目录、网页内容与用户提示呈现器；`Shared/Localization.swift` 为各层共用文案。
+- 数据操作仍经过 HistoryViewModel / ClipStore；图片纸签只展示图片，OCR 继续用于搜索，展开预览时展示文字。
+- 树模式预览在自身窗口内接收双指缩放，无需点击；整张纸签及图文一起等比缩放，不叠加内部图片/正文缩放。阅读逻辑尺寸固定、滚动仍可用；同次预览切换记录保留倍率，关闭后重新打开复位，不持久化。手势不能扩展到树体或桌面。
+- 预览保持非键盘焦点窗口，搜索框继续接键盘。真实日志已确认非 key 预览能收到 magnify 事件，但视图识别器要点击取得 key 后才工作；因此只在预览期间安装应用内 local magnify monitor，严格匹配事件所属预览窗口和窗口内坐标，处理后消费一次，关闭/切列表移除。禁止用 global monitor 或把其他窗口事件重定向到预览。回归测试覆盖非 key 状态、窗口/范围排除和监听生命周期；模拟路由仍不能当作物理触控板验收。`anchor_trace.log` 的 `preview-pinch` 行仅记录手势阶段、倍率和窗口宽度，不记录剪贴内容。
+- 修改结构后运行 `python3 scripts/check_architecture.py` 与 `./scripts/test_tree_ui.sh`。SwiftPM 自动递归发现源文件；独立脚本也必须递归收集，不能恢复旧的顶层 `*.swift` 假设。
+- 保持同一 executable target；目录分层由边界检查约束。改变数据模型、SQLite、同步协议和剪贴板载荷必须明确说明，不能夹在视觉调整里。
 
 ## 修改时务必遵守
 

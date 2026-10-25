@@ -11,11 +11,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        UserFeedback.present = { message, duration in Toast.show(message, duration: duration) }
         NSApp.setActivationPolicy(.accessory)
 
         AppTracker.start()
         monitor.start()
         iCloudSync.shared.start()
+        WebSyncServer.shared.configurePage(html: WebSyncPage.html)
         WebSyncServer.shared.start()
         if Settings.shared.hotKeyEnabled {
             hotKey.register(id: 1, keyCode: kVK_ANSI_C, carbonModifiers: cmdKey | shiftKey) { [weak self] in
@@ -89,7 +91,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 仅供冒烟测试：--show 启动即打开面板
         if ProcessInfo.processInfo.arguments.contains("--show") {
-            PanelController.shared.show()
+            DispatchQueue.main.async { PanelController.shared.show() }
         }
 
         // 仅供冒烟测试：--show-pair 启动即打开手机同步配对面板
@@ -173,6 +175,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // Opening the installed app again should reveal the overlay even when the
+    // menu-bar process is already running (startup arguments aren't replayed).
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        PanelController.shared.show()
+        return true
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         hotKey.unregisterAll()
         monitor.stop()
@@ -195,6 +204,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         PanelController.shared.toggle()
     }
 
+    @objc private func adjustTreeLayout() { PanelController.shared.beginTreeLayout() }
+
     // MARK: - 菜单栏
 
     private func buildStatusBar() {
@@ -214,6 +225,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         open.keyEquivalentModifierMask = [.command, .shift]
         open.image = Self.menuIcon("clipboard")
         menu.addItem(open)
+        let layout = NSMenuItem(title: "调整树布局…", action: #selector(adjustTreeLayout), keyEquivalent: "M")
+        layout.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(layout)
 
         let cycle = NSMenuItem(title: L10n.pasteEarlier, action: #selector(cyclePaste), keyEquivalent: "V")
         cycle.keyEquivalentModifierMask = [.command, .shift]

@@ -3,11 +3,17 @@ import QuartzCore
 import SwiftUI
 
 extension Notification.Name {
+    static let phPageUp = Notification.Name("phPageUp")
+    static let phPageDown = Notification.Name("phPageDown")
+    static let phTreeSize = Notification.Name("phTreeSize")
+    static let phFinishTreeLayout = Notification.Name("phFinishTreeLayout")
+    static let phResetTree = Notification.Name("phResetTree")
     static let phMoveUp = Notification.Name("phMoveUp")
     static let phMoveDown = Notification.Name("phMoveDown")
     static let phConfirm = Notification.Name("phConfirm")
     static let phCopyOnly = Notification.Name("phCopyOnly")
     static let phDelete = Notification.Name("phDelete")
+    static let phToggleTree = Notification.Name("phToggleTree")
     static let phPin = Notification.Name("phPin")
     static let phClose = Notification.Name("phClose")
     static let phQuickPaste = Notification.Name("phQuickPaste")
@@ -17,17 +23,27 @@ extension Notification.Name {
 
 @MainActor
 final class PanelController: NSObject, NSWindowDelegate {
-    static let shared = PanelController()
+    static let shared = PanelController(store: .shared)
 
-    private var panel: NSPanel?
+    private var panel: HistoryPanel?
+    private var isTreePresentation = UserDefaults.standard.object(forKey: "showDesktopTree") as? Bool ?? true
+    private let treeEntrance = TreeEntrance()
+    private var placingTree = false
     private var localMonitor: Any?
+    private var outsideMouseMonitor: Any?
+    private var activationObserver: Any?
+    private var layoutObservers: [NSObjectProtocol] = []
+    private let presentation = HistoryPresentationState()
+    var layoutEditing: Bool { presentation.treeLayoutEditing }
+    private var keyboardState = HistoryKeyboardState()
     private var previousApp: NSRunningApplication?
     /// 唤起面板前系统里聚焦的那个输入框，粘贴后要把焦点还回去
     private var previousFocusElement: AXUIElement?
     private var onPasteHandler: ((ClipItem) -> Void)?
-    private let store = ClipStore.shared
+    private let store: ClipStore
+    private let observesDesktopFocus: Bool
     /// 面板与预览大窗共用的列表状态：预览内容直接跟着选中走
-    private let panelModel = HistoryViewModel(store: ClipStore.shared)
+    let panelModel: HistoryViewModel
     private var previewStorage: PreviewPanelController?
     /// 惰性创建：构造它需要 self（owner），不能在属性初始化期拿到
     private var preview: PreviewPanelController {
@@ -36,6 +52,22 @@ final class PanelController: NSObject, NSWindowDelegate {
         previewStorage = created
         return created
     }
+    init(store: ClipStore, observesDesktopFocus: Bool = true) {
+        self.store = store
+        self.observesDesktopFocus = observesDesktopFocus
+        self.panelModel = HistoryViewModel(store: store)
+        super.init()
+        layoutObservers = [
+            NotificationCenter.default.addObserver(forName: .phTreeSize, object: nil, queue: .main) { [weak self] note in
+                guard let size = note.object as? Double else { return }
+                self?.setTreeSize(size)
+            },
+            NotificationCenter.default.addObserver(forName: .phFinishTreeLayout, object: nil, queue: .main) { [weak self] _ in
+                self?.endTreeLayout()
+            }
+        ]
+    }
+
     /// 上一次定位的结果，用来判断补位时到底有没有挪动
     private var lastPlacement: Placement?
     /// 冒烟用：`--fake-field x,y,w,h` 直接喂一个输入框矩形（AX 坐标），
@@ -60,14 +92,22 @@ final class PanelController: NSObject, NSWindowDelegate {
     }
 
     func show() {
+        guard panel?.dragInProgress != true else { return }
         if panel == nil { buildPanel() }
         guard let panel else { return }
+        if panel.isVisible && !isHiding {
+            panel.focusSearch()
+            return
+        }
+        let continuingOrigin = isTreePresentation && panel.isVisible ? panel.frame.origin : nil
         // 作废上一次 hide() 排队的 previousApp.activate()：
         // 否则快速收起后再按 ⇧⌘C，那个延迟激活会把面板顶掉 → resignKey → 面板立刻又消失
         showGeneration += 1
         isHiding = false
+        endTreeLayout()
+        keyboardState.edit()
         // 面板重开是一次新的会话：预览不跨会话存活
-        preview.close()
+        preview.closeImmediately()
 
         // 打开面板 = 用户要「找」，⇧⌘V 的循环会话立刻结束
         PasteCycler.shared.end()
@@ -84,19 +124,23 @@ final class PanelController: NSObject, NSWindowDelegate {
               target?.processIdentifier ?? -1,
               previousFocusElement == nil ? "nil" : "有")
 
-        let placement = place(panel, near: previousFocusElement)
+        let placement = isTreePresentation ? placeTree(panel) : place(panel, near: previousFocusElement)
         lastPlacement = placement
         installKeyMonitor()
         // 每次打开都是一次新的「找」：回到第一条、收起，一屏扫十条
         Self.post(.phPanelWillShow)
         // 没贴到输入框（常见于刚授权完的第一次）就等焦点稳定后再试一次
-        if !placement.anchored { scheduleAnchorRetry() }
+        if !isTreePresentation && !placement.anchored { scheduleAnchorRetry() }
 
         // 出现：0.22s easeOut，opacity 0→1 + scale 0.96→1。
         // 窗口淡入与内容缩放共用同一个 duration，两套时序叠加会出现「先亮后弹」。
         // 「减少动态效果」开启时跳过缩放，只保留淡入（规范 5.5：降级不是静止）
-        panel.alphaValue = 0
-        if !Motion.reduceMotion, let view = panel.contentView {
+        if isTreePresentation {
+            if continuingOrigin == nil { panel.treeOpacity = 0 }
+        } else {
+            panel.alphaValue = 0
+        }
+        if !isTreePresentation && !Motion.reduceMotion, let view = panel.contentView {
             view.wantsLayer = true
             let scale = CABasicAnimation(keyPath: "transform.scale")
             scale.fromValue = 0.96
@@ -109,6 +153,16 @@ final class PanelController: NSObject, NSWindowDelegate {
         panel.orderFrontRegardless()
         panel.makeKey()
         NSApp.activate()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isVisible, !self.layoutEditing else { return }
+            self.panel?.focusSearch()
+        }
+        if isTreePresentation {
+            // Start the motion clock after ordering/activation, not before that
+            // synchronous work can consume most of the 200 ms entrance.
+            treeEntrance.present(panel, target: placement.origin, from: continuingOrigin)
+            return
+        }
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.22
             ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
@@ -116,35 +170,48 @@ final class PanelController: NSObject, NSWindowDelegate {
         }
     }
 
-    func hide() {
-        guard let panel, panel.isVisible, !isHiding else { return }
+    func hide(restoreFocus: Bool = true) {
+        guard let panel, panel.isVisible, !isHiding, !panel.dragInProgress else { return }
         showGeneration += 1
         let generation = showGeneration
         isHiding = true
         removeKeyMonitor()
-        // 预览窗的命挂在面板上：面板收它一定收，绝不孤儿化
-        preview.close()
+        endTreeLayout()
+        // No orphan flight or input window when the entire tree disappears.
+        preview.closeImmediately()
+        // Child input windows disappear immediately: an invisible fading paper
+        // must never keep intercepting the desktop.
+        panel.suspendIslands()
+        if isTreePresentation {
+            treeEntrance.dismiss(panel) { [weak self] in
+                self?.finishHide(generation: generation, restoreFocus: restoreFocus)
+            }
+            return
+        }
         // 消失：0.15s 只做 opacity，不缩放。缩小消失会读出「弹回」，廉价
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.15
             ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
             panel.animator().alphaValue = 0
         } completionHandler: {
-            Task { @MainActor in self.finishHide(generation: generation) }
+            Task { @MainActor in self.finishHide(generation: generation, restoreFocus: restoreFocus) }
         }
     }
 
     /// 淡出结束后真正收起窗口，并把焦点还回唤起面板前的应用
-    private func finishHide(generation: Int) {
-        guard let panel else { return }
+    private func finishHide(generation: Int, restoreFocus: Bool) {
+        guard let panel, generation == showGeneration, isHiding else { return }
         panel.orderOut(nil)
+        panel.treeOpacity = 1
         panel.alphaValue = 1
         isHiding = false
-        guard let app = previousApp else { return }
+        guard restoreFocus, let app = previousApp else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             // 期间又 show() 过（面板可见）就不抢焦点
             guard let self, self.showGeneration == generation,
                   !(self.panel?.isVisible ?? false) else { return }
+            let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
+            guard front == nil || front == ProcessInfo.processInfo.processIdentifier || front == app.processIdentifier else { return }
             app.activate()
         }
     }
@@ -164,6 +231,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         let view = HistoryView(
             store: store,
             model: panelModel,
+            presentation: presentation,
             onPaste: pasteHandler,
             onCopyOnly: { [weak self] item in
                 guard let self else { return }
@@ -171,36 +239,111 @@ final class PanelController: NSObject, NSWindowDelegate {
                 PasteService.write(item)
                 NotificationCenter.default.post(name: .pasteHistoryDidWritePasteboard, object: nil)
             },
-            onClose: { [weak self] in self?.hide() }
+            onClose: { [weak self] in self?.hide() },
+            onPreview: { [weak self] in self?.preview.toggle() },
+            onTreeModeChanged: { [weak self] enabled in self?.setTreePresentation(enabled) }
         )
 
         let hosting = NSHostingController(rootView: view)
         // 内容顶到窗口上缘：不要让 titlebar 的 safe area 白白吃掉顶部
         hosting.safeAreaRegions = []
-        let panel = NSPanel(contentViewController: hosting)
-        // 默认 400×647（= 400×φ，黄金矩形）；可拖边调整并记住用户选择——
-        // 默认值给设计，自由度给用户。避让收缩只影响本次落位，不回写偏好
-        panel.styleMask = [.titled, .closable, .fullSizeContentView, .nonactivatingPanel, .resizable]
+        let panel = HistoryPanel(contentViewController: hosting)
         panel.title = L10n.panelTitle
-        panel.titlebarAppearsTransparent = true
-        panel.titleVisibility = .hidden
-        // 藏掉红绿灯：这是一张卡片，不是一扇窗户
-        panel.standardWindowButton(.closeButton)?.isHidden = true
-        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        panel.standardWindowButton(.zoomButton)?.isHidden = true
+        panel.applyPresentation(tree: isTreePresentation)
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.hidesOnDeactivate = false
-        panel.isMovableByWindowBackground = true
         panel.isReleasedWhenClosed = false
-        panel.backgroundColor = NSColor.windowBackgroundColor
         // 宽 340~940、高 360~1200：下限是行内解剖与扫读的存活线，上限防呆
         panel.setContentSize(NSSize(width: Panel.width, height: Panel.maxHeight))
         panel.minSize = NSSize(width: Panel.minWidth, height: Panel.minHeight)
         panel.maxSize = NSSize(width: 940, height: 1200)
         panel.delegate = self
+        panel.prepareDrag = { [weak self] id in
+            guard let self, !self.layoutEditing,
+                  let item = self.panelModel.results.first(where: { $0.id == id }) else { return nil }
+            let directory = self.store.imagesDirectory
+            return { ClipDragPayload.writers(for: item, imagesDirectory: directory) }
+        }
+        panel.onPaperLayout = { [weak self] in self?.previewStorage?.followPaper() }
+        panel.onDragUnavailable = { Toast.show("原内容不可读取，无法拖出", duration: 2) }
+        panel.onDragBegan = { [weak self] in self?.preview.closeImmediately() }
+        panel.onDragEnded = { [weak self] operation in
+            guard let self else { return }
+            let external = NSWorkspace.shared.frontmostApplication?.processIdentifier != ProcessInfo.processInfo.processIdentifier
+            if !operation.isEmpty || external { self.hide(restoreFocus: false) }
+            else { self.panel?.focusSearch() }
+        }
         self.panel = panel
+    }
+
+    private func setTreePresentation(_ enabled: Bool) {
+        guard enabled != isTreePresentation else { return }
+        isTreePresentation = enabled
+        guard let panel else { return }
+        preview.closeImmediately()
+        // Changing window chrome can itself emit a move notification. Preserve
+        // the user's tree position while switching back from the list.
+        placingTree = true
+        treeEntrance.cancel()
+        panel.treeOpacity = 1
+        panel.applyPresentation(tree: enabled)
+        lastPlacement = enabled ? placeTree(panel) : place(panel, near: previousFocusElement)
+        placingTree = false
+        if panel.isVisible { panel.makeKey() }
+    }
+
+    /// The tree stands in the desktop's usable area rather than inside an input-field card.
+    private func placeTree(_ panel: NSPanel) -> Placement {
+        let saved = UserDefaults.standard.string(forKey: "desktopTreeOrigin").map(NSPointFromString)
+        let mouse = NSEvent.mouseLocation
+        let screen = saved.flatMap { origin in NSScreen.screens.first { $0.visibleFrame.contains(origin) } }
+            ?? NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
+        let available = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1000, height: 800)
+        let stored = UserDefaults.standard.double(forKey: "desktopTreeScale")
+        let scale = [0.82, 1.0, 1.14].contains(stored) ? stored : 1.0
+        let height = min(920 * scale, available.height * 0.94)
+        let width = min(880 * scale, available.width * 0.94, height * 1.04)
+        let preferred = saved ?? NSPoint(x: available.midX-width/2, y: available.minY+12)
+        let origin = NSPoint(x: min(max(preferred.x, available.minX), available.maxX-width),
+                             y: min(max(preferred.y, available.minY), available.maxY-height))
+        placingTree = true
+        panel.setFrame(NSRect(origin: origin, size: NSSize(width: width, height: height)), display: true)
+        placingTree = false
+        return Placement(origin: origin, height: height, reason: "desktop-tree", anchored: false)
+    }
+
+    func beginTreeLayout() {
+        guard panel?.dragInProgress != true else { return }
+        if !isVisible { show() }
+        if !isTreePresentation { Self.post(.phToggleTree) }
+        preview.closeImmediately()
+        panel?.makeKey()
+        treeEntrance.cancel()
+        panel?.treeOpacity = 1
+        presentation.treeLayoutEditing = true
+        panel?.layoutEditing = true
+    }
+    func endTreeLayout() {
+        guard layoutEditing else { return }
+        if isVisible { panel?.makeKey() }
+        presentation.treeLayoutEditing = false
+        panel?.layoutEditing = false
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isVisible, !self.layoutEditing else { return }
+            self.panel?.focusSearch()
+        }
+    }
+    private func setTreeSize(_ size: Double) {
+        guard layoutEditing, [0.82, 1.0, 1.14].contains(size), let panel else { return }
+        UserDefaults.standard.set(size, forKey: "desktopTreeScale")
+        _ = placeTree(panel)
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        guard isTreePresentation, layoutEditing, !placingTree, let panel, panel.isVisible else { return }
+        UserDefaults.standard.set(NSStringFromPoint(panel.frame.origin), forKey: "desktopTreeOrigin")
     }
 
     /// 一次定位的结果。首次没锚上时要用它决定要不要补位。
@@ -344,31 +487,7 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     // MARK: - 定位日志
 
-    /// 真机验收只有日志能说清「没贴过去」到底是没拿到输入框还是位置算错，
-    /// 所以默认就落盘（一次一行，超过 200KB 就整体重写，不会无限涨）。
-    private static let traceURL: URL? = {
-        let dir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/PasteHistory")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("anchor_trace.log")
-    }()
-
-    private func trace(_ line: String) {
-        guard let url = Self.traceURL else { return }
-        let row = Data(String(format: "%.3f %@\n", Date().timeIntervalSince1970, line).utf8)
-        let fm = FileManager.default
-        let tooBig = ((try? fm.attributesOfItem(atPath: url.path))?[.size] as? NSNumber)?.intValue ?? 0 > 200_000
-        if !tooBig, let handle = try? FileHandle(forWritingTo: url) {
-            handle.seekToEndOfFile()
-            handle.write(row)
-            try? handle.close()
-        } else {
-            try? row.write(to: url)
-        }
-        if ProcessInfo.processInfo.arguments.contains("--trace-anchor") {
-            NSLog("[PH] anchor: %@", line)
-        }
-    }
+    private func trace(_ line: String) { AnchorTrace.write(line) }
 
     private static func fmt(_ rect: CGRect?) -> String {
         guard let r = rect else { return "nil" }
@@ -379,10 +498,10 @@ final class PanelController: NSObject, NSWindowDelegate {
     /// Electron 应用的焦点也要等它稳定。面板已经出来了就再取一次，
     /// 拿到了带 0.2s 弹簧挪过去——不是瞬移，瞬移没有阻尼感。
     private func scheduleAnchorRetry() {
-        guard Settings.shared.anchorPanel else { return }
+        guard !isTreePresentation, Settings.shared.anchorPanel else { return }
         let generation = showGeneration
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
-            guard let self, self.showGeneration == generation, !self.isHiding,
+            guard let self, !self.isTreePresentation, self.showGeneration == generation, !self.isHiding,
                   let panel = self.panel, panel.isVisible else { return }
             let app = self.previousApp ?? AppTracker.targetApp()
             guard let element = app.flatMap({ AXFocus.focusedElement(pid: $0.processIdentifier) }) else { return }
@@ -408,6 +527,20 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     private func installKeyMonitor() {
         removeKeyMonitor()
+        // Isolated UI regression runs may omit real desktop observers so unrelated
+        // user activity doesn't dismiss synthetic windows during assertions.
+        if observesDesktopFocus {
+            outsideMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
+                self?.hide(restoreFocus: false)
+            }
+            activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+            ) { [weak self] note in
+                guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                      app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
+                self?.hide(restoreFocus: false)
+            }
+        }
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             return self.handle(event)
@@ -415,6 +548,8 @@ final class PanelController: NSObject, NSWindowDelegate {
     }
 
     private func removeKeyMonitor() {
+        if let outsideMouseMonitor { NSEvent.removeMonitor(outsideMouseMonitor); self.outsideMouseMonitor = nil }
+        if let activationObserver { NSWorkspace.shared.notificationCenter.removeObserver(activationObserver); self.activationObserver = nil }
         if let localMonitor {
             NSEvent.removeMonitor(localMonitor)
             self.localMonitor = nil
@@ -425,10 +560,29 @@ final class PanelController: NSObject, NSWindowDelegate {
         NotificationCenter.default.post(name: name, object: object)
     }
 
-    private func handle(_ event: NSEvent) -> NSEvent? {
+    /// Shared dispatch path, also exercised by isolated keyboard regression tests.
+    func handle(_ event: NSEvent) -> NSEvent? {
+        if panel?.dragInProgress == true { return event } // Escape belongs to the native drag session.
         let key = Int(event.keyCode)
         let mods = event.modifierFlags.intersection([.command, .shift, .option, .control])
 
+        if key == 46 && mods == [.command, .shift] {
+            layoutEditing ? endTreeLayout() : beginTreeLayout()
+            return nil
+        }
+        if layoutEditing {
+            if key == 53 { endTreeLayout(); return nil }
+            if key == 15 && mods == [.command] {
+                UserDefaults.standard.removeObject(forKey: "desktopTreeOrigin")
+                UserDefaults.standard.removeObject(forKey: "desktopTreeScale")
+                if let panel { _ = placeTree(panel) }
+                Self.post(.phResetTree)
+                return nil
+            }
+            return event
+        }
+        // Candidate navigation and commit belong to the input method while composing.
+        if isComposingText && [125, 126, 36, 76, 116, 121].contains(key) { return event }
         switch key {
         case 53: // esc：两层退出——预览开着先关预览，再按才收面板
             // 输入法组词中：Esc 是「取消组词」，得还给输入法（顺带修掉老问题——
@@ -440,29 +594,38 @@ final class PanelController: NSObject, NSWindowDelegate {
                 Self.post(.phClose)
             }
             return nil
-        case 49 where mods == []: // 空格：查询框为空时是预览开关；有文字时照常输入
-            // 按住空格的 key repeat 不能反复开关，否则会闪
-            if event.isARepeat { return nil }
-            guard store.query.isEmpty else { return event }
-            // 拼音打到一半：空格是「选第一个候选词」，此时劫走会打断组词
-            // 还弹出一个莫名的窗（真机实测踩到：组词中的 a 还没提交，query 是空的）
-            if isComposingText { return event }
-            preview.toggle()
+        case 49 where isTreePresentation && mods == [.shift]:
+            keyboardState.edit()
+            return event
+        case 49 where mods == []:
+            guard keyboardState.spacePreviews(query: store.query, composing: isComposingText,
+                                              tree: isTreePresentation) else { return event }
+            if !event.isARepeat { preview.toggle() }
             return nil
         case 16 where mods == [.command]: // ⌘Y：预览的兜底别名，任何时候可用
             if event.isARepeat { return nil }
             preview.toggle()
             return nil
         case 126: // ↑
+            keyboardState.navigate()
             Self.post(.phMoveUp); return nil
         case 125: // ↓
+            keyboardState.navigate()
             Self.post(.phMoveDown); return nil
+        case 116 where isTreePresentation && mods == []: // Page Up / fn↑
+            keyboardState.navigate()
+            Self.post(.phPageUp); return nil
+        case 121 where isTreePresentation && mods == []: // Page Down / fn↓
+            keyboardState.navigate()
+            Self.post(.phPageDown); return nil
         case 36, 76: // return / enter
             Self.post(.phConfirm); return nil
         case 8 where mods == [.command]: // ⌘C 仅复制
             Self.post(.phCopyOnly); return nil
         case 51 where mods == [.command]: // ⌘⌫ 删除
             Self.post(.phDelete); return nil
+        case 37 where mods == [.command]: // ⌘L 列表 / 3D 许愿树
+            if !event.isARepeat { Self.post(.phToggleTree) }; return nil
         case 35 where mods == [.command]: // ⌘P 置顶
             Self.post(.phPin); return nil
         case 13 where mods == [.command]: // ⌘W 关闭
@@ -479,6 +642,10 @@ final class PanelController: NSObject, NSWindowDelegate {
                 return nil
             }
         }
+        if !mods.contains(.command) && !mods.contains(.control),
+           key == 51 || !(event.characters ?? "").isEmpty {
+            keyboardState.edit()
+        }
         return event
     }
 
@@ -493,9 +660,15 @@ final class PanelController: NSObject, NSWindowDelegate {
     // MARK: - 预览窗联动（PreviewPanelController 回调）
 
     var previewAnchorFrame: NSRect? { panel?.frame }
+    var previewPaper: TreeInteractionPanel? {
+        guard isTreePresentation, let id = panelModel.current?.id else { return nil }
+        return panel?.paper(for: id)
+    }
+    func setExpandedPaper(_ id: UUID?) { panel?.expandedPaperID = id }
+    var previewBesideTree: Bool { isTreePresentation }
     var previewAnchorVisible: Bool { (panel?.isVisible ?? false) && !isHiding }
-    func makePanelKeyAgain() { panel?.makeKey() }
-    func dismissAllFromPreview() { hide() }
+    func makePanelKeyAgain() { panel?.makeKey(); panel?.focusSearch() }
+    func dismissAllFromPreview() { hide(restoreFocus: false) }
 
     // MARK: - 冒烟钩子（--smoke-preview 用）
 
@@ -508,18 +681,23 @@ final class PanelController: NSObject, NSWindowDelegate {
     /// 用户拖边结束：记住选择。程序化的 setContentSize（避让收缩）不经过这里，
     /// 所以临时收矮不会污染用户偏好
     func windowDidEndLiveResize(_ notification: Notification) {
-        guard let panel, notification.object as? NSWindow === panel else { return }
+        guard !isTreePresentation, let panel, notification.object as? NSWindow === panel else { return }
         Settings.shared.panelWidth = panel.frame.width
         Settings.shared.panelHeight = panel.frame.height
     }
 
     func windowDidResignKey(_ notification: Notification) {
+        // Tree mode has several key-capable input islands. Transient nil key
+        // windows during their handoff are not an external dismissal. Workspace
+        // activation and the passive outside-click observer own that decision.
+        guard !isTreePresentation else { return }
         // 焦点的去向要等一拍才问得出（makeKey 交接有时序）：
         // 交给自己的预览窗（点选里面的文字）不算离开，真去了别的应用再收
         DispatchQueue.main.async { [weak self] in
-            guard let self, let panel = self.panel, panel.isVisible, !self.isHiding else { return }
-            if let previewWindow = self.preview.window, NSApp.keyWindow === previewWindow { return }
-            self.hide()
+            guard let self, let panel = self.panel, panel.isVisible, !panel.isKeyWindow, !self.isHiding else { return }
+            if let key = NSApp.keyWindow,
+               key === self.preview.window || (key as? TreeInteractionPanel)?.owner === panel { return }
+            self.hide(restoreFocus: false)
         }
     }
 

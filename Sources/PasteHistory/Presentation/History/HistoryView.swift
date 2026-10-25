@@ -52,50 +52,79 @@ struct HistoryView: View {
     /// 由 PanelController 持有并传入：预览大窗要跟着选中条目联动，
     /// 共享同一个 ViewModel 比通知转发少一层状态
     @ObservedObject private var model: HistoryViewModel
+    @ObservedObject private var presentationState: HistoryPresentationState
     @FocusState private var searchFocused: Bool
     @Namespace private var selectionSpace
     /// 边界橡皮筋：撞到顶/底时整片内容纵向下沉一下再弹回
     @State private var bounce: CGFloat = 0
+    @State private var treeRoot = CGPoint.zero
+    private var layoutEditing: Bool { presentationState.treeLayoutEditing }
+    @AppStorage("showDesktopTree") private var showTree = true
 
     var onPaste: (ClipItem) -> Void
     var onCopyOnly: (ClipItem) -> Void
     var onClose: () -> Void
+    var onPreview: () -> Void
+    var onTreeModeChanged: (Bool) -> Void
 
     init(store: ClipStore,
          model: HistoryViewModel,
+         presentation: HistoryPresentationState = HistoryPresentationState(),
          onPaste: @escaping (ClipItem) -> Void,
          onCopyOnly: @escaping (ClipItem) -> Void,
-         onClose: @escaping () -> Void) {
+         onClose: @escaping () -> Void,
+         onPreview: @escaping () -> Void,
+         onTreeModeChanged: @escaping (Bool) -> Void = { _ in }) {
         self.store = store
         self.model = model
+        self.presentationState = presentation
         self.onPaste = onPaste
         self.onCopyOnly = onCopyOnly
         self.onClose = onClose
+        self.onPreview = onPreview
+        self.onTreeModeChanged = onTreeModeChanged
     }
 
     private var results: [ClipItem] { model.results }
     private var safeSelection: Int { model.safeSelection }
 
-    var body: some View {
-        VStack(spacing: 0) {
-            searchBar
-            hairline
-            content
+    private var presentation: some View {
+        ZStack {
+            if showTree {
+                treeContent
+            } else {
+                VStack(spacing: 0) {
+                    searchBar
+                    hairline
+                    content
+                }
+                .background(Color(NSColor.controlBackgroundColor))
+                .transition(Motion.reduceMotion ? .opacity : .scale(scale: 0.94).combined(with: .opacity))
+            }
         }
-        // 高度不写死：贴着输入框放不下时窗口会收，列表跟着滚。
-        // 写死 647 的话，窗口被压小后 SwiftUI 会把内容裁掉而不是滚动
         .frame(minWidth: Panel.minWidth, maxWidth: .infinity,
                minHeight: Panel.minHeight, maxHeight: .infinity)
-        // 内容顶到窗口上缘，别让标题栏白白占 28pt
         .ignoresSafeArea()
-        // 头部块：比内容区亮一档。层次靠材质差异，不靠多画几条线
-        .background(Color(NSColor.controlBackgroundColor))
         .onAppear {
             DispatchQueue.main.async { searchFocused = true }
             model.rebuildSections()
+            onTreeModeChanged(showTree)
+        }
+        .onChange(of: showTree) { _, enabled in
+            onTreeModeChanged(enabled)
+            DispatchQueue.main.async { searchFocused = true }
+        }
+    }
+
+    var body: some View {
+        presentation
+        .onChange(of: presentationState.treeLayoutEditing) { _, editing in
+            if !editing { searchFocused = true }
         }
         .onReceive(NotificationCenter.default.publisher(for: .phMoveDown)) { _ in model.move(1) }
         .onReceive(NotificationCenter.default.publisher(for: .phMoveUp)) { _ in model.move(-1) }
+        .onReceive(NotificationCenter.default.publisher(for: .phPageDown)) { _ in model.move(IvoryTreeLayout.pageSize) }
+        .onReceive(NotificationCenter.default.publisher(for: .phPageUp)) { _ in model.move(-IvoryTreeLayout.pageSize) }
         .onReceive(NotificationCenter.default.publisher(for: .phConfirm)) { _ in
             guard let item = current else { return }
             onPaste(item)
@@ -114,15 +143,89 @@ struct HistoryView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .phClose)) { _ in onClose() }
         // 每次打开面板都是一次新的「找」：回到第一条
-        .onReceive(NotificationCenter.default.publisher(for: .phPanelWillShow)) { _ in model.resetForPresentation() }
+        .onReceive(NotificationCenter.default.publisher(for: .phPanelWillShow)) { _ in
+            model.resetForPresentation()
+            searchFocused = true
+        }
         .onReceive(NotificationCenter.default.publisher(for: .phQuickPaste)) { note in
             guard let index = note.object as? Int, index < results.count else { return }
             onPaste(results[index])
         }
+        .onReceive(NotificationCenter.default.publisher(for: .phToggleTree)) { _ in toggleTree() }
+        .onChange(of: store.query) { _, _ in model.resetSelection() }
         .onChange(of: store.displayed) { _, _ in model.rebuildSections() }
     }
 
+    private func toggleTree() { withAnimation(Motion.selection) { showTree.toggle() } }
+
     private var current: ClipItem? { model.current }
+
+    private var treeContent: some View {
+                GeometryReader { geometry in
+                    ZStack(alignment: .topLeading) {
+                        IvoryTreeView(model: model, onPreview: onPreview, layoutEditing: layoutEditing, onRootPosition: { treeRoot = $0 })
+                        if !layoutEditing {
+                            Rectangle().fill(Color(red: 0.76, green: 0.72, blue: 0.62))
+                                .frame(width: 1, height: 14)
+                                .position(x: treeRoot == .zero ? geometry.size.width/2 : treeRoot.x,
+                                          y: (treeRoot == .zero ? geometry.size.height-112 : treeRoot.y)+7)
+                            TreeControlPortal(role: .search) { desktopSearch }
+                            .frame(width: 116, height: 92)
+                            .position(x: treeRoot == .zero ? geometry.size.width/2 : treeRoot.x,
+                                      y: min(geometry.size.height-46, (treeRoot == .zero ? geometry.size.height-112 : treeRoot.y)+64))
+                        } else {
+                            TreeControlPortal(role: .layout) { layoutControls }
+                                .frame(width: 310, height: 42)
+                                .position(x: geometry.size.width/2, y: geometry.size.height-28)
+                        }
+                    }
+                }
+                .transition(Motion.reduceMotion ? .opacity : .scale(scale: 0.94).combined(with: .opacity))
+    }
+
+    private var layoutControls: some View {
+        HStack(spacing: 10) {
+            TreeMoveHandle().frame(width: 65, height: 30)
+            ForEach(Array(zip(["小", "标准", "大"], [0.82, 1.0, 1.14])), id: \.0) { title, size in
+                Button(title) { NotificationCenter.default.post(name: .phTreeSize, object: size) }
+                    .buttonStyle(.plain)
+            }
+            Button("完成") { NotificationCenter.default.post(name: .phFinishTreeLayout, object: nil) }
+                .buttonStyle(.borderedProminent)
+        }
+        .font(.system(size: 13))
+        .padding(6)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var desktopSearch: some View {
+        VStack(spacing: 4) {
+            VStack(spacing: 4) {
+                Circle().fill(Color.black.opacity(0.4)).frame(width: 3.5, height: 3.5)
+                Image(systemName: "magnifyingglass").font(.system(size: 12))
+                    .foregroundStyle(Color(red: 0.43, green: 0.41, blue: 0.36))
+                TextField("", text: $store.query)
+                    .lineLimit(1)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14, weight: .medium))
+                    .multilineTextAlignment(.center)
+                    .focused($searchFocused)
+                    .accessibilityLabel(L10n.search)
+                    .help("输入搜索 · 空格预览 · Shift+空格输入空格")
+                    .frame(height: 25)
+                Text(store.matchCount == 0 ? "0 / 0" : "\(safeSelection / IvoryTreeLayout.pageSize + 1) / \((store.matchCount + IvoryTreeLayout.pageSize - 1) / IvoryTreeLayout.pageSize) · \(store.matchCount)")
+                    .font(.system(size: 11).monospacedDigit())
+                    .foregroundStyle(Color(red: 0.39, green: 0.37, blue: 0.32))
+                    .padding(.top, 2)
+            }
+            .foregroundStyle(Color(red: 0.19, green: 0.18, blue: 0.16))
+            .padding(.horizontal, 10).padding(.top, 5).padding(.bottom, 9)
+            .frame(width: 116)
+            .background(Color(red: 0.93, green: 0.91, blue: 0.85), in: RootSearchTag())
+            .shadow(color: .black.opacity(0.18), radius: 5, x: 1, y: 3)
+        }
+        .frame(width: 116)
+    }
 
     // MARK: - 搜索
 
@@ -145,6 +248,14 @@ struct HistoryView: View {
                 .buttonStyle(.plain)
                 .help(L10n.clear)
             }
+            Button(action: toggleTree) {
+                Image(systemName: showTree ? "list.bullet" : "tree")
+                    .font(.system(size: Icon.action))
+                    .foregroundStyle(showTree ? Color.accentColor : Palette.meta)
+            }
+            .buttonStyle(.plain)
+            .help((showTree ? L10n.treeShowList : L10n.wishTree) + "  ⌘L")
+            .accessibilityLabel(showTree ? L10n.treeShowList : L10n.wishTree)
         }
         .padding(.horizontal, Spec.searchPadding)
         .padding(.top, 10)   // ignoresSafeArea 顶掉标题栏后，搜索区需要一点呼吸
@@ -183,6 +294,7 @@ struct HistoryView: View {
                         }
                     }
                 }
+                .animation(model.selectionAnimation, value: safeSelection)
                 .padding(Spec.listPadding)
                 // 橡皮筋位移放在内容上、不放在 ScrollView 上：
                 // 放 ScrollView 会把滚动条一起推出去，看着像整个面板在晃
@@ -192,9 +304,7 @@ struct HistoryView: View {
                 guard newValue < results.count else { return }
                 // 不带 anchor：只滚最小位移。anchor: .center 每按一次都把行拉到正中，
                 // 整片列表跟着滑——那是「抖」的根源
-                let anim = Date().timeIntervalSince(model.lastMoveAt) < Motion.repeatThreshold
-                    ? Motion.selectionFast
-                    : Motion.selection
+                let anim = model.selectionAnimation
                 withAnimation(anim) { proxy.scrollTo(results[newValue].id) }
             }
             .onChange(of: model.presentationTick) { _, _ in
@@ -213,7 +323,6 @@ struct HistoryView: View {
                 bounce = CGFloat(model.bounceDirection) * Spec.bounceDistance
                 withAnimation(Motion.bounce) { bounce = 0 }
             }
-            .onChange(of: store.query) { _, _ in model.resetSelection() }
         }
         // 内容区比头部暗一档，两个材质一明一暗，区域自然分开
         .background(Color(NSColor.windowBackgroundColor))
@@ -430,7 +539,7 @@ struct RowView: View {
 
     /// 摘要里高亮搜索命中
     private var summary: AttributedString {
-        var attr = AttributedString(item.summary)
+        var attr = AttributedString(ClipPresentation(item: item).compactTitle)
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return attr }
         var searchRange = attr.startIndex..<attr.endIndex
@@ -482,5 +591,16 @@ private struct RowActionButton: View {
         .help(label)
         .accessibilityLabel(label)
         .onHover { hovering = $0 }
+    }
+}
+
+/// Clipped shoulders and a punched hole make search part of the hanging paper family.
+private struct RootSearchTag: Shape {
+    func path(in rect: CGRect) -> Path {
+        Path { p in
+            p.move(to: CGPoint(x: 12, y: 0)); p.addLine(to: CGPoint(x: rect.width-12, y: 0))
+            p.addLine(to: CGPoint(x: rect.width, y: 12)); p.addLine(to: CGPoint(x: rect.width, y: rect.height))
+            p.addLine(to: CGPoint(x: 0, y: rect.height)); p.addLine(to: CGPoint(x: 0, y: 12)); p.closeSubpath()
+        }
     }
 }

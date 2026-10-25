@@ -1,5 +1,5 @@
 import Foundation
-import SwiftUI
+import Combine
 
 struct HistorySection {
     let title: String
@@ -36,7 +36,9 @@ final class HistoryViewModel: ObservableObject {
     /// tick 在每次打开时把视口强制带回最顶
     @Published private(set) var presentationTick = 0
 
-    var lastMoveAt = Date.distantPast
+    private(set) var lastMoveAt = Date.distantPast
+    private(set) var previousMoveAt = Date.distantPast
+    private(set) var selectionFromKeyboard = false
 
     init(store: ClipStore) {
         self.store = store
@@ -54,8 +56,9 @@ final class HistoryViewModel: ObservableObject {
     func move(_ delta: Int) {
         guard !results.isEmpty else { return }
         let now = Date()
-        let fast = now.timeIntervalSince(lastMoveAt) < Motion.repeatThreshold
+        previousMoveAt = lastMoveAt
         lastMoveAt = now
+        selectionFromKeyboard = true
         let next = min(max(safeSelection + delta, 0), results.count - 1)
 
         guard next != safeSelection else {
@@ -64,13 +67,13 @@ final class HistoryViewModel: ObservableObject {
             return
         }
 
-        withAnimation(fast ? Motion.selectionFast : Motion.selection) { selection = next }
+        selection = next
     }
 
     func select(_ index: Int) {
         guard !results.isEmpty else { return }
-        // 鼠标点击也要走同一条弹簧，不然键盘和鼠标是两套手感
-        withAnimation(Motion.selection) { selection = min(max(index, 0), results.count - 1) }
+        selectionFromKeyboard = false
+        selection = min(max(index, 0), results.count - 1)
     }
 
     /// 每次打开面板都是一次新的「找」：回到第一条，视口也回顶
