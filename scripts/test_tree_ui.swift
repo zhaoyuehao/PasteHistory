@@ -348,7 +348,9 @@ struct TreeUISmoke {
         let sourcePaper = controller.previewPaper!.frame
         _ = key(49, chars: " ")
         let openingSheet = NSApp.windows.first { $0.isVisible && $0.title == "纸签预览过渡" }!
-        precondition(openingSheet.frame == sourcePaper, "Preview must start at the selected paper, not the whole tree")
+        precondition(abs(openingSheet.frame.minX-sourcePaper.minX) <= 1 && abs(openingSheet.frame.minY-sourcePaper.minY) <= 1
+                     && abs(openingSheet.frame.width-sourcePaper.width) <= 2 && abs(openingSheet.frame.height-sourcePaper.height) <= 2,
+                     "The flight canvas must tightly enclose the selected paper, allowing only outward pixel rounding")
         run(0.07)
         precondition(openingSheet.frame.width > sourcePaper.width, "Paper must visibly grow toward preview")
         _ = key(49, chars: " ") // interrupt opening with close

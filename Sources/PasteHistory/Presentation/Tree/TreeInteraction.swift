@@ -14,7 +14,6 @@ final class TreeInteractionPanel: NSPanel {
     }
     var paperSize: NSSize = .zero
     var paperAngle: CGFloat = 0
-    var paperFace: (() -> NSImage?)?
     var paperPose: PaperPose? {
         paperPin.map { PaperPose(pin: $0, size: paperSize, angle: paperAngle, padding: 3) }
     }

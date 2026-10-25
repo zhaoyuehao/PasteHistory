@@ -87,16 +87,6 @@ final class IvoryTreePaperView: NSView {
             panel.paperPin = owner.convertPoint(toScreen: convert(center, to: nil))
             panel.paperSize = NSSize(width: card.rect.width * card.fold, height: card.rect.height)
             panel.paperAngle = -a
-            panel.paperFace = { [weak self] in
-                guard let self else { return nil }
-                var face = card
-                face.rect.origin = .zero
-                let image = NSImage(size: face.rect.size)
-                image.lockFocusFlipped(true)
-                self.drawPaper(face)
-                image.unlockFocus()
-                return image
-            }
             // Visible transitional papers consume a click without activating a new
             // record or accidentally clicking the app beneath the departing paper.
             panel.alphaValue = owner.expandedPaperID == id ? 0 : owner.treeOpacity

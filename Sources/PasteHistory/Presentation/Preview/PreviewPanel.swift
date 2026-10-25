@@ -172,7 +172,6 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         let target = targetFrame()
         let paper = owner?.previewPaper
         let origin = paper?.paperPose ?? paperReturnPose ?? PaperPose(frame: target)
-        let image = paper?.paperFace?()
         previewedID = model.current?.id
         owner?.setExpandedPaper(previewedID)
         paperReturnPose = paper?.paperPose
@@ -182,9 +181,9 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         panel.orderFrontRegardless()
         panel.contentView?.layoutSubtreeIfNeeded()
         let expandedFace = snapshot(panel.contentView)
-        let targetPose = readingPose(frame: target)
+        let targetPose = readingPose(frame: panel.frame)
         paperFlight.animate(from: Motion.reduceMotion ? targetPose : origin, to: targetPose,
-                            image: image, endImage: expandedFace, duration: Motion.reduceMotion ? 0.12 : Motion.paperOpenDuration,
+                            readingImage: expandedFace, duration: Motion.reduceMotion ? 0.12 : Motion.paperOpenDuration,
                             opening: true) { [weak self, weak panel] in
             panel?.alphaValue = 1
             panel?.ignoresMouseEvents = false
@@ -201,11 +200,10 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         let origin = readingPose(frame: panel.frame)
         let image = snapshot(panel.contentView)
         let destination = owner?.previewPaper?.paperPose ?? paperReturnPose ?? origin
-        let paper = owner?.previewPaper?.paperFace?()
         panel.ignoresMouseEvents = true
         panel.alphaValue = 0
         paperFlight.animate(from: origin, to: Motion.reduceMotion ? origin : destination,
-                            image: image, endImage: paper, duration: Motion.reduceMotion ? 0.1 : Motion.paperCloseDuration,
+                            readingImage: image, duration: Motion.reduceMotion ? 0.1 : Motion.paperCloseDuration,
                             opening: false, initialVelocity: followVelocity) { [weak self] in
             guard let self else { return }
             self.panel?.orderOut(nil)

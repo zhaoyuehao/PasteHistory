@@ -35,68 +35,71 @@ struct PaperPose {
     }
 }
 
-/// The shell changes shape around its pin. Faces keep their original pixel scale
-/// and stable text layout; increasing the shell exposes more of the reading face.
+/// A single reading face is clipped by the moving shell. Text stays upright at
+/// its reading scale; rotating rasterized glyphs or blending two layouts shimmers.
 final class PaperFlightView: NSView {
     var pose = PaperPose(frame: .zero)
-    var source: NSImage?
-    var destination: NSImage?
-    var mix: CGFloat = 0
+    var readingImage: NSImage?
+    private var canvasOrigin: NSPoint?
     override var isOpaque: Bool { false }
 
-    static func faceRect(image: NSSize, sheet: NSSize) -> NSRect {
-        NSRect(x: 0, y: sheet.height-image.height, width: image.width, height: image.height)
+    func place(_ pose: PaperPose, in panel: NSPanel) {
+        self.pose = pose
+        // macOS rounds window origins. Enclose the fractional shell, then draw
+        // relative to the ACTUAL origin so the screen-space pin never jumps.
+        panel.setFrame(pose.frame.integral, display: false)
+        canvasOrigin = panel.frame.origin
+        needsDisplay = true
     }
+
     override func draw(_ dirtyRect: NSRect) {
+        let origin = canvasOrigin ?? pose.frame.origin
+        drawPaper(pin: NSPoint(x: pose.pin.x-origin.x, y: pose.pin.y-origin.y))
+    }
+
+    private func drawPaper(pin: NSPoint) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         context.saveGState()
-        let frame = pose.frame
-        context.translateBy(x: pose.pin.x-frame.minX, y: pose.pin.y-frame.minY)
-        context.rotate(by: pose.angle)
-        context.translateBy(x: -pose.size.width/2, y: pose.inset-pose.size.height)
-        drawFace()
+        context.translateBy(x: pin.x, y: pin.y)
+        let scale = pose.inset / IvoryPaperStyle.pinInset
+        let rect = NSRect(x: -pose.size.width/2, y: pose.inset-pose.size.height,
+                          width: pose.size.width, height: pose.size.height)
+        func outline(in bounds: NSRect, radius: CGFloat) -> NSBezierPath {
+            let path = NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius)
+            let rotation = AffineTransform(rotationByRadians: pose.angle)
+            path.transform(using: rotation)
+            return path
+        }
+        let paper = outline(in: rect, radius: IvoryPaperStyle.radius * scale)
+        IvoryPaperStyle.fill.setFill()
+        paper.fill()
+        context.saveGState()
+        paper.addClip()
+        if let image = readingImage {
+            // Snapshot edges/hole belong to the shell, not the reading layout.
+            // Clip those out, then reveal this ONE face without reflow or rotation.
+            let imageRect = NSRect(x: rect.minX, y: rect.maxY-image.size.height,
+                                   width: image.size.width, height: image.size.height)
+            NSBezierPath(rect: NSRect(x: imageRect.minX+2*scale, y: imageRect.minY+2*scale,
+                width: max(0, imageRect.width-4*scale), height: max(0, imageRect.height-12*scale))).addClip()
+            image.draw(in: imageRect, from: .zero, operation: .sourceOver, fraction: 1)
+        }
+        context.restoreGState()
+        IvoryPaperStyle.edge.setStroke()
+        let edge = outline(in: rect.insetBy(dx: 0.75*scale, dy: 0.75*scale),
+                           radius: max(0, IvoryPaperStyle.radius*scale - 0.75*scale))
+        edge.lineWidth = 1.5*scale
+        edge.stroke()
+        IvoryPaperStyle.meta.withAlphaComponent(0.7).setFill()
+        let radius = 1.7 * scale
+        NSBezierPath(ovalIn: NSRect(x: -radius, y: -radius, width: radius*2, height: radius*2)).fill()
         context.restoreGState()
     }
-    private func drawFace() {
-        NSGraphicsContext.saveGraphicsState()
-        let rect = NSRect(origin: .zero, size: pose.size)
-        let outline = NSBezierPath(roundedRect: rect, xRadius: IvoryPaperStyle.radius, yRadius: IvoryPaperStyle.radius)
-        outline.addClip()
-        guard let context = NSGraphicsContext.current?.cgContext else {
-            NSGraphicsContext.restoreGraphicsState()
-            return
-        }
-        func paint(_ image: NSImage?, opacity: CGFloat) {
-            context.saveGState()
-            context.setAlpha(opacity)
-            context.beginTransparencyLayer(auxiliaryInfo: nil)
-            IvoryPaperStyle.fill.setFill()
-            rect.fill()
-            if let image {
-                image.draw(in: Self.faceRect(image: image.size, sheet: pose.size),
-                           from: .zero, operation: .sourceOver, fraction: 1)
-            }
-            context.endTransparencyLayer()
-            context.restoreGState()
-        }
-        paint(source, opacity: 1)
-        if destination != nil { paint(destination, opacity: mix) }
-        // The hole belongs to the shell, not either face's different text layout.
-        // Clear only the interior header strip so the outer edge remains intact.
-        let dotScale = pose.inset / IvoryPaperStyle.pinInset
-        IvoryPaperStyle.fill.setFill()
-        NSRect(x: 1.5, y: rect.height - 10 * dotScale,
-               width: max(0, rect.width - 3), height: max(0, 10 * dotScale - 1.5)).fill()
-        IvoryPaperStyle.meta.withAlphaComponent(0.7).setFill()
-        let radius = 1.7 * dotScale
-        NSBezierPath(ovalIn: NSRect(x: rect.midX-radius, y: rect.height-pose.inset-radius,
-                                   width: radius*2, height: radius*2)).fill()
-        NSGraphicsContext.restoreGraphicsState()
-    }
+
     func faceImage() -> NSImage {
-        let image = NSImage(size: pose.size)
+        let image = NSImage(size: pose.frame.size)
         image.lockFocus()
-        drawFace()
+        drawPaper(pin: NSPoint(x: pose.pin.x-pose.frame.minX, y: pose.pin.y-pose.frame.minY))
         image.unlockFocus()
         return image
     }
@@ -122,7 +125,7 @@ final class PaperPreviewFlight {
         tracks.removeAll()
     }
 
-    func animate(from: PaperPose, to: PaperPose, image: NSImage?, endImage: NSImage?,
+    func animate(from: PaperPose, to: PaperPose, readingImage: NSImage?,
                  duration: Double, opening: Bool, initialVelocity: NSPoint = .zero,
                  completion: @escaping () -> Void) {
         let interrupted = visiblePose
@@ -130,7 +133,9 @@ final class PaperPreviewFlight {
         let speeds = interrupted == nil ? [initialVelocity.x, initialVelocity.y, 0, 0, 0, 0, 0]
             : tracks.map { $0.sample(elapsed).velocity }
         let startPose = interrupted ?? from
-        let startImage = interrupted == nil ? image : sheet?.faceImage()
+        // A reversal keeps the current reading layout. Reopening/selection may
+        // replace the record, but never composites old and new text together.
+        let content = interrupted != nil && !opening ? sheet?.readingImage : readingImage
         // Updating the selected record doesn't replay a full unfold. Reversing
         // open/close has its own duration, starting with the current momentum.
         let remaining = interrupted != nil && self.opening == opening
@@ -158,11 +163,8 @@ final class PaperPreviewFlight {
             panel.contentView = face
             window = panel; sheet = face
         }
-        face.source = Motion.reduceMotion && opening ? endImage : startImage
-        face.destination = Motion.reduceMotion ? nil : endImage
-        face.mix = 0
-        face.pose = Motion.reduceMotion ? (opening ? to : startPose) : startPose
-        panel.setFrame(face.pose.frame, display: false)
+        face.readingImage = content
+        face.place(Motion.reduceMotion ? (opening ? to : startPose) : startPose, in: panel)
         panel.alphaValue = Motion.reduceMotion && interrupted == nil && opening ? 0 : 1
         face.needsDisplay = true
         panel.orderFrontRegardless()
@@ -173,11 +175,8 @@ final class PaperPreviewFlight {
                 let elapsed = CACurrentMediaTime() - self.startedAt
                 let t = min(1, CGFloat(elapsed / remaining))
                 if !Motion.reduceMotion {
-                    face.pose = PaperPose(channels: self.tracks.map { $0.sample(elapsed).value })
-                    panel.setFrame(face.pose.frame, display: false)
+                    face.place(PaperPose(channels: self.tracks.map { $0.sample(elapsed).value }), in: panel)
                 }
-                let mix = min(1, max(0, (t - 0.25) / 0.5))
-                face.mix = mix * mix * (3 - 2*mix)
                 face.needsDisplay = true
                 panel.displayIfNeeded()
                 panel.invalidateShadow()

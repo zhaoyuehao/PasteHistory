@@ -26,7 +26,7 @@ enum Motion {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 
-    static let paperOpenDuration: TimeInterval = 0.20
+    static let paperOpenDuration: TimeInterval = 0.24
     static let paperCloseDuration: TimeInterval = 0.16
     static let paperFollowFrequency: CGFloat = 46
     static let paperFollowDamping: CGFloat = 0.86
