@@ -301,7 +301,7 @@ struct TreeUISmoke {
         precondition(controller.panelModel.safeSelection == 8)
         assertPreviewFollowsSelection()
         _ = key(49, chars: " ")
-        run(0.2)
+        run(0.3)
         precondition(!controller.isPreviewVisible)
         controller.panelModel.select(0)
         run(0.4)
@@ -314,7 +314,7 @@ struct TreeUISmoke {
         run(0.4)
         assertPreviewFollowsSelection()
         _ = key(49, chars: " ")
-        run(0.2)
+        run(0.3)
         precondition(key(49, chars: " ", mods: [.shift]) != nil,
                      "Shift-Space must remain available to type multiword queries")
         let liveWindow = NSApp.windows.first { $0.isVisible && $0 is HistoryPanel }!
@@ -341,7 +341,7 @@ struct TreeUISmoke {
         run(0.2)
         precondition(controller.panelModel.current?.id == clickedID, "Filtered paper click must select")
         _ = key(49, chars: " ")
-        run(0.2)
+        run(0.3)
         precondition(controller.isPreviewVisible, "Preview missing: tree visible=\(controller.isVisible), front=\(NSWorkspace.shared.frontmostApplication?.localizedName ?? "nil")")
         _ = key(49, chars: " ")
         run(0.25)
@@ -404,56 +404,55 @@ struct TreeUISmoke {
                 precondition(abs(fitted.width / fitted.height - 1.61803398875) < 0.004, "Screen fitting scales both dimensions together")
             }
         }
-        // A settled preview closes as the SAME live reading surface, with fixed
-        // logical text layout and proportional image scale, not a clipped flight.
+        // Open and close share one opaque paper, the same geometry endpoints,
+        // and a reversible content phase. Neither direction disappears in place.
         let liveSurface = expanded.contentView as! PaperPreviewSurface
         let logicalReadingBounds = liveSurface.bounds
-        let documentFrame = liveSurface.document.frame
-        let retreatRestFrame = expanded.frame
+        let readingFrameBeforeClose = expanded.frame
+        let compactFrameBeforeClose = controller.previewPaper!.paperPose!.frame
         _ = key(49, chars: " ")
-        precondition(expanded.contentView === liveSurface && expanded.alphaValue == 1)
-        run(0.045)
-        precondition(expanded.isVisible && expanded.alphaValue > 0 && expanded.alphaValue < 1)
-        precondition(expanded.frame.width < retreatRestFrame.width && expanded.frame.width > retreatRestFrame.width * 0.93,
-                     "Dismissal makes a small retreat, never a large trip back to thumbnail size")
-        precondition(liveSurface.bounds == logicalReadingBounds && liveSurface.document.frame == documentFrame,
-                     "Retreat must not reflow text or change the logical reading viewport")
-        precondition(!NSApp.windows.contains { $0.isVisible && $0.title == "纸签预览过渡" },
-                     "Settled dismissal must not capture/swap to a flight snapshot")
-        let interruptedFrame = expanded.frame
-        let interruptedOpacity = expanded.alphaValue
+        let closingSheet = NSApp.windows.first { $0.isVisible && $0.title == "纸签预览过渡" }!
+        precondition(abs(closingSheet.frame.width-readingFrameBeforeClose.width) <= 2)
+        run(0.07)
+        precondition(closingSheet.alphaValue == 1 && expanded.alphaValue == 0,
+                     "Closing must remain a visible paper returning to its branch, not fade out in place")
+        precondition(closingSheet.frame.width < readingFrameBeforeClose.width
+                     && closingSheet.frame.width > compactFrameBeforeClose.width)
+        precondition(liveSurface.bounds == logicalReadingBounds,
+                     "The captured reading layout must remain stable throughout the return")
+        let reverseFrame = closingSheet.frame
+        let reversePhase = (closingSheet.contentView as! PaperFlightView).expansion
         _ = key(49, chars: " ")
-        precondition(expanded.frame == interruptedFrame && expanded.alphaValue == interruptedOpacity,
-                     "Reopening must start at the last visible geometry and opacity")
-        run(0.22)
-        precondition(controller.isPreviewVisible && expanded.frame == retreatRestFrame && expanded.alphaValue == 1)
-        precondition(liveSurface.bounds == logicalReadingBounds)
-        // Record actual live-face samples for inspection, including its alpha.
+        precondition(closingSheet.frame == reverseFrame
+                     && (closingSheet.contentView as! PaperFlightView).expansion == reversePhase,
+                     "Mid-return reopening must preserve the presented geometry and content phase")
+        run(0.3)
+        precondition(controller.isPreviewVisible && expanded.frame == readingFrameBeforeClose)
         _ = key(49, chars: " ")
-        let retreatStrip = NSImage(size: NSSize(width: retreatRestFrame.width * 5, height: retreatRestFrame.height))
-        for index in 0..<5 {
-            run(0.025)
-            guard expanded.isVisible, let rep = liveSurface.bitmapImageRepForCachingDisplay(in: liveSurface.bounds) else { continue }
-            liveSurface.cacheDisplay(in: liveSurface.bounds, to: rep)
-            retreatStrip.lockFocus()
-            NSImage(cgImage: rep.cgImage!, size: liveSurface.bounds.size).draw(in: NSRect(
-                x: CGFloat(index)*retreatRestFrame.width + expanded.frame.minX-retreatRestFrame.minX,
-                y: expanded.frame.minY-retreatRestFrame.minY,
-                width: expanded.frame.width, height: expanded.frame.height),
-                from: .zero, operation: .sourceOver, fraction: expanded.alphaValue)
-            retreatStrip.unlockFocus()
+        let closingStrip = NSImage(size: NSSize(width: readingFrameBeforeClose.width*6, height: readingFrameBeforeClose.height))
+        var previousClosingWidth = readingFrameBeforeClose.width + 2
+        for index in 0..<6 {
+            run(0.035)
+            guard closingSheet.isVisible, let face = closingSheet.contentView as? PaperFlightView else { continue }
+            precondition(closingSheet.frame.width <= previousClosingWidth+1, "A resting paper must shrink continuously back to its branch")
+            precondition(closingSheet.alphaValue == 1)
+            previousClosingWidth = closingSheet.frame.width
+            closingStrip.lockFocus()
+            face.faceImage().draw(in: NSRect(x: CGFloat(index)*readingFrameBeforeClose.width,
+                y: readingFrameBeforeClose.height-face.pose.frame.height,
+                width: face.pose.frame.width, height: face.pose.frame.height))
+            closingStrip.unlockFocus()
         }
-        run(0.1)
-        precondition(!controller.isPreviewVisible && !expanded.isVisible)
-        precondition(controller.previewPaper?.alphaValue == treeWindow.treeOpacity,
-                     "The original branch card returns fully after dismissal")
-        try NSBitmapImageRep(data: retreatStrip.tiffRepresentation!)!.representation(using: .png, properties: [:])!
-            .write(to: URL(fileURLWithPath: ".build/preview-retreat-frames.png"))
+        run(0.15)
+        precondition(!controller.isPreviewVisible && !closingSheet.isVisible)
+        precondition(controller.previewPaper?.alphaValue == treeWindow.treeOpacity)
+        try NSBitmapImageRep(data: closingStrip.tiffRepresentation!)!.representation(using: .png, properties: [:])!
+            .write(to: URL(fileURLWithPath: ".build/preview-symmetric-close.png"))
         _ = key(49, chars: " ")
         run(0.3)
         // Observe actual paper motion: visible travel, monotone settling, exact live-view handoff.
         _ = key(49, chars: " ")
-        run(0.2)
+        run(0.3)
         _ = key(49, chars: " ")
         let settlingPaper = NSApp.windows.first { $0.isVisible && $0.title == "纸签预览过渡" }!
         var widest: CGFloat = 0
@@ -553,7 +552,7 @@ struct TreeUISmoke {
                      "Arrow navigation preserves zoom and the scaled hanging point")
         print("Preview 100k-text navigation: slowest down/up pair = \(Int(slowest*1000)) ms")
         _ = key(53)
-        run(0.2)
+        run(0.3)
         precondition(!zoomPanel.handlesPaperPinch && !zoomPanel.routeMagnification(from: zoomPanel, at: NSPoint(x: 20, y: 20), delta: 0.5, phase: .began), "Closing must remove the monitor, not just hide its window")
         precondition(controller.previewPaper?.alphaValue == 1, "Closing restores the hanging paper")
         precondition(!controller.isPreviewVisible && controller.isVisible,
@@ -639,14 +638,14 @@ struct TreeUISmoke {
         let closingPictureFrame = imageZoom.sheet.picture.frame
         _ = key(53)
         run(0.045)
-        precondition(imagePreview.contentView === scrolledFace && imagePreview.frame.width > closingImageFrame.width * 0.93)
+        precondition(imagePreview.contentView === scrolledFace && imagePreview.frame == closingImageFrame)
         let closingViewport = imageZoom.documentVisibleRect
         precondition(abs(closingViewport.minY-closingOCRViewport.minY) < 0.5
                      && abs(closingViewport.width-closingOCRViewport.width) < 0.5
                      && abs(closingViewport.height-closingOCRViewport.height) < 0.5
                      && imageZoom.sheet.picture.frame == closingPictureFrame,
-                     "OCR retreat changed its viewport: \(closingOCRViewport) -> \(closingViewport), image \(closingPictureFrame) -> \(imageZoom.sheet.picture.frame)")
-        run(0.16)
+                     "OCR return changed its viewport: \(closingOCRViewport) -> \(closingViewport), image \(closingPictureFrame) -> \(imageZoom.sheet.picture.frame)")
+        run(0.25)
         _ = key(49, chars: " ")
         run(0.3)
         let reopenedZoom = zoomViews(in: imagePreview.contentView!).first as! PreviewImageScrollView
@@ -669,7 +668,7 @@ struct TreeUISmoke {
                      "Preview loader must read the injected store, not the user's global history")
         precondition(fileMetadata?.exists == true && fileMetadata?.bytes == 1, "File preview metadata must come from the filesystem service")
         _ = key(53)
-        run(0.2)
+        run(0.3)
         store.query = "设计"
         run(0.7)
         // A rejected/missing payload cancels the click and never moves the tree.
@@ -777,7 +776,7 @@ struct TreeUISmoke {
         precondition(zoomViews(in: expanded.contentView!).allSatisfy { $0.allowsMagnification },
                      "List previews retain their native document magnification")
         _ = key(53)
-        run(0.2)
+        run(0.3)
         _ = key(37, chars: "l", mods: [.command])
         run(0.4)
         print(

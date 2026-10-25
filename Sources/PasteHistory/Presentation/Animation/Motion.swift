@@ -24,8 +24,8 @@ enum Motion {
     }
 
     static let paperOpenDuration: TimeInterval = 0.24
-    static let paperRetreatDuration: TimeInterval = 0.15
-    static let paperRetreatScale: CGFloat = 0.94
+    // Both directions use the same path, duration and symmetric timing curve.
+    static let paperCloseDuration = paperOpenDuration
     static let paperFollowFrequency: CGFloat = 46
     static let paperFollowDamping: CGFloat = 0.86
     static let paperScaleReturnDuration: TimeInterval = 0.15

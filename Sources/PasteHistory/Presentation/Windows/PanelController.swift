@@ -664,11 +664,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         guard isTreePresentation, let id = panelModel.current?.id else { return nil }
         return panel?.paper(for: id)
     }
-    func setExpandedPaper(_ id: UUID?) {
-        panel?.expandedPaperVisibility = 0
-        panel?.expandedPaperID = id
-    }
-    func revealExpandedPaper(_ visibility: CGFloat) { panel?.expandedPaperVisibility = visibility }
+    func setExpandedPaper(_ id: UUID?) { panel?.expandedPaperID = id }
     var previewBesideTree: Bool { isTreePresentation }
     var previewAnchorVisible: Bool { (panel?.isVisible ?? false) && !isHiding }
     func makePanelKeyAgain() { panel?.makeKey(); panel?.focusSearch() }

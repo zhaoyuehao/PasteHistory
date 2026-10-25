@@ -3,7 +3,7 @@ import AppKit
 /// Behavior checks for the shared trajectory and actual rendered paper face.
 @MainActor
 func checkPaperMotion() {
-    let track = SettlingTrack(start: 158, end: 480, duration: 0.2)
+    let track = SettlingTrack(start: 158, end: 480, duration: 0.2, symmetric: true)
     var previous: CGFloat = 158
     for index in 0...200 {
         let sample = track.sample(Double(index) / 1000)
@@ -13,7 +13,7 @@ func checkPaperMotion() {
     for instant in [0.025, 0.06, 0.12, 0.19] {
         let moving = track.sample(instant)
         let reverse = SettlingTrack(start: moving.value, end: 158,
-                                    velocity: moving.velocity, duration: 0.16)
+                                    velocity: moving.velocity, duration: 0.16, symmetric: true)
         precondition(abs(reverse.sample(0).value-moving.value) < 0.0001)
         let measuredVelocity = (reverse.sample(0.000001).value-reverse.sample(0).value) / 0.000001
         precondition(abs(measuredVelocity-moving.velocity) < 0.2,
@@ -45,8 +45,41 @@ func checkPaperMotion() {
         precondition(right > left && abs((right-left)-(bottom-top)) <= 2,
                      "A circular image feature must stay circular while the paper changes aspect ratio")
         let pixelScale = CGFloat(bitmap.pixelsWide) / size.width
-        precondition(abs(CGFloat(right-left+1) / pixelScale - 60) < 2,
-                     "Content must keep its reading scale while the paper exposes more of it")
+        precondition(abs(CGFloat(right-left+1) / pixelScale - 60 * min(size.width/image.size.width, size.height/image.size.height)) < 2,
+                     "Content must scale uniformly with the paper instead of being cropped at its original size")
+    }
+    // With unchanged endpoints/content, the closing frame at T-t must equal
+    // the opening frame at t, including text handoff, tilt and image proportions.
+    let compact = PaperPose(pin: NSPoint(x: 600, y: 500), size: NSSize(width: 158, height: 112), angle: 0.06, padding: 3)
+    let reading = PaperPose(pin: NSPoint(x: 604, y: 495), size: image.size)
+    let compactImage = NSImage(size: compact.size)
+    compactImage.lockFocus()
+    IvoryPaperStyle.fill.setFill(); NSRect(origin: .zero, size: compact.size).fill()
+    NSColor.red.setFill(); NSRect(x: 20, y: 25, width: 80, height: 45).fill()
+    compactImage.unlockFocus()
+    let forwards = zip(compact.channels+[0], reading.channels+[1]).map {
+        SettlingTrack(start: $0.0, end: $0.1, duration: Motion.paperOpenDuration, symmetric: true)
+    }
+    let backwards = zip(reading.channels+[1], compact.channels+[0]).map {
+        SettlingTrack(start: $0.0, end: $0.1, duration: Motion.paperCloseDuration, symmetric: true)
+    }
+    for fraction in [0.0, 0.1, 0.25, 0.4, 0.5, 0.6, 0.75, 0.9, 1.0] {
+        let a = forwards.map { $0.sample(fraction*Motion.paperOpenDuration).value }
+        let b = backwards.map { $0.sample((1-fraction)*Motion.paperCloseDuration).value }
+        precondition(zip(a,b).allSatisfy { abs($0-$1) < 0.000001 }, "Opening and closing must retrace the same geometry and content phase")
+        let frames = [a,b].map { channels -> NSBitmapImageRep in
+            let face = PaperFlightView(frame: .zero)
+            face.pose = PaperPose(channels: Array(channels.prefix(7)))
+            face.expansion = channels[7]
+            face.compactImage = compactImage; face.readingImage = image
+            return NSBitmapImageRep(data: face.faceImage().tiffRepresentation!)!
+        }
+        precondition(frames[0].pixelsWide == frames[1].pixelsWide && frames[0].pixelsHigh == frames[1].pixelsHigh)
+        let count = frames[0].bytesPerRow*frames[0].pixelsHigh
+        let left = UnsafeBufferPointer(start: frames[0].bitmapData!, count: count)
+        let right = UnsafeBufferPointer(start: frames[1].bitmapData!, count: count)
+        precondition(zip(left,right).filter { abs(Int($0)-Int($1)) > 2 }.count < max(1,count/1000),
+                     "Reverse playback must render the same paper, not a separate dismissal effect")
     }
     // Render into a real native window: integer window placement must not move
     // the fractional screen-space hanging hole as the sheet grows and straightens.
@@ -109,5 +142,5 @@ func checkPaperMotion() {
         precondition(right > left && CGFloat(right-left+1)/scale < 5,
                      "Reading glyphs must not rotate or blur with the straightening shell")
     }
-    print("PASS: monotone settle, interruption velocity, exact endpoints, undistorted rendered image, subpixel pin stability, upright reading face")
+    print("PASS: monotone settle, interruption velocity, exact endpoints, symmetric forward/reverse pixels, undistorted rendered image, subpixel pin stability, upright reading face")
 }

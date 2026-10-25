@@ -12,7 +12,7 @@ final class HistoryPanel: NSPanel {
             for island in islands {
                 let expanded = island.role == .paper && expandedPaperID != nil
                     && (island.contentView as? TreePaperSurface)?.recordID == expandedPaperID
-                island.alphaValue = expanded ? expandedPaperVisibility * treeOpacity : treeOpacity
+                island.alphaValue = expanded ? 0 : treeOpacity
             }
         }
     }
@@ -22,20 +22,11 @@ final class HistoryPanel: NSPanel {
     var onDragBegan: (() -> Void)?
     var onDragEnded: ((NSDragOperation) -> Void)?
     var dragInProgress = false
-    var expandedPaperVisibility: CGFloat = 0 {
-        didSet {
-            for island in islands where island.role == .paper {
-                if (island.contentView as? TreePaperSurface)?.recordID == expandedPaperID, expandedPaperID != nil {
-                    island.alphaValue = expandedPaperVisibility * treeOpacity
-                }
-            }
-        }
-    }
     var expandedPaperID: UUID? {
         didSet {
             for island in islands where island.role == .paper {
                 let expanded = (island.contentView as? TreePaperSurface)?.recordID == expandedPaperID && expandedPaperID != nil
-                island.alphaValue = expanded ? expandedPaperVisibility * treeOpacity : treeOpacity
+                island.alphaValue = expanded ? 0 : treeOpacity
                 island.enabled = !expanded
             }
             onPaperAppearanceChanged?()
@@ -65,7 +56,7 @@ final class HistoryPanel: NSPanel {
         guard isVisible, treePresentation, presentsIslands else { return }
         let expanded = island.role == .paper && expandedPaperID != nil
             && (island.contentView as? TreePaperSurface)?.recordID == expandedPaperID
-        island.alphaValue = expanded ? expandedPaperVisibility * treeOpacity : treeOpacity
+        island.alphaValue = expanded ? 0 : treeOpacity
         if island.parent == nil { addChildWindow(island, ordered: .above) }
         if !island.isVisible { island.orderFrontRegardless() }
     }

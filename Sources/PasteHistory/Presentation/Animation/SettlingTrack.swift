@@ -8,6 +8,7 @@ struct SettlingTrack {
     var end: CGFloat
     var velocity: CGFloat = 0
     var duration: Double
+    var symmetric = false
 
     static func progress(_ fraction: CGFloat) -> CGFloat {
         let t = min(1, max(0, fraction))
@@ -17,9 +18,11 @@ struct SettlingTrack {
     func sample(_ elapsed: Double) -> (value: CGFloat, velocity: CGFloat) {
         let t = CGFloat(min(1, max(0, elapsed / max(0.001, duration))))
         let tail = 1 - t
-        let value = start + (end - start) * Self.progress(t)
+        let progress = symmetric ? t*t*t*(10-15*t+6*t*t) : Self.progress(t)
+        let slope = symmetric ? 30*t*t*tail*tail : 12*t*tail*tail
+        let value = start + (end - start) * progress
             + velocity * duration * t * pow(tail, 3)
-        let speed = (end - start) * 12 * t * tail * tail / duration
+        let speed = (end - start) * slope / duration
             + velocity * tail * tail * (1 - 4 * t)
         return (value, speed)
     }
