@@ -54,10 +54,10 @@ struct PaperFlightMotion {
         // on the UI thread. Half a second exceeds this response's settling time.
         let dt = CGFloat(min(0.5, max(0, delta)))
         if retargeting {
-            // Saturate the requested velocity, not position/velocity/acceleration.
-            // This bounds the large return's pace without introducing a hard
-            // derivative discontinuity. Near the endpoint it becomes the
-            // critically damped (D+w)^3 response, with no oscillating tail.
+            // Smoothly limit requested velocity rather than entering/leaving
+            // a hard plateau. Repeated reversals keep braking force continuous;
+            // near the endpoint this approaches the critically damped (D+w)^3
+            // response without an oscillating tail.
             let steps = max(1, Int(ceil(dt / (1.0/480))))
             let h = dt / CGFloat(steps)
             for _ in 0..<steps {
@@ -83,7 +83,7 @@ struct PaperFlightMotion {
     private static func integrate(_ s: State, toward target: CGFloat, speedLimit: CGFloat, dt: CGFloat) -> State {
         let w = Motion.paperRetargetFrequency
         func derivative(_ s: State) -> State {
-            let requested = min(speedLimit, max(-speedLimit, w*(target-s.value)/3))
+            let requested = speedLimit * tanh(w*(target-s.value)/(3*speedLimit))
             return (s.velocity, s.acceleration, 3*w*w*(requested-s.velocity)-3*w*s.acceleration)
         }
         func offset(_ s: State, _ d: State, _ h: CGFloat) -> State {

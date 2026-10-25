@@ -108,6 +108,30 @@ func checkPaperMotion() {
     suspended.retarget(to: closedChannels)
     suspended.advance(by: 3600)
     precondition(suspended.isFinished, "Waking must settle instead of replaying missed animation frames")
+    // Sustained medium-cadence input is different from one interruption or
+    // almost-instant toggles. Brake into the new direction within one 60 Hz
+    // frame, while retaining derivatives and the same bounded travel speed.
+    for interval in [0.1, 0.2] {
+        var motion = freshMotion()
+        motion.advance(by: interval)
+        for event in 0..<10 {
+            let target = event.isMultiple(of: 2) ? closedChannels : openChannels
+            let before = motion.states[7]
+            motion.retarget(to: target)
+            precondition(motion.states[7].velocity == before.velocity
+                && motion.states[7].acceleration == before.acceleration)
+            let direction: CGFloat = event.isMultiple(of: 2) ? -1 : 1
+            var turnedAt: Double?
+            for step in 1...Int(interval*1000) {
+                motion.advance(by: 0.001)
+                let state = motion.states[7]
+                if turnedAt == nil && state.velocity*direction >= 0 { turnedAt = Double(step)/1000 }
+                precondition(abs(state.velocity) <= 6.4 && state.value >= -0.00001 && state.value <= 1.00001)
+            }
+            precondition(turnedAt != nil && turnedAt! <= 1.0/60,
+                         "100/200 ms toggles must not accumulate a long inertial wait before turning")
+        }
+    }
     // Frequent reversals replace only the latest target. Integrating the same
     // elapsed interval at different display cadences must not change the path.
     var fast = freshMotion(), slow = freshMotion()

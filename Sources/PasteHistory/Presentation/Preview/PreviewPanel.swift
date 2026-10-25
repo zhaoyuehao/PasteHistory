@@ -170,26 +170,35 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
             gestureMagnification = 1
         }
         (panel as? PaperPreviewPanel)?.beginPaperPinch()
-        (panel.contentView as? PaperPreviewSurface)?.readingSize = paperSessionSize
+        if !continuing { (panel.contentView as? PaperPreviewSurface)?.readingSize = paperSessionSize }
         let target = targetFrame()
         let paper = owner?.previewPaper
         let origin = paper?.paperPose ?? paperReturnPose ?? PaperPose(frame: target)
-        let compactFace = paper?.paperSnapshot?() ?? paperReturnImage
-        paperReturnImage = compactFace
+        // A reversal of this record keeps the already captured reading/compact
+        // faces. Do not prepare hidden windows or redraw snapshots on every key.
+        let compactFace = continuing ? nil : (paper?.paperSnapshot?() ?? paperReturnImage)
+        if !continuing { paperReturnImage = compactFace }
         previewedID = model.current?.id
         paperReturnPose = paper?.paperPose
-        panel.setFrame(target, display: false)
+        // AppKit rounds native window origins. Avoid issuing the same hidden
+        // window placement again for a subpixel difference on every reversal.
+        if !continuing || abs(panel.frame.midX-target.midX) >= 1
+            || abs(panel.frame.midY-target.midY) >= 1 || panel.frame.size != target.size {
+            panel.setFrame(target, display: false)
+        }
         panel.alphaValue = 0
         panel.ignoresMouseEvents = true
-        panel.orderFrontRegardless()
-        panel.contentView?.layoutSubtreeIfNeeded()
-        let expandedFace = snapshot(panel.contentView)
+        if !continuing {
+            panel.orderFrontRegardless()
+            panel.contentView?.layoutSubtreeIfNeeded()
+        }
+        let expandedFace = continuing ? nil : snapshot(panel.contentView)
         let targetPose = readingPose(frame: panel.frame)
         paperFlight.animate(from: Motion.reduceMotion ? targetPose : origin, to: targetPose,
                             readingImage: expandedFace, compactImage: compactFace, recordID: previewedID, duration: Motion.reduceMotion ? 0.12 : Motion.paperOpenDuration,
                             opening: true, onReady: { [weak self] in
             guard let self else { return }
-            self.owner?.setExpandedPaper(self.previewedID)
+            if !continuing { self.owner?.setExpandedPaper(self.previewedID) }
         }) { [weak self, weak panel] in
             panel?.alphaValue = 1
             panel?.ignoresMouseEvents = false
@@ -214,10 +223,11 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         let origin = readingPose(frame: panel.frame)
         let paper = owner?.previewPaper
         let destination = paper?.paperPose ?? paperReturnPose ?? origin
-        let compactFace = paper?.paperSnapshot?() ?? paperReturnImage
+        let continuing = paperFlight.visiblePose != nil
+        let compactFace = continuing ? nil : (paper?.paperSnapshot?() ?? paperReturnImage)
         // Capture the current reading viewport once, without resizing it. During
         // a reversal, the existing flight retains its exact face and momentum.
-        let readingFace = paperFlight.visiblePose == nil ? snapshot(panel.contentView) : nil
+        let readingFace = continuing ? nil : snapshot(panel.contentView)
         panel.ignoresMouseEvents = true
         paperFlight.animate(from: origin, to: Motion.reduceMotion ? origin : destination,
             readingImage: readingFace, compactImage: compactFace, recordID: previewedID,

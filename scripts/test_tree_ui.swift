@@ -356,7 +356,9 @@ struct TreeUISmoke {
         _ = key(49, chars: " ") // interrupt opening with close
         run(0.04)
         _ = key(49, chars: " ") // reopen during return flight
-        run(0.3)
+        let rapidDeadline = ProcessInfo.processInfo.systemUptime + 0.4
+        while NSApp.windows.contains(where: { $0.isVisible && $0.title == "纸签预览过渡" })
+            && ProcessInfo.processInfo.systemUptime < rapidDeadline { run(0.004) }
         precondition(controller.isPreviewVisible)
         precondition(!NSApp.windows.contains { $0.isVisible && $0.title == "纸签预览过渡" }, "No stale flight may survive rapid toggling")
         let expanded = NSApp.windows.first { $0.isVisible && $0.title == L10n.previewTitle }!
@@ -457,6 +459,40 @@ struct TreeUISmoke {
             _ = key(49, chars: " "); run(0.3)
         }
         try interruptionTimeline.write(toFile: ".build/preview-interruption-timeline.csv", atomically: true, encoding: .utf8)
+        var cadenceTimeline = "interval_ms,elapsed_ms,event,phase,width,input_ms\n"
+        for interval in [0.1, 0.2] {
+            _ = key(49, chars: " "); run(0.4)
+            let source = controller.previewPaper!
+            let originalSnapshot = source.paperSnapshot
+            var captures = 0
+            source.paperSnapshot = { captures += 1; return originalSnapshot?() }
+            let began = ProcessInfo.processInfo.systemUptime
+            var event = 0, lastPhase: CGFloat = -1
+            while event < 10 || ProcessInfo.processInfo.systemUptime-began < interval*9+0.45 {
+                let elapsed = ProcessInfo.processInfo.systemUptime-began
+                var inputMS = 0.0
+                if event < 10 && elapsed >= Double(event)*interval {
+                    let start = ProcessInfo.processInfo.systemUptime
+                    _ = key(49, chars: " ")
+                    inputMS = (ProcessInfo.processInfo.systemUptime-start)*1000
+                    event += 1
+                    lastPhase = -1
+                }
+                if let active = NSApp.windows.first(where: { $0.isVisible && $0.title == "纸签预览过渡" }),
+                   let surface = active.contentView as? PaperFlightView, surface.expansion != lastPhase {
+                    lastPhase = surface.expansion
+                    cadenceTimeline += "\(interval*1000),\(elapsed*1000),\(event),\(surface.expansion),\(surface.pose.size.width),\(inputMS)\n"
+                }
+                run(0.004)
+            }
+            precondition(!controller.isPreviewVisible,
+                         "Repeated 100/200 ms toggles must finish at the most recent closed target")
+            source.paperSnapshot = originalSnapshot
+            precondition(captures == 1,
+                         "The same in-flight paper must reuse its captured face across repeated reversals")
+            _ = key(49, chars: " "); run(0.3)
+        }
+        try cadenceTimeline.write(toFile: ".build/preview-cadence-timeline.csv", atomically: true, encoding: .utf8)
         let returnStarted = ProcessInfo.processInfo.systemUptime
         _ = key(49, chars: " ")
         var closingFrames: [(Double, NSImage, NSSize)] = []
