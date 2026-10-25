@@ -40,6 +40,7 @@ struct PaperPose {
 final class PaperFlightView: NSView {
     var pose = PaperPose(frame: .zero)
     var readingImage: NSImage?
+    var readingScale: CGFloat = 1
     private var canvasOrigin: NSPoint?
     override var isOpaque: Bool { false }
 
@@ -78,8 +79,8 @@ final class PaperFlightView: NSView {
         if let image = readingImage {
             // Snapshot edges/hole belong to the shell, not the reading layout.
             // Clip those out, then reveal this ONE face without reflow or rotation.
-            let imageRect = NSRect(x: rect.minX, y: rect.maxY-image.size.height,
-                                   width: image.size.width, height: image.size.height)
+            let imageRect = NSRect(x: rect.minX, y: rect.maxY-image.size.height*readingScale,
+                                   width: image.size.width*readingScale, height: image.size.height*readingScale)
             NSBezierPath(rect: NSRect(x: imageRect.minX+2*scale, y: imageRect.minY+2*scale,
                 width: max(0, imageRect.width-4*scale), height: max(0, imageRect.height-12*scale))).addClip()
             image.draw(in: imageRect, from: .zero, operation: .sourceOver, fraction: 1)
@@ -110,23 +111,27 @@ final class PaperFlightView: NSView {
 @MainActor
 final class PaperPreviewFlight {
     private var window: NSPanel?
-    private var timer: Timer?
+    private var timer: MotionClock?
     private var sheet: PaperFlightView?
     private var tracks: [SettlingTrack] = []
     private var startedAt: Double = 0
     private var activeDuration: Double = 0
     private var opening = true
+    private var opacity = SettlingTrack(start: 1, end: 1, duration: 1)
+    private var contentScale = SettlingTrack(start: 1, end: 1, duration: 1)
     var visibleFrame: NSRect? { window?.isVisible == true ? window?.frame : nil }
     var visiblePose: PaperPose? { visibleFrame == nil ? nil : sheet?.pose }
 
     func cancel() {
-        timer?.invalidate(); timer = nil
+        timer?.stop(); timer = nil
         window?.orderOut(nil)
         tracks.removeAll()
+        sheet?.readingScale = 1
     }
 
     func animate(from: PaperPose, to: PaperPose, readingImage: NSImage?,
                  duration: Double, opening: Bool, initialVelocity: NSPoint = .zero,
+                 reveal: @escaping (CGFloat) -> Void = { _ in },
                  completion: @escaping () -> Void) {
         let interrupted = visiblePose
         let elapsed = CACurrentMediaTime() - startedAt
@@ -140,7 +145,16 @@ final class PaperPreviewFlight {
         // open/close has its own duration, starting with the current momentum.
         let remaining = interrupted != nil && self.opening == opening
             ? min(duration, max(0.08, activeDuration-elapsed)) : duration
-        timer?.invalidate()
+        let currentOpacity = interrupted == nil ? (Motion.reduceMotion && opening ? CGFloat(0) : 1)
+            : window?.alphaValue ?? 1
+        let opacityVelocity = interrupted == nil ? 0 : opacity.sample(elapsed).velocity
+        opacity = SettlingTrack(start: currentOpacity, end: opening ? 1 : 0,
+                                velocity: opacityVelocity, duration: remaining)
+        let currentScale = interrupted == nil ? 1 : sheet?.readingScale ?? 1
+        contentScale = SettlingTrack(start: currentScale,
+            end: opening || Motion.reduceMotion ? 1 : currentScale * Motion.paperRetreatScale,
+            velocity: interrupted == nil ? 0 : contentScale.sample(elapsed).velocity, duration: remaining)
+        timer?.stop()
         self.opening = opening
         activeDuration = remaining
         tracks = zip(startPose.channels, to.channels).enumerated().map { index, pair in
@@ -163,13 +177,17 @@ final class PaperPreviewFlight {
             panel.contentView = face
             window = panel; sheet = face
         }
+        face.readingScale = currentScale
         face.readingImage = content
         face.place(Motion.reduceMotion ? (opening ? to : startPose) : startPose, in: panel)
-        panel.alphaValue = Motion.reduceMotion && interrupted == nil && opening ? 0 : 1
+        panel.ignoresMouseEvents = !opening
+        panel.alphaValue = currentOpacity
         face.needsDisplay = true
         panel.orderFrontRegardless()
         startedAt = CACurrentMediaTime()
-        let tick = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self, weak panel, weak face] _ in
+        let tick = MotionClock()
+        timer = tick
+        tick.start(on: panel) { [weak self, weak panel, weak face] in
             MainActor.assumeIsolated {
                 guard let self, let panel, let face else { return }
                 let elapsed = CACurrentMediaTime() - self.startedAt
@@ -177,12 +195,14 @@ final class PaperPreviewFlight {
                 if !Motion.reduceMotion {
                     face.place(PaperPose(channels: self.tracks.map { $0.sample(elapsed).value }), in: panel)
                 }
+                face.readingScale = self.contentScale.sample(elapsed).value
                 face.needsDisplay = true
                 panel.displayIfNeeded()
                 panel.invalidateShadow()
-                if Motion.reduceMotion { panel.alphaValue = opening ? t : 1-t }
+                panel.alphaValue = min(1, max(0, self.opacity.sample(elapsed).value))
+                reveal(PaperPreviewRetreat.sourceVisibility(previewOpacity: panel.alphaValue))
                 if t >= 1 {
-                    self.timer?.invalidate(); self.timer = nil
+                    self.timer?.stop(); self.timer = nil
                     // Show the live sheet before removing its identical final face.
                     // followPaper() must see the flight as completed at this point.
                     self.window = nil; self.sheet = nil
@@ -190,10 +210,9 @@ final class PaperPreviewFlight {
                     panel.orderOut(nil)
                     self.window = panel; self.sheet = face
                     self.tracks.removeAll()
+                    face.readingScale = 1
                 }
             }
         }
-        timer = tick
-        RunLoop.main.add(tick, forMode: .common)
     }
 }

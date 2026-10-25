@@ -5,7 +5,7 @@ import QuartzCore
 /// the real windows keeps pointer hit areas on the visible papers throughout.
 @MainActor
 final class TreeEntrance {
-    private var timer: Timer?
+    private var timer: MotionClock?
     private var start = CACurrentMediaTime()
     private var y = SettlingTrack(start: 0, end: 0, duration: 0.2)
     private var opacity = SettlingTrack(start: 0, end: 1, duration: 0.09)
@@ -34,7 +34,7 @@ final class TreeEntrance {
         animate(panel, duration: 0.15, completion: completion)
     }
 
-    func cancel() { timer?.invalidate(); timer = nil }
+    func cancel() { timer?.stop(); timer = nil }
 
     private func animate(_ panel: HistoryPanel, duration: Double, completion: @escaping () -> Void) {
         cancel()
@@ -45,7 +45,9 @@ final class TreeEntrance {
             panel.onPaperLayout?()
         }
         apply(0)
-        let tick = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self, weak panel] _ in
+        let tick = MotionClock()
+        timer = tick
+        tick.start(on: panel) { [weak self, weak panel] in
             MainActor.assumeIsolated {
                 guard let self, panel != nil else { return }
                 let elapsed = CACurrentMediaTime() - self.start
@@ -53,7 +55,5 @@ final class TreeEntrance {
                 if elapsed >= duration { self.cancel(); completion() }
             }
         }
-        timer = tick
-        RunLoop.main.add(tick, forMode: .common)
     }
 }

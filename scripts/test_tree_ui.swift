@@ -404,6 +404,53 @@ struct TreeUISmoke {
                 precondition(abs(fitted.width / fitted.height - 1.61803398875) < 0.004, "Screen fitting scales both dimensions together")
             }
         }
+        // A settled preview closes as the SAME live reading surface, with fixed
+        // logical text layout and proportional image scale, not a clipped flight.
+        let liveSurface = expanded.contentView as! PaperPreviewSurface
+        let logicalReadingBounds = liveSurface.bounds
+        let documentFrame = liveSurface.document.frame
+        let retreatRestFrame = expanded.frame
+        _ = key(49, chars: " ")
+        precondition(expanded.contentView === liveSurface && expanded.alphaValue == 1)
+        run(0.045)
+        precondition(expanded.isVisible && expanded.alphaValue > 0 && expanded.alphaValue < 1)
+        precondition(expanded.frame.width < retreatRestFrame.width && expanded.frame.width > retreatRestFrame.width * 0.93,
+                     "Dismissal makes a small retreat, never a large trip back to thumbnail size")
+        precondition(liveSurface.bounds == logicalReadingBounds && liveSurface.document.frame == documentFrame,
+                     "Retreat must not reflow text or change the logical reading viewport")
+        precondition(!NSApp.windows.contains { $0.isVisible && $0.title == "纸签预览过渡" },
+                     "Settled dismissal must not capture/swap to a flight snapshot")
+        let interruptedFrame = expanded.frame
+        let interruptedOpacity = expanded.alphaValue
+        _ = key(49, chars: " ")
+        precondition(expanded.frame == interruptedFrame && expanded.alphaValue == interruptedOpacity,
+                     "Reopening must start at the last visible geometry and opacity")
+        run(0.22)
+        precondition(controller.isPreviewVisible && expanded.frame == retreatRestFrame && expanded.alphaValue == 1)
+        precondition(liveSurface.bounds == logicalReadingBounds)
+        // Record actual live-face samples for inspection, including its alpha.
+        _ = key(49, chars: " ")
+        let retreatStrip = NSImage(size: NSSize(width: retreatRestFrame.width * 5, height: retreatRestFrame.height))
+        for index in 0..<5 {
+            run(0.025)
+            guard expanded.isVisible, let rep = liveSurface.bitmapImageRepForCachingDisplay(in: liveSurface.bounds) else { continue }
+            liveSurface.cacheDisplay(in: liveSurface.bounds, to: rep)
+            retreatStrip.lockFocus()
+            NSImage(cgImage: rep.cgImage!, size: liveSurface.bounds.size).draw(in: NSRect(
+                x: CGFloat(index)*retreatRestFrame.width + expanded.frame.minX-retreatRestFrame.minX,
+                y: expanded.frame.minY-retreatRestFrame.minY,
+                width: expanded.frame.width, height: expanded.frame.height),
+                from: .zero, operation: .sourceOver, fraction: expanded.alphaValue)
+            retreatStrip.unlockFocus()
+        }
+        run(0.1)
+        precondition(!controller.isPreviewVisible && !expanded.isVisible)
+        precondition(controller.previewPaper?.alphaValue == treeWindow.treeOpacity,
+                     "The original branch card returns fully after dismissal")
+        try NSBitmapImageRep(data: retreatStrip.tiffRepresentation!)!.representation(using: .png, properties: [:])!
+            .write(to: URL(fileURLWithPath: ".build/preview-retreat-frames.png"))
+        _ = key(49, chars: " ")
+        run(0.3)
         // Observe actual paper motion: visible travel, monotone settling, exact live-view handoff.
         _ = key(49, chars: " ")
         run(0.2)
@@ -587,8 +634,19 @@ struct TreeUISmoke {
         let scrolledBitmap = scrolledFace.bitmapImageRepForCachingDisplay(in: scrolledFace.bounds)!
         scrolledFace.cacheDisplay(in: scrolledFace.bounds, to: scrolledBitmap)
         try scrolledBitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: ".build/image-preview-ocr.png"))
+        let closingImageFrame = imagePreview.frame
+        let closingOCRViewport = imageZoom.documentVisibleRect
+        let closingPictureFrame = imageZoom.sheet.picture.frame
         _ = key(53)
-        run(0.2)
+        run(0.045)
+        precondition(imagePreview.contentView === scrolledFace && imagePreview.frame.width > closingImageFrame.width * 0.93)
+        let closingViewport = imageZoom.documentVisibleRect
+        precondition(abs(closingViewport.minY-closingOCRViewport.minY) < 0.5
+                     && abs(closingViewport.width-closingOCRViewport.width) < 0.5
+                     && abs(closingViewport.height-closingOCRViewport.height) < 0.5
+                     && imageZoom.sheet.picture.frame == closingPictureFrame,
+                     "OCR retreat changed its viewport: \(closingOCRViewport) -> \(closingViewport), image \(closingPictureFrame) -> \(imageZoom.sheet.picture.frame)")
+        run(0.16)
         _ = key(49, chars: " ")
         run(0.3)
         let reopenedZoom = zoomViews(in: imagePreview.contentView!).first as! PreviewImageScrollView

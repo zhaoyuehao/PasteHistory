@@ -89,7 +89,7 @@ final class IvoryTreePaperView: NSView {
             panel.paperAngle = -a
             // Visible transitional papers consume a click without activating a new
             // record or accidentally clicking the app beneath the departing paper.
-            panel.alphaValue = owner.expandedPaperID == id ? 0 : owner.treeOpacity
+            panel.alphaValue = owner.expandedPaperID == id ? owner.expandedPaperVisibility * owner.treeOpacity : owner.treeOpacity
             panel.enabled = card.opacity > 0.01 && owner.expandedPaperID != id
             surface.enabled = !layoutEditing && !isTurningPage && card.opacity > 0.9
                 && cards.contains { $0.entry.id == id }

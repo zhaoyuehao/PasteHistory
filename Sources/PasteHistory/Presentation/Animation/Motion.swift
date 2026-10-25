@@ -5,12 +5,9 @@ import SwiftUI
 
 /// 动效令牌。
 ///
-/// 一个反直觉的结论先写在这里，免得下次又调错方向：**阻尼感不来自曲线参数，
-/// 来自被驱动的量的幅度**。按阻尼谐振子模型算，`spring(response: 0.30,
-/// dampingFraction: 0.86)` 和 `easeOut(duration: 0.20)` 的位移曲线几乎重合
-/// （40ms 时 22% vs 31%，120ms 时都是 ~78%）。真正让人觉得「丝滑」的是行高
-/// 从 44pt 撑到 130pt 那种尺寸变化——换成 24% 的底色透明度，同样的曲线也没人
-/// 看得出来。所以这里只管「怎么走」，走什么由调用方负责。
+/// 动效要有可辨认的运动，并保持位置与速度连续。时长取决于移动距离、
+/// 尺寸变化与使用频率，不能单靠延长时间获得阻尼感。高频预览采用克制的
+/// 位移和落稳，不用额外回弹来表现“弹簧”；中途输入直接改变当前目标。
 ///
 /// 三条硬规则：
 /// 1. **任何情况下都不禁用动画**。连按方向键时把弹簧压短（`selectionFast`），
@@ -27,7 +24,8 @@ enum Motion {
     }
 
     static let paperOpenDuration: TimeInterval = 0.24
-    static let paperCloseDuration: TimeInterval = 0.16
+    static let paperRetreatDuration: TimeInterval = 0.15
+    static let paperRetreatScale: CGFloat = 0.94
     static let paperFollowFrequency: CGFloat = 46
     static let paperFollowDamping: CGFloat = 0.86
     static let paperScaleReturnDuration: TimeInterval = 0.15
