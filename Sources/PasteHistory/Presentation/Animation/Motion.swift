@@ -23,12 +23,11 @@ enum Motion {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 
-    static let paperOpenDuration: TimeInterval = 0.24
-    // Both directions use the same path, duration and symmetric timing curve.
+    // Spring response, not a forced completion deadline: about 95% of travel
+    // is covered in 240 ms, with the remaining motion settling continuously.
+    static let paperOpenDuration: TimeInterval = 0.32
+    // Both directions use the same spring and mirrored spatial path.
     static let paperCloseDuration = paperOpenDuration
-    // Triple real pole: retargeting preserves position, velocity AND acceleration.
-    // Independent of remaining distance; no compressed 80 ms return trajectory.
-    static let paperRetargetFrequency: CGFloat = 64
     static let paperFollowFrequency: CGFloat = 46
     static let paperFollowDamping: CGFloat = 0.86
     static let paperScaleReturnDuration: TimeInterval = 0.15

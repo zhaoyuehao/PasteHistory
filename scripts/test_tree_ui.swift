@@ -8,6 +8,17 @@ struct TreeUISmoke {
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
         checkPaperMotion()
+        if CommandLine.arguments.contains("--motion-only") { return }
+        func settlePaper() {
+            let deadline = ProcessInfo.processInfo.systemUptime + 0.65
+            while NSApp.windows.contains(where: { $0.isVisible && $0.title == "纸签预览过渡" })
+                && ProcessInfo.processInfo.systemUptime < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.004))
+            }
+            precondition(!NSApp.windows.contains { $0.isVisible && $0.title == "纸签预览过渡" },
+                         "The native spring must settle without a lingering transition window")
+        }
+
         // This harness has its own bundle ID. Disable external sync before any action.
         Settings.shared.iCloudSync = false
         UserDefaults.standard.set(true, forKey: "showDesktopTree")
@@ -256,7 +267,7 @@ struct TreeUISmoke {
         run(0.7)
         precondition(controller.panelModel.results.count == 24)
         precondition(key(49, chars: " ") == nil)
-        run(0.3)
+        settlePaper()
         precondition(controller.isPreviewVisible, "Space must preview immediately after search")
         let followingPreview = NSApp.windows.first { $0.isVisible && $0.title == L10n.previewTitle }!
         let previousPreviewFrame = followingPreview.frame
@@ -301,7 +312,7 @@ struct TreeUISmoke {
         precondition(controller.panelModel.safeSelection == 8)
         assertPreviewFollowsSelection()
         _ = key(49, chars: " ")
-        run(0.3)
+        run(0.3); settlePaper()
         precondition(!controller.isPreviewVisible)
         controller.panelModel.select(0)
         run(0.4)
@@ -314,7 +325,7 @@ struct TreeUISmoke {
         run(0.4)
         assertPreviewFollowsSelection()
         _ = key(49, chars: " ")
-        run(0.3)
+        run(0.3); settlePaper()
         precondition(key(49, chars: " ", mods: [.shift]) != nil,
                      "Shift-Space must remain available to type multiword queries")
         let liveWindow = NSApp.windows.first { $0.isVisible && $0 is HistoryPanel }!
@@ -341,10 +352,10 @@ struct TreeUISmoke {
         run(0.2)
         precondition(controller.panelModel.current?.id == clickedID, "Filtered paper click must select")
         _ = key(49, chars: " ")
-        run(0.3)
+        run(0.3); settlePaper()
         precondition(controller.isPreviewVisible, "Preview missing: tree visible=\(controller.isVisible), front=\(NSWorkspace.shared.frontmostApplication?.localizedName ?? "nil")")
         _ = key(49, chars: " ")
-        run(0.25)
+        settlePaper()
         let sourcePaper = controller.previewPaper!.frame
         _ = key(49, chars: " ")
         let openingSheet = NSApp.windows.first { $0.isVisible && $0.title == "纸签预览过渡" }!
@@ -356,7 +367,7 @@ struct TreeUISmoke {
         _ = key(49, chars: " ") // interrupt opening with close
         run(0.04)
         _ = key(49, chars: " ") // reopen during return flight
-        let rapidDeadline = ProcessInfo.processInfo.systemUptime + 0.4
+        let rapidDeadline = ProcessInfo.processInfo.systemUptime + 0.65
         while NSApp.windows.contains(where: { $0.isVisible && $0.title == "纸签预览过渡" })
             && ProcessInfo.processInfo.systemUptime < rapidDeadline { run(0.004) }
         precondition(controller.isPreviewVisible)
@@ -432,7 +443,7 @@ struct TreeUISmoke {
         precondition(controller.isPreviewVisible && expanded.frame == readingFrameBeforeClose)
         var interruptionTimeline = "trigger_ms,elapsed_ms,phase,width\n"
         for trigger in [0.06, 0.12, 0.18] {
-            _ = key(49, chars: " "); run(0.3)
+            _ = key(49, chars: " "); run(0.3); settlePaper()
             _ = key(49, chars: " "); run(trigger)
             let active = NSApp.windows.first { $0.isVisible && $0.title == "纸签预览过渡" }!
             let surface = active.contentView as! PaperFlightView
@@ -444,7 +455,7 @@ struct TreeUISmoke {
             precondition(surface.pose.channels == initialPose && surface.expansion == initialPhase,
                          "Closing during expansion must preserve the actually displayed sheet")
             var lastPhase: CGFloat = -1
-            while active.isVisible && ProcessInfo.processInfo.systemUptime-reversedAt < 0.45 {
+            while active.isVisible && ProcessInfo.processInfo.systemUptime-reversedAt < 0.65 {
                 if surface.expansion != lastPhase {
                     lastPhase = surface.expansion
                     let elapsed = ProcessInfo.processInfo.systemUptime-reversedAt
@@ -456,19 +467,53 @@ struct TreeUISmoke {
             }
             precondition(!active.isVisible && !controller.isPreviewVisible)
             precondition(controller.previewPaper?.alphaValue == treeWindow.treeOpacity)
-            _ = key(49, chars: " "); run(0.3)
+            _ = key(49, chars: " "); run(0.3); settlePaper()
         }
         try interruptionTimeline.write(toFile: ".build/preview-interruption-timeline.csv", atomically: true, encoding: .utf8)
+        // Direction keys during expansion must update the visible captured
+        // paper too, rather than clearing its faces until the spring completes.
+        let beforeArrowSelection = controller.panelModel.safeSelection
+        _ = key(49, chars: " "); settlePaper()
+        _ = key(49, chars: " "); run(0.08)
+        let arrowFlight = NSApp.windows.first { $0.isVisible && $0.title == "纸签预览过渡" }!
+        // Force layout-first delivery before Combine's queued model callback.
+        // Reusing this ordering must neither leave the new source visible nor
+        // let the later callback reset the in-flight position/content.
+        controller.panelModel.select(beforeArrowSelection + 1)
+        treeWindow.onPaperLayout?()
+        precondition(controller.previewPaper?.alphaValue == 0 && expanded.alphaValue == 0,
+                     "Layout-first selection must hide the new source when its captured face is ready")
+        for _ in 0..<3 {
+            let movingFace = arrowFlight.contentView as! PaperFlightView
+            let previousMovingPin = movingFace.pose.pin
+            let previousReadingFace = movingFace.readingImage
+            let responseDeadline = ProcessInfo.processInfo.systemUptime + 0.08
+            _ = key(125)
+            repeat { run(0.004) } while (movingFace.readingImage === previousReadingFace
+                || hypot(movingFace.pose.pin.x-previousMovingPin.x, movingFace.pose.pin.y-previousMovingPin.y) <= 2)
+                && ProcessInfo.processInfo.systemUptime < responseDeadline
+            precondition(movingFace.readingImage !== previousReadingFace,
+                         "Selection must replace the captured reading content before continuing the flight")
+            precondition(hypot(movingFace.pose.pin.x-previousMovingPin.x, movingFace.pose.pin.y-previousMovingPin.y) > 2,
+                         "Direction keys must move the in-flight paper immediately: selected=\(controller.panelModel.safeSelection), before=\(previousMovingPin), after=\(movingFace.pose.pin), source=\(String(describing: controller.previewPaper?.paperPin)), visible=\(arrowFlight.isVisible)")
+            precondition(arrowFlight.isVisible && movingFace.readingImage != nil && movingFace.compactImage != nil,
+                         "Selecting during expansion must keep both faces of the new record")
+            precondition(expanded.alphaValue == 0 && controller.previewPaper?.alphaValue == 0,
+                         "Only the moving sheet may be visible while selection changes: preview=\(expanded.alphaValue), source=\(String(describing: controller.previewPaper?.alphaValue)), selection=\(controller.panelModel.safeSelection)")
+        }
+        _ = key(49, chars: " "); settlePaper()
+        controller.panelModel.select(beforeArrowSelection); run(0.05)
+        _ = key(49, chars: " "); settlePaper()
         var cadenceTimeline = "interval_ms,elapsed_ms,event,phase,width,input_ms\n"
         for interval in [0.1, 0.2] {
-            _ = key(49, chars: " "); run(0.4)
+            _ = key(49, chars: " "); run(0.4); settlePaper()
             let source = controller.previewPaper!
             let originalSnapshot = source.paperSnapshot
             var captures = 0
             source.paperSnapshot = { captures += 1; return originalSnapshot?() }
             let began = ProcessInfo.processInfo.systemUptime
             var event = 0, lastPhase: CGFloat = -1
-            while event < 10 || ProcessInfo.processInfo.systemUptime-began < interval*9+0.45 {
+            while event < 10 || ProcessInfo.processInfo.systemUptime-began < interval*9+0.65 {
                 let elapsed = ProcessInfo.processInfo.systemUptime-began
                 var inputMS = 0.0
                 if event < 10 && elapsed >= Double(event)*interval {
@@ -490,7 +535,7 @@ struct TreeUISmoke {
             source.paperSnapshot = originalSnapshot
             precondition(captures == 1,
                          "The same in-flight paper must reuse its captured face across repeated reversals")
-            _ = key(49, chars: " "); run(0.3)
+            _ = key(49, chars: " "); run(0.3); settlePaper()
         }
         try cadenceTimeline.write(toFile: ".build/preview-cadence-timeline.csv", atomically: true, encoding: .utf8)
         let returnStarted = ProcessInfo.processInfo.systemUptime
@@ -499,7 +544,7 @@ struct TreeUISmoke {
         var closingTimeline = "elapsed_ms,width,height,phase\n"
         var previousClosingWidth = readingFrameBeforeClose.width + 2
         var priorPhase: CGFloat = -1
-        while ProcessInfo.processInfo.systemUptime-returnStarted < 0.34 {
+        while ProcessInfo.processInfo.systemUptime-returnStarted < 0.65 {
             if closingSheet.isVisible, let face = closingSheet.contentView as? PaperFlightView,
                face.expansion != priorPhase {
                 precondition(closingSheet.frame.width <= previousClosingWidth+1, "A resting paper must shrink continuously back to its branch")
@@ -529,10 +574,10 @@ struct TreeUISmoke {
         try NSBitmapImageRep(data: closingStrip.tiffRepresentation!)!.representation(using: .png, properties: [:])!
             .write(to: URL(fileURLWithPath: ".build/preview-symmetric-close.png"))
         _ = key(49, chars: " ")
-        run(0.3)
+        run(0.3); settlePaper()
         // Observe actual paper motion: visible travel, monotone settling, exact live-view handoff.
         _ = key(49, chars: " ")
-        run(0.3)
+        run(0.3); settlePaper()
         _ = key(49, chars: " ")
         let settlingPaper = NSApp.windows.first { $0.isVisible && $0.title == "纸签预览过渡" }!
         var widest: CGFloat = 0
@@ -566,6 +611,7 @@ struct TreeUISmoke {
         try NSBitmapImageRep(data: strip.tiffRepresentation!)!.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: ".build/preview-motion-frames.png"))
         precondition(widest > expected.width * 0.95 && widest <= expected.width + 1,
                      "Paper must travel to its reading size without ornamental overshoot")
+        settlePaper()
         precondition(!settlingPaper.isVisible && abs(expanded.frame.width-expected.width) < 1)
         let textZoom = zoomViews(in: expanded.contentView!).first!
         let textWidth = textZoom.documentVisibleRect.width
@@ -632,7 +678,7 @@ struct TreeUISmoke {
                      "Arrow navigation preserves zoom and the scaled hanging point")
         print("Preview 100k-text navigation: slowest down/up pair = \(Int(slowest*1000)) ms")
         _ = key(53)
-        run(0.3)
+        settlePaper()
         precondition(!zoomPanel.handlesPaperPinch && !zoomPanel.routeMagnification(from: zoomPanel, at: NSPoint(x: 20, y: 20), delta: 0.5, phase: .began), "Closing must remove the monitor, not just hide its window")
         precondition(controller.previewPaper?.alphaValue == 1, "Closing restores the hanging paper")
         precondition(!controller.isPreviewVisible && controller.isVisible,
@@ -668,7 +714,7 @@ struct TreeUISmoke {
                      "Image pixels must occupy the paper body, not a small side thumbnail")
         try imageBitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: ".build/image-first-card.png"))
         _ = key(49, chars: " ")
-        run(0.5)
+        run(0.5); settlePaper()
         func textViews(in view: NSView) -> [NSTextView] {
             (view as? NSTextView).map { [$0] } ?? view.subviews.flatMap { textViews(in: $0) }
         }
@@ -725,9 +771,9 @@ struct TreeUISmoke {
                      && abs(closingViewport.height-closingOCRViewport.height) < 0.5
                      && imageZoom.sheet.picture.frame == closingPictureFrame,
                      "OCR return changed its viewport: \(closingOCRViewport) -> \(closingViewport), image \(closingPictureFrame) -> \(imageZoom.sheet.picture.frame)")
-        run(0.25)
+        settlePaper()
         _ = key(49, chars: " ")
-        run(0.3)
+        settlePaper()
         let reopenedZoom = zoomViews(in: imagePreview.contentView!).first as! PreviewImageScrollView
         precondition(reopenedZoom.magnification == 1 && reopenedZoom.documentVisibleRect.minY < 1,
                      "Reopening returns to the image, rather than leaving OCR or zoom from the previous viewing")
@@ -846,7 +892,7 @@ struct TreeUISmoke {
         _ = key(37, chars: "l", mods: [.command])
         run(0.4)
         _ = key(49, chars: " ")
-        run(0.3)
+        run(0.3); settlePaper()
         precondition(controller.isPreviewVisible && !zoomPanel.magnifyPaper(by: 0.5, phase: .began),
                      "Whole-paper gestures belong only to tree previews")
         let listSurface = expanded.contentView as! PaperPreviewSurface

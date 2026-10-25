@@ -176,8 +176,9 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         let origin = paper?.paperPose ?? paperReturnPose ?? PaperPose(frame: target)
         // A reversal of this record keeps the already captured reading/compact
         // faces. Do not prepare hidden windows or redraw snapshots on every key.
-        let compactFace = continuing ? nil : (paper?.paperSnapshot?() ?? paperReturnImage)
-        if !continuing { paperReturnImage = compactFace }
+        let refreshFaces = !continuing || !paperFlight.isDisplaying(record: model.current?.id)
+        let compactFace = refreshFaces ? (paper?.paperSnapshot?() ?? paperReturnImage) : nil
+        if refreshFaces { paperReturnImage = compactFace }
         previewedID = model.current?.id
         paperReturnPose = paper?.paperPose
         // AppKit rounds native window origins. Avoid issuing the same hidden
@@ -188,17 +189,17 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         }
         panel.alphaValue = 0
         panel.ignoresMouseEvents = true
-        if !continuing {
-            panel.orderFrontRegardless()
-            panel.contentView?.layoutSubtreeIfNeeded()
-        }
-        let expandedFace = continuing ? nil : snapshot(panel.contentView)
+        if !continuing { panel.orderFrontRegardless() }
+        if refreshFaces { panel.contentView?.layoutSubtreeIfNeeded() }
+        let expandedFace = refreshFaces ? snapshot(panel.contentView) : nil
         let targetPose = readingPose(frame: panel.frame)
         paperFlight.animate(from: Motion.reduceMotion ? targetPose : origin, to: targetPose,
                             readingImage: expandedFace, compactImage: compactFace, recordID: previewedID, duration: Motion.reduceMotion ? 0.12 : Motion.paperOpenDuration,
                             opening: true, onReady: { [weak self] in
             guard let self else { return }
-            if !continuing { self.owner?.setExpandedPaper(self.previewedID) }
+            // Layout can observe the new selection before its model callback.
+            // Hide the newly captured source here, independent of callback order.
+            if refreshFaces { self.owner?.setExpandedPaper(self.previewedID) }
         }) { [weak self, weak panel] in
             panel?.alphaValue = 1
             panel?.ignoresMouseEvents = false
@@ -326,7 +327,10 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         if paperFlight.visibleFrame != nil {
             // A new page may not have laid out its paper when selection changes.
             // Wait for that actual pin instead of flying to the tree's center.
-            if needsFlightRetarget { openFromPaper(panel, continuing: true) }
+            let desired = readingPose(frame: targetFrame())
+            if needsFlightRetarget || !paperFlight.isTargeting(desired, record: model.current?.id) {
+                openFromPaper(panel, continuing: true)
+            }
             return
         }
         let target = targetFrame()

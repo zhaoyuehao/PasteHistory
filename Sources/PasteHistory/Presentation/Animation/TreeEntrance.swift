@@ -47,10 +47,10 @@ final class TreeEntrance {
         apply(0)
         let tick = MotionClock()
         timer = tick
-        tick.start(on: panel) { [weak self, weak panel] in
+        tick.start(on: panel) { [weak self, weak panel] timestamp in
             MainActor.assumeIsolated {
                 guard let self, panel != nil else { return }
-                let elapsed = CACurrentMediaTime() - self.start
+                let elapsed = max(0, timestamp - self.start)
                 apply(elapsed)
                 if elapsed >= duration { self.cancel(); completion() }
             }

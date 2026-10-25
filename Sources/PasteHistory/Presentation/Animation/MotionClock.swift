@@ -6,8 +6,8 @@ import QuartzCore
 @MainActor
 final class MotionClock: NSObject {
     private var link: CADisplayLink?
-    private var update: (() -> Void)?
-    func start(on window: NSWindow, update: @escaping () -> Void) {
+    private var update: ((CFTimeInterval) -> Void)?
+    func start(on window: NSWindow, update: @escaping (CFTimeInterval) -> Void) {
         stop()
         self.update = update
         let link = window.displayLink(target: self, selector: #selector(step))
@@ -18,5 +18,9 @@ final class MotionClock: NSObject {
         link?.invalidate(); link = nil
         update = nil
     }
-    @objc private func step(_ sender: CADisplayLink) { update?() }
+    @objc private func step(_ sender: CADisplayLink) {
+        // Sample for the frame being presented, not the variable time at which
+        // AppKit happened to run our callback. This avoids pacing jitter.
+        update?(sender.targetTimestamp)
+    }
 }
