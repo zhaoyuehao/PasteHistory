@@ -87,14 +87,17 @@ final class PaperFlightView: NSView {
             image.draw(in: frame, from: .zero, operation: .sourceOver, fraction: opacity)
             context.restoreGState()
         }
-        let phase = min(1, max(0, expansion))
         if compactImage == nil {
             drawFace(readingImage, opacity: 1, angle: 0)
         } else {
-            // A complementary handoff never blanks the paper at the midpoint.
-            // Keep compact type at its native size so enlarged thumbnail glyphs
-            // don't dominate the incoming reading layout. Reverse uses the same phase.
-            let blend = Self.smooth((phase-0.25)/0.5)
+            // Keep the reading viewport throughout the large part of the flight.
+            // Exchange layouts only within 40% of the compact dimensions, also
+            // when returning from a magnified preview. Both directions use the
+            // same geometric threshold; no middle-of-flight double typography.
+            let compact = compactImage!.size
+            let relativeSize = max(pose.size.width / max(1, compact.width),
+                                   pose.size.height / max(1, compact.height))
+            let blend = Self.smooth((relativeSize-1) / 0.4)
             drawFace(compactImage, opacity: 1-blend, angle: pose.angle, compact: true)
             drawFace(readingImage, opacity: blend, angle: 0)
         }
@@ -145,7 +148,7 @@ final class PaperPreviewFlight {
     }
     func animate(from: PaperPose, to: PaperPose, readingImage: NSImage?, compactImage: NSImage? = nil,
                  recordID: UUID? = nil, duration: Double, opening: Bool,
-                 initialVelocity: NSPoint = .zero, completion: @escaping () -> Void) {
+                 initialVelocity: NSPoint = .zero, onReady: () -> Void = {}, completion: @escaping () -> Void) {
         let interrupted = visiblePose
         let elapsed = CACurrentMediaTime()-startedAt
         let speeds = interrupted == nil ? [initialVelocity.x, initialVelocity.y, 0, 0, 0, 0, 0, 0]
@@ -190,12 +193,24 @@ final class PaperPreviewFlight {
         face.place(Motion.reduceMotion ? (opening ? to : startPose) : startPose, in: panel)
         panel.ignoresMouseEvents = !opening
         panel.alphaValue = currentOpacity
+        // Draw the exact starting pose before handing off the original surface.
+        // Starting the clock before this work would skip its first visible frames.
         panel.orderFrontRegardless()
+        panel.displayIfNeeded()
+        panel.invalidateShadow()
+        onReady()
         startedAt = CACurrentMediaTime(); displayedElapsed = 0
+        var awaitingFirstFrame = interrupted == nil
         let tick = MotionClock()
         timer = tick
         tick.start(on: panel) { [weak self, weak panel, weak face] in
             guard let self, let panel, let face else { return }
+            if awaitingFirstFrame {
+                // Establish time zero on the display cadence. Retargets already
+                // have a presented frame and must continue without this hold.
+                self.startedAt = CACurrentMediaTime()
+                awaitingFirstFrame = false
+            }
             let elapsed = CACurrentMediaTime()-self.startedAt
             self.displayedElapsed = elapsed
             if !Motion.reduceMotion {

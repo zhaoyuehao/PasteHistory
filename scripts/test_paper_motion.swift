@@ -21,6 +21,12 @@ func checkPaperMotion() {
         precondition(abs(reverse.sample(0.16).value-158) < 0.0001 && reverse.sample(0.16).velocity == 0)
     }
 
+    let timing = SettlingTrack(start: 0, end: 1, duration: Motion.paperCloseDuration, symmetric: true)
+    let middleTravel = timing.sample(Motion.paperCloseDuration*0.6).value
+        - timing.sample(Motion.paperCloseDuration*0.4).value
+    precondition(middleTravel < 0.3,
+                 "The middle fifth must not concentrate over 30% of the size change")
+
     let image = NSImage(size: NSSize(width: 480, height: 297))
     image.lockFocus()
     IvoryPaperStyle.fill.setFill()
@@ -81,6 +87,46 @@ func checkPaperMotion() {
         precondition(zip(left,right).filter { abs(Int($0)-Int($1)) > 2 }.count < max(1,count/1000),
                      "Reverse playback must render the same paper, not a separate dismissal effect")
     }
+    // Reading content remains the only layout until close to the compact size,
+    // independent of whether the user started from a magnified preview.
+    for width in [CGFloat(240), 400, 680] {
+        let face = PaperFlightView(frame: .zero)
+        face.pose = PaperPose(pin: .zero, size: NSSize(width: width, height: width/1.618))
+        face.expansion = 0.1
+        face.readingImage = image; face.compactImage = compactImage
+        let rep = NSBitmapImageRep(data: face.faceImage().tiffRepresentation!)!
+        var redPixels = 0, bluePixels = 0
+        for y in 0..<rep.pixelsHigh {
+            for x in 0..<rep.pixelsWide {
+                guard let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
+                if c.redComponent > 0.8 && c.greenComponent < 0.2 { redPixels += 1 }
+                if c.blueComponent > 0.8 && c.redComponent < 0.2 { bluePixels += 1 }
+            }
+        }
+        precondition(redPixels == 0 && bluePixels > 0,
+                     "The large moving sheet must keep the reading layout without compact text ghosting")
+    }
+    // Native handoff: the original stays visible until the transition surface
+    // has its initial geometry and content. This covers the controller contract,
+    // rather than only comparing ideal forward/reverse trajectories.
+    let original = NSPanel(contentRect: reading.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    original.isReleasedWhenClosed = false
+    original.orderFrontRegardless()
+    let flight = PaperPreviewFlight()
+    var handedOff = false
+    flight.animate(from: reading, to: compact, readingImage: image, compactImage: compactImage,
+                   duration: Motion.paperCloseDuration, opening: false, onReady: {
+        precondition(original.isVisible && original.alphaValue == 1)
+        let transition = NSApp.windows.first { $0.isVisible && $0.title == "纸签预览过渡" }!
+        let surface = transition.contentView as! PaperFlightView
+        precondition(surface.pose.channels == reading.channels && surface.expansion == 1)
+        precondition(!surface.needsDisplay, "The replacement must be drawn before hiding the original")
+        original.alphaValue = 0
+        handedOff = true
+    }, completion: {})
+    precondition(handedOff && flight.visiblePose?.channels == reading.channels)
+    flight.cancel(); original.orderOut(nil)
+
     // Render into a real native window: integer window placement must not move
     // the fractional screen-space hanging hole as the sheet grows and straightens.
     let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)

@@ -18,8 +18,10 @@ struct SettlingTrack {
     func sample(_ elapsed: Double) -> (value: CGFloat, velocity: CGFloat) {
         let t = CGFloat(min(1, max(0, elapsed / max(0.001, duration))))
         let tail = 1 - t
-        let progress = symmetric ? t*t*t*(10-15*t+6*t*t) : Self.progress(t)
-        let slope = symmetric ? 30*t*t*tail*tail : 12*t*tail*tail
+        // Cubic ease-in/out keeps zero endpoint velocity and time symmetry,
+        // but spreads travel more evenly than quintic (peak 1.5 vs 1.875).
+        let progress = symmetric ? t*t*(3-2*t) : Self.progress(t)
+        let slope = symmetric ? 6*t*tail : 12*t*tail*tail
         let value = start + (end - start) * progress
             + velocity * duration * t * pow(tail, 3)
         let speed = (end - start) * slope / duration

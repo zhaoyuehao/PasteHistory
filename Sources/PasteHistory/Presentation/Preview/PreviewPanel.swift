@@ -177,7 +177,6 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         let compactFace = paper?.paperSnapshot?() ?? paperReturnImage
         paperReturnImage = compactFace
         previewedID = model.current?.id
-        owner?.setExpandedPaper(previewedID)
         paperReturnPose = paper?.paperPose
         panel.setFrame(target, display: false)
         panel.alphaValue = 0
@@ -188,7 +187,10 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         let targetPose = readingPose(frame: panel.frame)
         paperFlight.animate(from: Motion.reduceMotion ? targetPose : origin, to: targetPose,
                             readingImage: expandedFace, compactImage: compactFace, recordID: previewedID, duration: Motion.reduceMotion ? 0.12 : Motion.paperOpenDuration,
-                            opening: true) { [weak self, weak panel] in
+                            opening: true, onReady: { [weak self] in
+            guard let self else { return }
+            self.owner?.setExpandedPaper(self.previewedID)
+        }) { [weak self, weak panel] in
             panel?.alphaValue = 1
             panel?.ignoresMouseEvents = false
             self?.followPaper()
@@ -217,11 +219,12 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         // a reversal, the existing flight retains its exact face and momentum.
         let readingFace = paperFlight.visiblePose == nil ? snapshot(panel.contentView) : nil
         panel.ignoresMouseEvents = true
-        panel.alphaValue = 0
         paperFlight.animate(from: origin, to: Motion.reduceMotion ? origin : destination,
             readingImage: readingFace, compactImage: compactFace, recordID: previewedID,
             duration: Motion.reduceMotion ? 0.12 : Motion.paperCloseDuration, opening: false,
-            initialVelocity: followVelocity, completion: finish)
+            initialVelocity: followVelocity, onReady: { [weak panel] in
+                panel?.alphaValue = 0
+            }, completion: finish)
     }
 
     private func readingPose(frame: NSRect) -> PaperPose {

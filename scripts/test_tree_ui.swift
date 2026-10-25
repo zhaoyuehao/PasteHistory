@@ -428,24 +428,39 @@ struct TreeUISmoke {
                      "Mid-return reopening must preserve the presented geometry and content phase")
         run(0.3)
         precondition(controller.isPreviewVisible && expanded.frame == readingFrameBeforeClose)
+        let returnStarted = ProcessInfo.processInfo.systemUptime
         _ = key(49, chars: " ")
-        let closingStrip = NSImage(size: NSSize(width: readingFrameBeforeClose.width*6, height: readingFrameBeforeClose.height))
+        var closingFrames: [(Double, NSImage, NSSize)] = []
+        var closingTimeline = "elapsed_ms,width,height,phase\n"
         var previousClosingWidth = readingFrameBeforeClose.width + 2
-        for index in 0..<6 {
-            run(0.035)
-            guard closingSheet.isVisible, let face = closingSheet.contentView as? PaperFlightView else { continue }
-            precondition(closingSheet.frame.width <= previousClosingWidth+1, "A resting paper must shrink continuously back to its branch")
-            precondition(closingSheet.alphaValue == 1)
-            previousClosingWidth = closingSheet.frame.width
-            closingStrip.lockFocus()
-            face.faceImage().draw(in: NSRect(x: CGFloat(index)*readingFrameBeforeClose.width,
-                y: readingFrameBeforeClose.height-face.pose.frame.height,
-                width: face.pose.frame.width, height: face.pose.frame.height))
-            closingStrip.unlockFocus()
+        var priorPhase: CGFloat = -1
+        while ProcessInfo.processInfo.systemUptime-returnStarted < 0.34 {
+            if closingSheet.isVisible, let face = closingSheet.contentView as? PaperFlightView,
+               face.expansion != priorPhase {
+                precondition(closingSheet.frame.width <= previousClosingWidth+1, "A resting paper must shrink continuously back to its branch")
+                precondition(closingSheet.alphaValue == 1)
+                previousClosingWidth = closingSheet.frame.width
+                priorPhase = face.expansion
+                let elapsed = ProcessInfo.processInfo.systemUptime-returnStarted
+                closingTimeline += "\(elapsed*1000),\(face.pose.size.width),\(face.pose.size.height),\(face.expansion)\n"
+                closingFrames.append((elapsed, face.faceImage(), face.pose.frame.size))
+            }
+            run(0.004)
         }
-        run(0.15)
+        precondition(closingFrames.count >= 6, "Inspect multiple native frames from input through the return")
+        let closingStrip = NSImage(size: NSSize(width: readingFrameBeforeClose.width*CGFloat(closingFrames.count), height: readingFrameBeforeClose.height+20))
+        closingStrip.lockFocus()
+        for (index, frame) in closingFrames.enumerated() {
+            let x = CGFloat(index)*readingFrameBeforeClose.width
+            frame.1.draw(in: NSRect(x: x, y: closingStrip.size.height-frame.2.height,
+                                   width: frame.2.width, height: frame.2.height))
+            (String(format: "%.0f ms", frame.0*1000) as NSString).draw(at: NSPoint(x: x+8, y: 2),
+                withAttributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.white])
+        }
+        closingStrip.unlockFocus()
         precondition(!controller.isPreviewVisible && !closingSheet.isVisible)
         precondition(controller.previewPaper?.alphaValue == treeWindow.treeOpacity)
+        try closingTimeline.write(toFile: ".build/preview-return-timeline.csv", atomically: true, encoding: .utf8)
         try NSBitmapImageRep(data: closingStrip.tiffRepresentation!)!.representation(using: .png, properties: [:])!
             .write(to: URL(fileURLWithPath: ".build/preview-symmetric-close.png"))
         _ = key(49, chars: " ")
