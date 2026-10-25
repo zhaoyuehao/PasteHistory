@@ -15,7 +15,7 @@ struct SettlingTrack {
         return 1 - pow(1 - t, 3) * (1 + 3 * t)
     }
 
-    func sample(_ elapsed: Double) -> (value: CGFloat, velocity: CGFloat) {
+    func sample(_ elapsed: Double) -> (value: CGFloat, velocity: CGFloat, acceleration: CGFloat) {
         let t = CGFloat(min(1, max(0, elapsed / max(0.001, duration))))
         let tail = 1 - t
         // Cubic ease-in/out keeps zero endpoint velocity and time symmetry,
@@ -26,6 +26,9 @@ struct SettlingTrack {
             + velocity * duration * t * pow(tail, 3)
         let speed = (end - start) * slope / duration
             + velocity * tail * tail * (1 - 4 * t)
-        return (value, speed)
+        let curvature = symmetric ? 6-12*t : 12*tail*(1-3*t)
+        let acceleration = (end-start)*curvature/(duration*duration)
+            - 6*velocity*tail*(1-2*t)/duration
+        return (value, speed, t >= 1 ? 0 : acceleration)
     }
 }

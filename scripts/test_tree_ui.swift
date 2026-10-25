@@ -428,6 +428,35 @@ struct TreeUISmoke {
                      "Mid-return reopening must preserve the presented geometry and content phase")
         run(0.3)
         precondition(controller.isPreviewVisible && expanded.frame == readingFrameBeforeClose)
+        var interruptionTimeline = "trigger_ms,elapsed_ms,phase,width\n"
+        for trigger in [0.06, 0.12, 0.18] {
+            _ = key(49, chars: " "); run(0.3)
+            _ = key(49, chars: " "); run(trigger)
+            let active = NSApp.windows.first { $0.isVisible && $0.title == "纸签预览过渡" }!
+            let surface = active.contentView as! PaperFlightView
+            let initialPose = surface.pose.channels
+            let initialPhase = surface.expansion
+            precondition(initialPhase > 0 && initialPhase < 1)
+            let reversedAt = ProcessInfo.processInfo.systemUptime
+            _ = key(49, chars: " ")
+            precondition(surface.pose.channels == initialPose && surface.expansion == initialPhase,
+                         "Closing during expansion must preserve the actually displayed sheet")
+            var lastPhase: CGFloat = -1
+            while active.isVisible && ProcessInfo.processInfo.systemUptime-reversedAt < 0.45 {
+                if surface.expansion != lastPhase {
+                    lastPhase = surface.expansion
+                    let elapsed = ProcessInfo.processInfo.systemUptime-reversedAt
+                    interruptionTimeline += "\(trigger*1000),\(elapsed*1000),\(surface.expansion),\(surface.pose.size.width)\n"
+                    precondition(expanded.alphaValue == 0,
+                                 "An interrupted opening must not later complete and flash the full preview")
+                }
+                run(0.004)
+            }
+            precondition(!active.isVisible && !controller.isPreviewVisible)
+            precondition(controller.previewPaper?.alphaValue == treeWindow.treeOpacity)
+            _ = key(49, chars: " "); run(0.3)
+        }
+        try interruptionTimeline.write(toFile: ".build/preview-interruption-timeline.csv", atomically: true, encoding: .utf8)
         let returnStarted = ProcessInfo.processInfo.systemUptime
         _ = key(49, chars: " ")
         var closingFrames: [(Double, NSImage, NSSize)] = []

@@ -124,110 +124,107 @@ final class PaperFlightView: NSView {
     }
 }
 
-/// Same renderer, symmetric timing, and equal full duration in both directions.
-/// Interrupted motion keeps the presented pose AND velocity instead of replaying.
+/// One window and one display clock for the entire interaction, including
+/// reversals. A new input changes the motion target and replaces completion;
+/// it never restarts the display link or queues the previous destination.
 @MainActor
 final class PaperPreviewFlight {
     private var window: NSPanel?
     private var timer: MotionClock?
     private var sheet: PaperFlightView?
-    private var tracks: [SettlingTrack] = []
-    private var startedAt: Double = 0
-    private var displayedElapsed: Double = 0
-    private var activeDuration: Double = 0
-    private var opening = true
+    private var motion: PaperFlightMotion?
+    private var lastFrameTime: Double?
+    private var completion: (() -> Void)?
     private var recordID: UUID?
-    private var opacity = SettlingTrack(start: 1, end: 1, duration: 1, symmetric: true)
+    private var reducedMotion = false
     var visibleFrame: NSRect? { window?.isVisible == true ? window?.frame : nil }
     var visiblePose: PaperPose? { visibleFrame == nil ? nil : sheet?.pose }
 
     func cancel() {
         timer?.stop(); timer = nil
         window?.orderOut(nil)
-        tracks.removeAll()
+        motion = nil; completion = nil; lastFrameTime = nil
     }
     func animate(from: PaperPose, to: PaperPose, readingImage: NSImage?, compactImage: NSImage? = nil,
                  recordID: UUID? = nil, duration: Double, opening: Bool,
                  initialVelocity: NSPoint = .zero, onReady: () -> Void = {}, completion: @escaping () -> Void) {
-        let interrupted = visiblePose
-        let elapsed = CACurrentMediaTime()-startedAt
-        let speeds = interrupted == nil ? [initialVelocity.x, initialVelocity.y, 0, 0, 0, 0, 0, 0]
-            : tracks.map { $0.sample(displayedElapsed).velocity }
-        let startPose = interrupted ?? from
-        let phase = interrupted == nil ? (opening ? CGFloat(0) : 1) : sheet?.expansion ?? 0
-        let destinationPhase: CGFloat = opening ? 1 : 0
-        let remaining: Double
-        if interrupted == nil { remaining = duration }
-        else if self.opening == opening { remaining = min(duration, max(0.08, activeDuration-elapsed)) }
-        else { remaining = max(0.08, duration*sqrt(Double(abs(destinationPhase-phase)))) }
-        let currentOpacity = interrupted == nil ? (Motion.reduceMotion && opening ? CGFloat(0) : 1) : window?.alphaValue ?? 1
-        opacity = SettlingTrack(start: currentOpacity, end: Motion.reduceMotion && !opening ? 0 : 1,
-            velocity: interrupted == nil ? 0 : opacity.sample(displayedElapsed).velocity,
-            duration: remaining, symmetric: true)
-        timer?.stop()
-        let retainFace = interrupted != nil && self.recordID == recordID
-        self.recordID = recordID
-        self.opening = opening
-        activeDuration = remaining
-        tracks = zip(startPose.channels + [phase], to.channels + [destinationPhase]).enumerated().map { index, pair in
-            SettlingTrack(start: pair.0, end: pair.1, velocity: speeds[index], duration: remaining, symmetric: true)
+        let reduce = Motion.reduceMotion
+        let target = to.channels + [opening ? 1 : 0, reduce && !opening ? 0 : 1]
+        if visiblePose != nil, motion != nil, let panel = window, let face = sheet {
+            // The displayed pose, velocity and acceleration are owned by motion.
+            // Do not resample wall time, prepare a new first frame, or restart a
+            // clock when the user reverses a sheet that is already on screen.
+            motion?.retarget(to: target, reducedMotionDuration: reduce ? duration : nil)
+            self.completion = completion
+            if self.recordID != recordID {
+                face.readingImage = readingImage; face.compactImage = compactImage
+            }
+            self.recordID = recordID
+            panel.ignoresMouseEvents = !opening
+            onReady()
+            return
         }
+        self.recordID = recordID
+        self.completion = completion
+        reducedMotion = reduce
+        let phase: CGFloat = opening ? 0 : 1
+        let opacity: CGFloat = reduce && opening ? 0 : 1
+        motion = PaperFlightMotion(from: from.channels + [phase, opacity], to: target,
+            velocities: [initialVelocity.x, initialVelocity.y, 0, 0, 0, 0, 0, 0, 0], duration: duration)
         let panel: NSPanel
         let face: PaperFlightView
         if let existing = window, let view = sheet { panel = existing; face = view }
         else {
-            panel = NSPanel(contentRect: startPose.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+            panel = NSPanel(contentRect: from.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
             panel.isReleasedWhenClosed = false
             panel.title = "纸签预览过渡"
             panel.backgroundColor = .clear; panel.isOpaque = false; panel.hasShadow = true
             panel.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 2)
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             panel.hidesOnDeactivate = false
-            face = PaperFlightView(frame: NSRect(origin: .zero, size: startPose.frame.size))
+            face = PaperFlightView(frame: NSRect(origin: .zero, size: from.frame.size))
             face.autoresizingMask = [.width, .height]
             panel.contentView = face
             window = panel; sheet = face
         }
-        if !retainFace { face.readingImage = readingImage; face.compactImage = compactImage }
-        face.expansion = Motion.reduceMotion ? 1 : phase
-        face.place(Motion.reduceMotion ? (opening ? to : startPose) : startPose, in: panel)
+        face.readingImage = readingImage; face.compactImage = compactImage
+        face.expansion = reduce ? 1 : phase
+        face.place(reduce && opening ? to : from, in: panel)
         panel.ignoresMouseEvents = !opening
-        panel.alphaValue = currentOpacity
-        // Draw the exact starting pose before handing off the original surface.
-        // Starting the clock before this work would skip its first visible frames.
+        panel.alphaValue = opacity
         panel.orderFrontRegardless()
         panel.displayIfNeeded()
         panel.invalidateShadow()
         onReady()
-        startedAt = CACurrentMediaTime(); displayedElapsed = 0
-        var awaitingFirstFrame = interrupted == nil
+        lastFrameTime = nil
         let tick = MotionClock()
         timer = tick
-        tick.start(on: panel) { [weak self, weak panel, weak face] in
-            guard let self, let panel, let face else { return }
-            if awaitingFirstFrame {
-                // Establish time zero on the display cadence. Retargets already
-                // have a presented frame and must continue without this hold.
-                self.startedAt = CACurrentMediaTime()
-                awaitingFirstFrame = false
-            }
-            let elapsed = CACurrentMediaTime()-self.startedAt
-            self.displayedElapsed = elapsed
-            if !Motion.reduceMotion {
-                face.place(PaperPose(channels: self.tracks.prefix(7).map { $0.sample(elapsed).value }), in: panel)
-                face.expansion = self.tracks[7].sample(elapsed).value
-            }
-            face.needsDisplay = true
-            panel.displayIfNeeded(); panel.invalidateShadow()
-            panel.alphaValue = min(1, max(0, self.opacity.sample(elapsed).value))
-            if elapsed >= remaining {
-                self.timer?.stop(); self.timer = nil
-                self.window = nil; self.sheet = nil
-                completion()
-                panel.orderOut(nil)
-                self.window = panel; self.sheet = face
-                self.tracks.removeAll()
-            }
+        tick.start(on: panel) { [weak self] in self?.step() }
+    }
+
+    private func step() {
+        guard let panel = window, let face = sheet, motion != nil else { return }
+        let now = CACurrentMediaTime()
+        // Only a new flight establishes time zero; retargeting leaves this clock alone.
+        let delta = lastFrameTime.map { now-$0 } ?? 0
+        lastFrameTime = now
+        motion?.advance(by: delta)
+        guard let motion else { return }
+        if !reducedMotion {
+            face.place(PaperPose(channels: motion.states.prefix(7).map(\.value)), in: panel)
+            face.expansion = motion.states[7].value
+        }
+        face.needsDisplay = true
+        panel.displayIfNeeded(); panel.invalidateShadow()
+        panel.alphaValue = min(1, max(0, motion.states[8].value))
+        if motion.isFinished {
+            timer?.stop(); timer = nil
+            let finish = completion
+            self.motion = nil; completion = nil; lastFrameTime = nil
+            window = nil; sheet = nil
+            finish?()
+            panel.orderOut(nil)
+            window = panel; sheet = face
         }
     }
 }
