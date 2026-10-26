@@ -65,7 +65,7 @@ svg {
   position: absolute;
   inset: 0;
   z-index: -2;
-  background: #b6c5d2 url("/sample-lake.jpg") center/cover;
+  background: #354858 url("/wallpaper-slate.jpg") center/cover;
 }
 .wallpaper::after {
   content: "";
@@ -73,9 +73,9 @@ svg {
   inset: 0;
   background: linear-gradient(
     180deg,
-    #e5ecf335 0%,
-    #dce4ec08 50%,
-    #e4e5dfdf 100%
+    #101c2900 0%,
+    #101c2900 50%,
+    #101c2933 100%
   );
 }
 .menubar {
@@ -84,7 +84,8 @@ svg {
   display: flex;
   gap: 23px;
   align-items: center;
-  background: #edf2f759;
+  background: #101b2b66;
+  color: #f5f7fa;
   backdrop-filter: blur(24px);
   border-bottom: 1px solid #ffffff22;
   font-size: 12px;
@@ -241,11 +242,11 @@ svg {
 .download-area p {
   margin: 9px 0 4px;
   font-size: 12px;
-  color: #45515b;
+  color: #e1e7ed;
 }
 .download-area small {
   font-size: 10px;
-  color: #56636e;
+  color: #c4ced8;
 }
 .site-footer {
   position: absolute;
@@ -254,7 +255,7 @@ svg {
   transform: translateX(-50%);
   text-align: center;
   font-size: 10px;
-  color: #4c5862;
+  color: #d3dde6;
   display: grid;
   justify-items: center;
   gap: 5px;
@@ -273,7 +274,7 @@ svg {
   height: 17px;
 }
 .site-footer a:hover {
-  color: #0066cb;
+  color: #ffffff;
 }
 .repo-url {
   font-size: 10px;

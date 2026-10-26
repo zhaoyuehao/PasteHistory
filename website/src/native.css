@@ -168,10 +168,17 @@
 }
 .phone-label {
   position: absolute;
-  bottom: 9px;
-  width: 100%;
+  left: 5px;
+  right: 5px;
+  bottom: 7px;
+  height: 25px;
+  display: grid;
+  place-items: center;
   text-align: center;
   font-size: 11px;
+  line-height: 12.5px;
+  white-space: normal;
+  overflow-wrap: anywhere;
   color: #52514c;
 }
 #tree-stage .selection-ring {
@@ -1037,7 +1044,7 @@ kbd {
   gap: 6px;
   padding: 4px 6px;
   border-radius: 5px;
-  color: #27313b;
+  color: inherit;
 }
 .language-control:hover {
   background: #ffffff55;
