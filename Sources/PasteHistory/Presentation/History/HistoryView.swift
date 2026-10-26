@@ -50,11 +50,12 @@ struct HistoryView: View {
         .onChange(of: presentationState.treeLayoutEditing) { _, editing in
             if !editing { searchFocused = true }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .phMoveDown)) { _ in model.move(1) }
-        .onReceive(NotificationCenter.default.publisher(for: .phMoveUp)) { _ in model.move(-1) }
-        .onReceive(NotificationCenter.default.publisher(for: .phPageDown)) { _ in model.move(IvoryTreeLayout.pageSize) }
-        .onReceive(NotificationCenter.default.publisher(for: .phPageUp)) { _ in model.move(-IvoryTreeLayout.pageSize) }
+        .onReceive(NotificationCenter.default.publisher(for: .phMoveDown)) { _ in moveHistory(1) }
+        .onReceive(NotificationCenter.default.publisher(for: .phMoveUp)) { _ in moveHistory(-1) }
+        .onReceive(NotificationCenter.default.publisher(for: .phPageDown)) { _ in moveHistory(IvoryTreeLayout.pageSize) }
+        .onReceive(NotificationCenter.default.publisher(for: .phPageUp)) { _ in moveHistory(-IvoryTreeLayout.pageSize) }
         .onReceive(NotificationCenter.default.publisher(for: .phConfirm)) { _ in
+            if presentationState.phoneSyncSelected { onPreview(); return }
             guard let item = current else { return }
             onPaste(item)
         }
@@ -73,6 +74,7 @@ struct HistoryView: View {
         .onReceive(NotificationCenter.default.publisher(for: .phClose)) { _ in onClose() }
         // 每次打开面板都是一次新的「找」：回到第一条
         .onReceive(NotificationCenter.default.publisher(for: .phPanelWillShow)) { _ in
+            presentationState.phoneSyncSelected = false
             model.resetForPresentation()
             searchFocused = true
         }
@@ -80,16 +82,24 @@ struct HistoryView: View {
             guard let index = note.object as? Int, index < results.count else { return }
             onPaste(results[index])
         }
-        .onChange(of: store.query) { _, _ in model.resetSelection() }
+        .onChange(of: store.query) { _, _ in
+            presentationState.phoneSyncSelected = false
+            model.resetSelection()
+        }
         .onChange(of: store.displayed) { _, _ in model.rebuildResults() }
     }
 
-    private var current: ClipItem? { model.current }
+    private func moveHistory(_ offset: Int) {
+        presentationState.phoneSyncSelected = false
+        model.move(offset)
+    }
+
+    private var current: ClipItem? { presentationState.phoneSyncSelected ? nil : model.current }
 
     private var treeContent: some View {
         GeometryReader { geometry in
             ZStack(alignment: .topLeading) {
-                IvoryTreeView(model: model, onPreview: onPreview, layoutEditing: layoutEditing, onRootPosition: { treeRoot = $0 })
+                IvoryTreeView(model: model, presentation: presentationState, onPreview: onPreview, layoutEditing: layoutEditing, onRootPosition: { treeRoot = $0 })
                 if !layoutEditing {
                     Rectangle().fill(Color(red: 0.76, green: 0.72, blue: 0.62))
                         .frame(width: 1, height: 14)

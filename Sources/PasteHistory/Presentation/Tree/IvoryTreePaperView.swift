@@ -62,7 +62,7 @@ final class IvoryTreePaperView: NSView {
                 panel = TreeInteractionPanel(owner: owner, role: .paper)
                 surface = TreePaperSurface()
                 panel.contentView = surface
-                panel.title = "剪贴纸签"
+                panel.title = card.entry.isPermanent ? L10n.phoneSync : "剪贴纸签"
                 islands[id] = panel
             }
             // Rectangular paper footprint (including its small tilt and shadow).
@@ -100,9 +100,10 @@ final class IvoryTreePaperView: NSView {
             // record or accidentally clicking the app beneath the departing paper.
             panel.alphaValue = owner.expandedPaperID == id ? 0 : owner.treeOpacity
             panel.enabled = card.opacity > 0.01 && owner.expandedPaperID != id
-            surface.enabled = !layoutEditing && !isTurningPage && card.opacity > 0.9
+            surface.enabled = !layoutEditing && (card.entry.isPermanent || !isTurningPage) && card.opacity > 0.9
                 && cards.contains { $0.entry.id == id }
             surface.recordID = id
+            surface.draggable = !card.entry.isPermanent
             surface.setAccessibilityLabel(card.entry.title)
             surface.setAccessibilityValue(card.entry.id == selectedID ? "已选中" : "")
             surface.paint = { [weak self] in
@@ -135,8 +136,8 @@ final class IvoryTreePaperView: NSView {
         if turnPage {
             // Freeze exactly what is currently visible. Fast input replaces the
             // transition instead of queuing old pages or reviving invisible cards.
-            outgoing = Array(visuals().suffix(16))
-            turnDirection = (entries.first?.index ?? 0) >= (self.entries.first?.index ?? 0) ? 1 : -1
+            outgoing = Array(visuals().filter { !$0.entry.isPermanent }.suffix(16))
+            turnDirection = (entries.first(where: { !$0.isPermanent })?.index ?? 0) >= (self.entries.first(where: { !$0.isPermanent })?.index ?? 0) ? 1 : -1
             turnStart = self.entries.isEmpty ? 0 : CACurrentMediaTime()
             self.entries = entries
             heights = heights.filter { key, _ in entries.contains { $0.id == key } }
@@ -163,18 +164,21 @@ final class IvoryTreePaperView: NSView {
         var unsettled: CGFloat = 0
         let drops: [CGFloat] = [24, 33, 22, 37, 29, 21, 38, 26]
         let tilts: [CGFloat] = [-4, 3, -2, 5, 2, -5, 3, -3]
-        for (slot, entry) in entries.enumerated() where slot < attachments.count {
+        // Reserve the permanent card footprint first so history never pushes it around.
+        let layoutEntries = entries.enumerated().sorted { $0.element.isPermanent && !$1.element.isPermanent }
+        for (slot, entry) in layoutEntries where slot < attachments.count {
             let a = attachments[slot]
-            let width = min(IvoryTreeLayout.cardWidth, max(130, bounds.width * 0.32))
+            let layoutSlot = entry.isPermanent ? IvoryTreeLayout.pageSize : slot
+            let width = entry.isPermanent ? 72.0 : min(IvoryTreeLayout.cardWidth, max(130, bounds.width * 0.32))
             let restingHeight = entry.imageFirst ? IvoryTreeLayout.imageCardHeight : IvoryTreeLayout.cardHeight
             let expandedHeight = entry.imageFirst ? IvoryTreeLayout.selectedImageHeight : IvoryTreeLayout.selectedHeight
-            let target = entry.id == selectedID ? expandedHeight : restingHeight
+            let target = entry.isPermanent ? width * 1.61803398875 : (entry.id == selectedID ? expandedHeight : restingHeight)
             let old = heights[entry.id] ?? target
             let height = reduced ? target : old + (target - old) * blend
             heights[entry.id] = height
             unsettled += abs(target - height)
             var rect = NSRect(
-                x: a.point.x - width / 2 + sway * 0.6, y: a.point.y + drops[slot % 8], width: width,
+                x: a.point.x - width / 2 + sway * 0.6, y: a.point.y + drops[layoutSlot % 8], width: width,
                 height: height)
             rect.origin.x = max(8, min(bounds.width - width - 8, rect.minX))
             // Preserve the branch attachment, lengthening the cord only when two
@@ -185,7 +189,7 @@ final class IvoryTreePaperView: NSView {
             rect.origin.y = max(8, min(bounds.height - height - 8, rect.minY))
             next.append(
                 Card(
-                    entry: entry, rect: rect, anchor: a.point, tilt: reduced ? 0 : tilts[slot % 8] + sway,
+                    entry: entry, rect: rect, anchor: a.point, tilt: reduced ? 0 : tilts[layoutSlot % 8] + sway,
                     opacity: 1))
         }
         cards = next
@@ -228,6 +232,7 @@ final class IvoryTreePaperView: NSView {
             }
         }
         for (slot, var card) in cards.enumerated() {
+            if card.entry.isPermanent { result.append(card); continue }
             let p = max(0, min(1, (elapsed - CGFloat(slot) * TreeMotion.pageStagger) / TreeMotion.incomingDuration))
             card.opacity *= reduced ? min(1, elapsed / TreeMotion.fadeDuration) : p
             if !reduced && p < 1 {
@@ -298,6 +303,10 @@ final class IvoryTreePaperView: NSView {
         NSColor(white: 0.36, alpha: 0.7).setFill()
         NSBezierPath(ovalIn: NSRect(x: rect.midX - 1.7, y: rect.minY + 5.3, width: 3.4, height: 3.4))
             .fill()
+        if card.entry.kind == .phoneSync {
+            drawPhone(in: rect)
+            return
+        }
         let style = NSMutableParagraphStyle()
         style.lineBreakMode = .byTruncatingTail
         let source = card.entry.source.isEmpty ? "—" : card.entry.source
@@ -338,6 +347,22 @@ final class IvoryTreePaperView: NSView {
                 ])
         }
     }
+    private func drawPhone(in rect: NSRect) {
+        let phone = NSRect(x: rect.midX - 19, y: rect.minY + 16, width: 38, height: 60)
+        IvoryPaperStyle.ink.setStroke()
+        let outline = NSBezierPath(roundedRect: phone, xRadius: 5, yRadius: 5)
+        outline.lineWidth = 1.5
+        outline.stroke()
+        if let qr = NSImage(systemSymbolName: "qrcode", accessibilityDescription: nil) {
+            drawImage(qr, in: NSRect(x: phone.minX + 5, y: phone.minY + 15, width: 28, height: 28))
+        }
+        NSBezierPath(roundedRect: NSRect(x: phone.midX - 6, y: phone.minY + 5, width: 12, height: 1.5), xRadius: 1, yRadius: 1).fill()
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        (L10n.phoneSync as NSString).draw(in: NSRect(x: rect.minX + 4, y: rect.maxY - 21, width: rect.width - 8, height: 18),
+            withAttributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: IvoryPaperStyle.ink, .paragraphStyle: paragraph])
+    }
+
     private func drawImage(_ image: NSImage, in bounds: NSRect) {
         let ratio = min(bounds.width / max(1, image.size.width), bounds.height / max(1, image.size.height))
         let size = NSSize(width: image.size.width * ratio, height: image.size.height * ratio)
@@ -393,6 +418,7 @@ private final class IvoryPaperAccessibility: NSAccessibilityElement {
 /// from the pressed record, never from the changing keyboard selection.
 final class TreePaperSurface: NSView, NSDraggingSource {
     var recordID: UUID?
+    var draggable = true
     var paint: (() -> Void)?
     var onSelect: (() -> Void)?
     var onPreview: (() -> Void)?
@@ -423,7 +449,7 @@ final class TreePaperSurface: NSView, NSDraggingSource {
         (window as? TreeInteractionPanel)?.owner?.focusSearch()
     }
     override func mouseDragged(with event: NSEvent) {
-        guard enabled, window?.isVisible == true, !dragged, let downEvent,
+        guard draggable, enabled, window?.isVisible == true, !dragged, let downEvent,
               let owner = (window as? TreeInteractionPanel)?.owner, !owner.layoutEditing,
               hypot(event.locationInWindow.x-down.x, event.locationInWindow.y-down.y) > 5 else { return }
         dragged = true

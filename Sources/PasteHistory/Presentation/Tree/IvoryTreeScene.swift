@@ -11,6 +11,13 @@ enum IvoryTreeLayout {
 }
 
 struct IvoryTreeEntry: Equatable {
+    enum Kind { case clip, phoneSync }
+    static let phoneSyncID = UUID(uuidString: "00000000-0000-4000-8000-000000000001")!
+    static var phoneSync: Self {
+        Self(kind: .phoneSync, id: phoneSyncID, title: L10n.phoneSync, index: -1)
+    }
+    var kind: Kind = .clip
+    var isPermanent: Bool { kind == .phoneSync }
     let id: UUID
     let title: String
     let index: Int
@@ -127,7 +134,7 @@ final class IvoryTreeSceneView: SCNView {
     // imported tree surface, so export/deformation changes cannot leave cords floating.
     private static let seeds: [(Double, Double)] = [
         (-0.78, 7.75), (1.37, 7.02), (1.92, 6.05), (-2.04, 5.58), (2.03, 3.60), (-2.32, 2.77),
-        (2.16, 1.98), (-1.70, 1.25),
+        (2.16, 1.98), (-1.70, 1.25), (-2.9, 7.2),
     ]
     static func anchor(_ slot: Int) -> SCNVector3 {
         let (x, y) = seeds[slot % seeds.count]
@@ -135,7 +142,7 @@ final class IvoryTreeSceneView: SCNView {
         return SCNVector3(x, y, -depth)
     }
     private static func surfaceAnchors(in asset: SCNScene) -> [SCNVector3] {
-        let seeds = (0..<IvoryTreeLayout.pageSize).map(anchor)
+        let seeds = (0...IvoryTreeLayout.pageSize).map(anchor)
         var found = seeds
         var distances = Array(repeating: CGFloat.greatestFiniteMagnitude, count: seeds.count)
         asset.rootNode.childNode(withName: "Tree", recursively: true)?.enumerateChildNodes { node, _ in
@@ -183,7 +190,7 @@ final class IvoryTreeSceneView: SCNView {
     }
     private func updatePaper(dt: CGFloat) {
         let attachments = entries.indices.map { slot -> IvoryTreePaperView.Attachment in
-            let world = attachmentPosition(slot)
+            let world = attachmentPosition(entries[slot].isPermanent ? IvoryTreeLayout.pageSize : slot)
             let p = projectPoint(world)
             return .init(point: NSPoint(x: p.x, y: bounds.height - p.y), height: world.y, depth: world.z)
         }

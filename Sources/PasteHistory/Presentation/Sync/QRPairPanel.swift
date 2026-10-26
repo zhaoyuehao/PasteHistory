@@ -14,11 +14,10 @@ final class QRPairPanel: NSObject, NSWindowDelegate {
     private var escMonitor: Any?
 
     func show() {
-        WebSyncServer.shared.start()
+        model.prepare()
         if panel == nil { buildPanel() }
         guard let panel else { return }
 
-        model.refresh()
         // 高度随 warning 自适应：默认 320（卡区 198 : 320 = 0.619 ≈ φ⁻¹，
         // 卡 : 其余 = 1.618——黄金分割的纵向命中）；有警示时加高到 352 容纳
         panel.setContentSize(NSSize(width: 320, height: model.warning.isEmpty ? 320 : 352))
@@ -97,10 +96,7 @@ final class QRPairPanel: NSObject, NSWindowDelegate {
 
     private func buildPanel() {
         let hosting = NSHostingController(rootView: PairPanelView(model: model) {
-            Task { @MainActor in
-                WebSyncServer.shared.refreshPairingCode()
-                Self.shared.model.refresh()
-            }
+            Self.shared.model.renew()
         })
         let panel = NSPanel(contentViewController: hosting)
         // 卡片语言对齐主面板/预览：nonactivating + 可拖背景；关闭用系统红绿灯 X
@@ -151,22 +147,44 @@ final class PairModel: ObservableObject {
     @Published var address = ""
     @Published var warning = ""
 
+    private let readConnection: @MainActor () -> (url: String, warning: String)
+    private let startService: @MainActor () -> Void
+    private let renewCode: @MainActor () -> Void
+
+    init(readConnection: @escaping @MainActor () -> (url: String, warning: String) = {
+        (WebSyncServer.shared.pairingURL ?? "", WebSyncServer.shared.lastError ?? "")
+    }, startService: @escaping @MainActor () -> Void = { WebSyncServer.shared.start() },
+       renewCode: @escaping @MainActor () -> Void = { WebSyncServer.shared.refreshPairingCode() }) {
+        self.readConnection = readConnection
+        self.startService = startService
+        self.renewCode = renewCode
+    }
+
+    func prepare() { startService(); refresh() }
+    func renew() { renewCode(); refresh() }
+
     func refresh() {
-        let url = WebSyncServer.shared.pairingURL ?? ""
+        let connection = readConnection()
+        let url = connection.url
         qr = QRPairPanel.qrImage(url)
         address = url.isEmpty ? L10n.noNetworkAddress : url
-        warning = WebSyncServer.shared.lastError ?? ""
+        warning = connection.warning
     }
 }
 
 // MARK: - 面板视图
 
-private struct PairPanelView: View {
+struct PairPanelView: View {
     @ObservedObject var model: PairModel
     var onRefresh: () -> Void
+    var paperStyle = false
 
     var body: some View {
         VStack(spacing: 0) {
+            if paperStyle {
+                Circle().fill(Color(IvoryPaperStyle.meta).opacity(0.7))
+                    .frame(width: 3.4, height: 3.4).padding(.top, 5.3)
+            }
             ZStack(alignment: .topTrailing) {
                 VStack(spacing: 3) {
                     Text(L10n.phoneSync)
@@ -186,18 +204,8 @@ private struct PairPanelView: View {
                         .foregroundStyle(Palette.meta)
                         .help(L10n.encrypted)
                         .accessibilityLabel(L10n.encrypted)
-                    Button {
-                        onRefresh()
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: Icon.action, weight: .medium))
-                            .frame(width: 24, height: 24)
-                    }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(Color.accentColor)
-                    .contentShape(Rectangle())
-                    .help(L10n.refreshQRCode)
-                    .accessibilityLabel(L10n.refreshQRCode)
+                    PairActionButton(symbol: "arrow.clockwise", label: L10n.refreshQRCode, action: onRefresh)
+                        .frame(width: 24, height: 24)
                 }
             }
             .padding(.top, Rhythm.xl)
@@ -237,17 +245,12 @@ private struct PairPanelView: View {
                     .foregroundStyle(Palette.meta)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                Button {
+                PairActionButton(symbol: "doc.on.doc", label: L10n.copyAddress) {
+                    guard model.qr != nil else { return }
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(model.address, forType: .string)
-                } label: {
-                    Image(systemName: "doc.on.doc")
-                        .font(.system(size: Icon.action))
                 }
-                .buttonStyle(.borderless)
-                .foregroundStyle(Palette.meta)
-                .help(L10n.copyAddress)
-                .accessibilityLabel(L10n.copyAddress)
+                .frame(width: 24, height: 24)
             }
             .padding(.horizontal, Rhythm.l)
             .padding(.vertical, Rhythm.m)
@@ -270,7 +273,42 @@ private struct PairPanelView: View {
             Spacer(minLength: 0)
         }
         // 高度 320：卡区 198 : 320 ≈ φ⁻¹（黄金分割纵向命中）；warning 出现时 352
-        .frame(width: 320, height: model.warning.isEmpty ? 320 : 352)
-        .background(Color(NSColor.windowBackgroundColor))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(paperStyle ? IvoryPaperStyle.fill : NSColor.windowBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: paperStyle ? IvoryPaperStyle.radius : 0))
+        .overlay {
+            if paperStyle {
+                RoundedRectangle(cornerRadius: IvoryPaperStyle.radius)
+                    .strokeBorder(Color(IvoryPaperStyle.edge), lineWidth: 1.5)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+}
+
+/// Native controls let the shared paper click recognizer distinguish an action
+/// from clicking the paper to collapse it.
+private struct PairActionButton: NSViewRepresentable {
+    let symbol: String
+    let label: String
+    var action: () -> Void
+    func makeNSView(context: Context) -> ActionButton { ActionButton() }
+    func updateNSView(_ button: ActionButton, context: Context) {
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
+        button.toolTip = label
+        button.setAccessibilityLabel(label)
+        button.invoke = action
+    }
+    final class ActionButton: NSButton {
+        var invoke: (() -> Void)?
+        init() {
+            super.init(frame: .zero)
+            isBordered = false
+            imagePosition = .imageOnly
+            target = self
+            action = #selector(performAction)
+        }
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+        @objc private func performAction() { invoke?() }
     }
 }

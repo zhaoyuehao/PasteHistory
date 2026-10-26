@@ -2,6 +2,7 @@ import SwiftUI
 
 struct IvoryTreeView: View {
     @ObservedObject var model: HistoryViewModel
+    @ObservedObject var presentation: HistoryPresentationState
     var onPreview: () -> Void
     var layoutEditing: Bool
     var onRootPosition: (CGPoint) -> Void = { _ in }
@@ -10,21 +11,21 @@ struct IvoryTreeView: View {
     private var pageStart: Int { model.safeSelection / IvoryTreeLayout.pageSize * IvoryTreeLayout.pageSize }
     private var pageEnd: Int { min(pageStart + IvoryTreeLayout.pageSize, model.results.count) }
     private var entries: [IvoryTreeEntry] {
-        guard pageStart < pageEnd else { return [] }
-        return (pageStart..<pageEnd).map {
+        let clips: [IvoryTreeEntry] = (pageStart..<max(pageStart, pageEnd)).map {
             let item = model.results[$0]
             return IvoryTreeEntry(item: item, index: $0)
         }
+        return clips + [.phoneSync]
     }
 
     var body: some View {
         IvoryTreeCanvas(
-            entries: entries, selectedID: model.current?.id, resetToken: resetToken,
+            entries: entries, selectedID: presentation.phoneSyncSelected ? IvoryTreeEntry.phoneSyncID : model.current?.id, resetToken: resetToken,
             presentationToken: model.presentationTick, onRootPosition: onRootPosition,
             unavailable: $unavailable, onSelect: select, onPreview: preview, layoutEditing: layoutEditing
         )
         .accessibilityLabel(L10n.wishTree)
-        .accessibilityValue(model.current?.summary ?? L10n.noMatch)
+        .accessibilityValue(presentation.phoneSyncSelected ? L10n.phoneSync : (model.current?.summary ?? L10n.noMatch))
         .onReceive(NotificationCenter.default.publisher(for: .phResetTree)) { _ in resetToken += 1 }
         .onChange(of: unavailable) { _, failed in
             if failed { Toast.show(L10n.treeUnavailable, duration: 5) }
@@ -35,6 +36,7 @@ struct IvoryTreeView: View {
     }
 
     private func select(_ id: UUID) {
+        presentation.phoneSyncSelected = id == IvoryTreeEntry.phoneSyncID
         if let index = model.results.firstIndex(where: { $0.id == id }) { model.select(index) }
     }
     private func preview(_ id: UUID) {
