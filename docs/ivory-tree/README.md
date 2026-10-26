@@ -1,71 +1,124 @@
 # 3D 许愿树
 
-默认按 `⇧⌘C` 唤起透明、无边框的桌面许愿树。树体和树根的搜索悬签直接浮在桌面上，没有灰色背景、大标题、说明文字或底部工具栏。`⌘L` 切回列表，记住上次选择。列表与树共用排序、搜索结果和选中记录。
+[文档索引](../README.md) · [用户指南](../../README.md) · [架构](../architecture.md)
 
-- 树的视角固定，日常模式不可移动或缩放。菜单栏“调整树布局…”或 ⇧⌘M 进入独立模式，只有专用把手能移动树；小／标准／大三档尺寸，⌘R 复位，完成或 Esc 退出。每次重新唤起都恢复日常模式。
-- 图片纸签优先展示完整缩略图，展开首屏仍只显示图片，向下滚动再阅读 13pt OCR 文字。图片和纯文字预览支持原生双指缩放（50%–400%）；缩放只作用于当前预览内容，切换记录或重新打开时回到初始视口。无图时保留图片占位。
-- 每页显示 8 张枝头纸签。直接输入搜索，↑↓ 选记录，空格预览，回车粘贴。Page Up / Page Down（fn↑ / fn↓）翻组，⌘C 复制、⌘P 置顶、⌘⌫ 删除。搜索输入和页数收在树根悬签中，无横向搜索条、工具按钮或操作菜单。
-- 树模式下，输入搜索词后直接按空格即可预览；Shift＋空格在搜索词里输入空格。中文输入法组词时，空格、方向键和回车交给输入法。⌘Y 随时预览。
-- `↑` / `↓`、回车、`⌘C`、`⌘1–9`、空格 / `⌘Y` 沿用面板的快捷键；接近加载边界时继续读取历史记录。
-- SceneKit 渲染实际网格，包含连续树体、5 只鸟、透视相机、侧光及自阴影；纸签以 AppKit 绘制为朝向读者的可读平面，细绳连接从真实树体网格吸附的挂点。无网络模型服务和运行时 Blender 依赖。
-- 普通纸签展示两行摘要和来源；选中后展开正文、时间，图片记录显示缩略图。正文固定 13pt、辅助信息 11pt，不随树的尺寸改变。
-- 树模式预览以所选纸签的挂孔为锚点就地展开（220ms），带约 1% 的轻微回弹；关闭时收回当前纸签（170ms）。纸色、4pt 圆角、细边框、挂孔和元信息与枝头纸签共用样式，展开期间隐藏原纸签，避免重影。内容随同一纸面连续放大，在途中完成源纸签到预览的交接，结束时不再叠加整窗淡入；树模式切换记录只移动纸面，不再同时滑动内部正文。只有靠近屏幕边缘时才作位置避让。
-- 每次打开根据内容选择 340×210、400×247 或 480×297 的黄金矩形（约 1.618∶1）；这一轮方向键切换保持尺寸，140ms 跟随新的挂点，避免长文本反复换行排版。正文 15pt、元信息 11pt，间距采用 8／13／21pt。开合可打断，移动轻量快照，正文保持最终布局；减少动态效果时仅渐隐渐现。
-- 唤起时约 220ms 从根部向上显现，翻页约 280ms 沿纸签挂点翻转。键盘立即操作当前结果，快速翻页从当前可见状态接续，不排队；鼠标在旧纸签退场后命中新页，避免误点。
-- 纸签展开与移动选中框均可打断；系统减少动态效果时使用短淡入淡出。静止后停止动画计时器，离开树视图时释放渲染器。
+许愿树是默认历史视图：透明、无边框的象牙白树体浮在桌面，每组 8 张纸签，搜索框与页数位于树根悬签。⌘L 切换列表并记住选择，两种视图共用搜索、排序和选中记录。
 
-## 输入边界
+## 浏览与输入
 
-- 展示树体的大窗口始终 `ignoresMouseEvents = true`。每张纸签、搜索签和调整模式的控制条分别使用受限尺寸的子窗口；树干、枝条、小鸟和绳子不参与鼠标命中。纸签窗口包含其轻微倾斜与边缘的少量留白。
-- 点击后方 App 的原始事件交由系统派发。全局鼠标监视器只观察后收起树，不拦截、不回放点击；外部切换导致的关闭不激活先前 App。
-- 单击选中，双击预览；纸签超过 5pt 的拖动进入原生 NSDraggingSession。按下时固定记录身份，阈值后读取文字、PNG/图片文件地址或多文件 URL，只允许 copy。拖动不改变树的位置、不写系统剪贴板、不模拟粘贴；缺失文件整组拒绝。图片导出独立临时副本，接收方异步读取不受历史删除影响，七天前的导出副本后台清理。
-- 原生拖放期间保留来源窗口并暂停树的外部失焦关闭，Esc 交给系统取消；成功投放后关闭树且不抢目标焦点，取消后若仍在本应用则保持树与搜索。调整布局模式禁用纸签拖放。
-- 翻页中的可见纸签仍消费点击，但暂不执行操作；布局模式的纸签也不执行操作，避免误点背后的应用。收起立即撤走所有交互窗口，剩余淡出只展示画面。
+| 操作 | 行为 |
+| --- | --- |
+| 输入文字、↑ / ↓ | 筛选、选择；接近加载边界时继续读取历史 |
+| Page Up / Page Down（fn↑ / fn↓） | 翻组；快速翻页从当前可见状态接续，不排队 |
+| 空格 / ⌘Y / 双击纸签 | 预览当前记录；搜索有文字时也可按空格预览 |
+| Shift＋空格 | 在树模式搜索词中插入空格 |
+| 回车 / ⌘C | 粘贴 / 仅复制 |
+| ⌘1–9 | 按整个结果序列快速粘贴前 9 条，不按当前分组重新编号 |
+| ⌘P / ⌘⌫ | 置顶 / 删除 |
+| Esc | 预览打开时先关预览，再按关闭历史；组词和原生拖放优先处理自身取消 |
 
-## 预览
+中文输入法组词期间，空格、导航和确认由输入法处理。完整快捷键及循环粘贴行为见[用户指南](../../README.md#快捷键)。
+
+普通纸签显示摘要与来源，选中后展开更多内容。图片纸签以完整缩略图为主体，保持长宽比；缺图显示占位，不能用 OCR 文字替代。正文与辅助信息采用固定字号，不跟随树布局尺寸缩放。
+
+## 调整布局
+
+日常模式固定树的位置、尺寸和视角。菜单栏「调整树布局…」或面板内 ⇧⌘M 进入调整模式：专用把手移动树，小 / 标准 / 大三档调整尺寸，⌘R 复位，完成或 Esc 退出。每次重新唤起回到日常模式，保留已保存的布局；调整期间纸签不执行浏览或拖放操作。
+
+## 预览与缩放
+
+树模式从选中纸签的挂孔就地展开为同款纸面，接近屏幕边缘时避让，关闭时收回。纸色、圆角、边框、挂孔与元信息共用样式；展开期间隐藏来源纸签，避免重影。
+
+打开时按内容选择 340×210、400×247 或 480×297 的黄金比例逻辑尺寸，同次预览切换记录保持尺寸并跟随挂点。图片首屏展示图片，向下滚动阅读可选择的 OCR 文字；无缩略图时保留占位。
+
+| 行为 | 树模式预览 | 列表模式预览 |
+| --- | --- | --- |
+| 缩放对象 | 整张纸面，包括边框、文字与图片 | 图片或文字滚动内容 |
+| 范围 | 松手后回到 100%–200% 内，最大值还受屏幕空间限制；边界有弹性回程 | 50%–400% |
+| 切换记录 | 保留本轮纸面倍率，保持阅读逻辑尺寸 | 重置内容缩放与滚动位置 |
+| 关闭后重新打开 | 倍率复位，不持久化 | 从初始视口开始 |
+| 键盘焦点 | 保持在搜索框 | 保持在历史面板 |
+
+树预览无需先点击即可接收窗口内双指缩放。只在预览存活期间安装 local magnify monitor，严格限制到该窗口及其内部坐标；消费一次后不叠加内部滚动视图缩放。关闭或切换列表时移除监听，不能捕获树体、桌面或其他窗口的手势。诊断日志见[开发文档](../development.md#日志与常见问题)。
+
+### 动效约定
+
+开合、跟随和选择都可打断，连按从当前可见状态继续。动画参数集中在 `Presentation/Animation/`，文档不再复制每个时长或弹簧系数，避免与实现漂移。
+
+- 树从根部向上显现；翻组纸签沿挂点翻转，键盘立即操作当前结果。
+- 展开过程中内容随纸面连续放大；结束时不再叠加整窗淡入，切换记录只移动纸面，不额外滑动内部正文。
+- 静止后停止动画计时器，离开树视图释放渲染器。
+- 系统「减少动态效果」使用短淡入淡出，保留操作反馈。
+
+## 鼠标与原生拖放
+
+装饰树窗口始终 `ignoresMouseEvents = true`。纸签、搜索签、调整控件分别使用受限子窗口；树干、鸟和绳子不参与命中。后方应用的点击由系统原样派发，全局鼠标监视器只观察后收起树，不拦截或回放点击，也不抢回旧应用焦点。
+
+纸签拖动超过 5pt 后进入原生 `NSDraggingSession`。按下时固定记录身份，读取文字、PNG / 图片文件地址或多文件 URL，只允许 copy：不移动树、不移动原文件、不改写系统通用剪贴板、不模拟粘贴。缺失文件整组拒绝；图片导出独立临时副本，避免接收方异步读取受历史删除影响，七天前的导出副本后台清理。
+
+拖放期间保留来源窗口，暂停外部失焦关闭，Esc 交给系统取消。成功投放后关闭树并保留目标焦点；取消后若仍在本应用则保持树与搜索。翻页中可见的纸签暂不执行点击操作，但仍消费点击以免误触后方应用；收起时立即撤走交互窗口，余下淡出只展示画面。
+
+## 模型与预览图
 
 | 正面附近 | 斜侧面 |
 | --- | --- |
-| ![正面](front.png) | ![斜侧面](angle.png) |
+| ![正面合成数据预览](front.png) | ![斜侧面合成数据预览](angle.png) |
 
-预览中的记录均为虚拟数据。原模型基于用户提供的无叶白树参考图制作，应用版增加枝条纵深。模型坐标范围约为 6.41 × 8.81 × 2.66；资源内保留 Tree、Bird_01…Bird_05 六个独立组。
+截图使用虚拟记录，作为视觉参考，不代表最新像素基线。模型源于用户提供的无叶白树参考图，应用版增加枝条纵深。SceneKit 渲染连续树体、5 只鸟、透视相机、侧光和自阴影；AppKit 将纸签绘为朝向读者的平面，细绳连接自动吸附到真实网格表面的挂点。
+
+资源保留 Tree、Bird_01…Bird_05 六个独立组，坐标范围约 6.41 × 8.81 × 2.66。[ivory_tree.scn](../../Sources/PasteHistory/Resources/ivory_tree.scn) 可独立随应用分发；打包脚本把 SwiftPM 资源包放到 `Contents/Resources`，开发运行使用 `Bundle.module`。运行时无需 Blender 或模型网络服务。
 
 ## 资源维护
 
-`Sources/PasteHistory/Resources/ivory_tree.scn` 是可随应用独立分发的原生 SceneKit 资源，约 7.4 MB。打包脚本将 SwiftPM 资源包复制到 `Contents/Resources`；应用按此路径加载，开发运行使用 `Bundle.module`。
+可编辑的 `Ivory_Tree.blend` **不在当前仓库中**。重新导出前需取得制作源文件；只有 `.scn` 时仍可正常构建和验证应用。
 
-从制作阶段的可编辑 `Ivory_Tree.blend` 更新模型：
-
-1. 在 Blender 中打开源文件。树体名以 `白枝 ·` 开头，5 个鸟的姿态控制 Empty 名以 `Bird ` 开头。
-2. 通过 Blender MCP 执行以下代码（路径替换为当前仓库的绝对路径）。导出使用临时网格，不修改原场景。
+1. 在 Blender 打开源文件。树体对象以 `白枝 ·` 开头，五个鸟的姿态控制 Empty 以 `Bird ` 开头。
+2. 在 Blender Python 环境执行（也可通过 Blender MCP）；把 `/absolute/repo` 替换为当前仓库绝对路径：
 
    ```python
    export_path = '/absolute/repo/.build/ivory-export/parts'
    exec(compile(open('/absolute/repo/scripts/export_ivory_tree.py').read(), 'export_ivory_tree.py', 'exec'))
    ```
 
-3. 转为应用资源：
+3. 回到仓库根目录转换资源：
 
    ```sh
    swift scripts/convert_ivory_tree.swift .build/ivory-export/parts Sources/PasteHistory/Resources/ivory_tree.scn
    ```
 
-导出器按连续函数增加枝条前后错落，鸟按栖息位置整体平移，再降低网格密度。若更改此函数或主枝位置，可调整 `IvoryTreeSceneView.anchor` 的搜索种子；载入时会自动吸附到树体表面顶点。
+导出器使用临时网格，不修改源场景；先按连续函数增加枝条前后错落，鸟按栖息位置整体平移，再降低网格密度。若改此函数或主枝位置，核对 `IvoryTreeSceneView.anchor` 的搜索种子与载入后的表面吸附结果。
 
 ## 验证
 
-在已登录图形桌面的 macOS 上执行：
+以下命令从仓库根目录、已登录图形桌面的 macOS 执行。几何冒烟使用生产渲染器和合成记录，不访问用户剪贴板或数据库：
 
 ```sh
-swiftc Sources/PasteHistory/Presentation/Tree/IvoryTreeScene.swift Sources/PasteHistory/Presentation/Tree/IvoryTreePaperView.swift Sources/PasteHistory/Presentation/Windows/HistoryPanel.swift Sources/PasteHistory/Presentation/Tree/TreeInteraction.swift Sources/PasteHistory/Presentation/Style/IvoryPaperStyle.swift Sources/PasteHistory/Presentation/Animation/TreeMotion.swift scripts/test_ivory_tree.swift \
+mkdir -p .build
+swiftc -swift-version 5 Sources/PasteHistory/Presentation/Tree/IvoryTreeScene.swift \
+  Sources/PasteHistory/Presentation/Tree/IvoryTreePaperView.swift \
+  Sources/PasteHistory/Presentation/Windows/HistoryPanel.swift \
+  Sources/PasteHistory/Presentation/Tree/TreeInteraction.swift \
+  Sources/PasteHistory/Presentation/Style/IvoryPaperStyle.swift \
+  Sources/PasteHistory/Presentation/Animation/TreeMotion.swift \
+  Sources/PasteHistory/Presentation/Animation/Motion.swift \
+  Sources/PasteHistory/Presentation/Animation/MotionClock.swift \
+  Sources/PasteHistory/Presentation/Animation/SettlingTrack.swift \
+  Sources/PasteHistory/Presentation/Animation/PaperPreviewFlight.swift \
+  scripts/test_ivory_tree.swift \
   -o .build/tree-smoke -framework AppKit -framework SceneKit
 .build/tree-smoke Sources/PasteHistory/Resources/ivory_tree.scn .build/ivory-preview
-./scripts/test_tree_ui.sh
-./scripts/build_app.sh
 ```
 
-几何冒烟验证五只鸟、实际纵深、生长前后实际像素差异、纸签命中、装饰树忽略普通及 Option 拖动、连续翻页中断及空结果；UI 冒烟使用真实视图、ViewModel 和临时 SQLite 数据库，验证切换、共用选中项、复制/粘贴回调、置顶/取消置顶、删除、图片缩略图、跨组选择、分页加载、空搜索、实际搜索筛选、无边框窗口的键盘焦点、窗口和视图透明度及紧凑布局、受限输入窗口、布局模式的独立拖动与尺寸档位、关闭后无残留窗口；还验证真实 PanelController 中的筛选后鼠标命中、空格预览、方向键切换、Esc 收起和十万字文本连续切换。另验证隔离拖放剪贴板中的多行文字、PNG/导出 URL、多文件、缺失文件拒绝，以及挂孔定位、同款纸色、黄金比例及小屏等比缩放、实际窗口轻微回弹与落定、长文本导航尺寸稳定、从纸签出发的中间帧和快速开合后无残留过渡窗口。同时验证 OCR 搜索仍命中图片、图片占据纸签主体像素、展开后 OCR 可选择，以及预览服务读取注入的测试目录。不会读取用户历史或写入系统剪贴板。`./scripts/test_tree_ui.sh --interactive` 留下独立演示窗口。
+检查 `.build/ivory-preview/` 中生成的图片，再决定是否更新文档截图。模型更新还需执行 `./scripts/test_tree_ui.sh` 和 `./scripts/build_app.sh`，验证资源装载与真实视图；详细前提见[开发与排障](../development.md#按改动选择验证)。
 
-系统输入框的最终回写沿用现有 PasteService；上述冒烟只验证回调路由，不模拟向其他应用粘贴。
+| 验证范围 | 重点 |
+| --- | --- |
+| 几何与渲染 | 五只鸟、实际纵深、生长像素变化、纸签命中、装饰窗口忽略拖动、连续翻页和空结果 |
+| 业务与输入 | 临时 SQLite、共用选择、复制 / 粘贴回调、置顶 / 删除、搜索 / OCR、分页、IME 与 Esc |
+| 预览 | 挂孔锚点、黄金比例、小屏避让、图片占比、OCR 可选择、长文本换条稳定、快速开合和窗口清理 |
+| 缩放 | 非 key 窗口、范围排除、监听生命周期、倍率保留 / 复位；另做物理触控板验收 |
+| 拖放 | 多行文字、PNG / 导出 URL、多文件、缺失文件拒绝、只复制及取消 |
 
-原生跨进程拖放的人工验收：`./scripts/test_drag_ui.sh` 启动独立接收 App 和仅含合成数据的拖放来源。将聚焦的测试纸签拖入灰色接收区，应显示 `PASS TEXT`；用 `--drag-image` / `--drag-files` 分别检查 PNG 与多文件。接收器会验证内容及 copy-only 操作，不修改系统剪贴板。自动化工具难以定位非激活子窗口时，测试窗口使用同一个生产 `TreePaperSurface` 和控制器回调，但额外允许键盘聚焦。
+`./scripts/test_tree_ui.sh --interactive` 保留演示窗口。跨进程拖放人工验收用 `./scripts/test_drag_ui.sh`，图片加 `--drag-image`，文件加 `--drag-files`；拖入独立接收区检查对应 PASS。接收器使用合成数据并验证 copy-only，不修改通用剪贴板。
+
+UI 冒烟验证粘贴回调路由，不模拟向其他应用粘贴。真实输入框回写需另外验证 PasteService，真实双指手势也不能以模拟路由结果代替。

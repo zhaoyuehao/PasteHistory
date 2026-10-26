@@ -1,40 +1,28 @@
 # AGENTS.md
 
-PasteHistory：macOS 菜单栏剪贴板历史（SwiftPM 可执行 target + 手工打包 .app，无 Xcode 工程文件）。
+PasteHistory 是 macOS 菜单栏剪贴板历史工具，采用 SwiftPM executable target 和脚本打包，没有 Xcode 工程。
 
-## 构建与运行
+## 开始工作
 
-```bash
-cd ~/Documents/PasteHistory
-./scripts/build_app.sh          # swift build -c release → 打包 PasteHistory.app → 自动签名
-open PasteHistory.app           # 运行（菜单栏出现剪贴板图标）
+- [README.md](README.md)：用户行为、快捷键和数据位置。
+- [开发与排障](docs/development.md)：构建、签名、测试和维护参数。
+- [架构](docs/architecture.md)：模块职责及依赖方向。
+- [同步](docs/sync.md)：HTTP / iCloud 协议、加密范围与自测。
+- [许愿树](docs/ivory-tree/README.md)：交互、模型及验收。
+- [MEMORY.md](MEMORY.md)：已定决策与回归原因。
+
+文档中的行为和路径以最新 main 的实现为准；历史设计稿仅作参考。
+
+## 构建与验证
+
+```sh
+./scripts/build_app.sh
+open PasteHistory.app
 ```
 
-- 签名由脚本自动探测身份：**Apple Development > 自签 PasteHistory > ad-hoc**。
-  **必须用 Apple Development 证书**：ad-hoc 每次重建 cdhash 变化，TCC 会判定辅助功能权限失效并反复弹窗。
-- 移动项目目录后必须 `rm -rf .build` 重新构建：模块缓存里写死了旧绝对路径，会报
-  `PCH was compiled with module cache path ... but the path is currently ...`。
-- 数据目录：`~/Library/Application Support/PasteHistory/`（history.sqlite + images/），iCloud 同步走 iCloud Drive 的 `PasteHistory/`。
-- 面板定位日志：`~/Library/Application Support/PasteHistory/anchor_trace.log`，每次打开面板写一行
-  （结论 `below-input` / `above-input` / `below-input/shrunk-to-N` / `fallback-center` + role + 坐标）。
-  真机说「没贴过去 / 有遮挡」时先看它：没拿到输入框（fallback-center）和位置算错（能贴但贴歪）是两回事。
-  文件超过 200KB 会整体重写，不会无限涨。
+日常构建必须使用 **Apple Development** 证书。脚本虽支持自签 / ad-hoc 回退，但 ad-hoc 每次重建的身份变化会影响 TCC 辅助功能授权。移动目录后遇到模块缓存路径错误，删除 `.build` 再构建。
 
-## 维护 / 调试参数
-
-```bash
-PasteHistory.app/Contents/MacOS/PasteHistory --show            # 启动即打开面板（UI 冒烟）
-PasteHistory.app/Contents/MacOS/PasteHistory --show --trace-anchor   # 额外把定位结论打到 NSLog（落盘是默认开着的，见下）
-PasteHistory.app/Contents/MacOS/PasteHistory --show --fake-field 100,470,300,60   # 喂一个假输入框（AX 坐标），绕开 AX 直接验证定位几何
-PasteHistory.app/Contents/MacOS/PasteHistory --show --panel-size 520,540   # 临时换回旧外框对比（默认 400×647 黄金矩形，真机 A/B 用）
-PasteHistory.app/Contents/MacOS/PasteHistory --show-pair       # 启动即打开手机同步配对面板（UI 冒烟）
-PasteHistory.app/Contents/MacOS/PasteHistory --print-ax         # 把辅助功能授权状态写到 ax_status.txt
-PasteHistory.app/Contents/MacOS/PasteHistory --paste-latest     # 对最新记录走完整粘贴流程
-PasteHistory.app/Contents/MacOS/PasteHistory --smoke-panel-paste # 复现真实路径：开面板 → 选一条 → 回车粘贴（需前台有聚焦输入框）
-PasteHistory.app/Contents/MacOS/PasteHistory --smoke-preview  # 开面板 → 空格路径开预览 → ↓切换跟随 → 再空格收，日志断言（历史需 ≥2 条）
-PasteHistory.app/Contents/MacOS/PasteHistory --purge-ids a,b    # 清除指定记录（DB + iCloud + 墓碑）
-PasteHistory.app/Contents/MacOS/PasteHistory --restore-images   # 从 iCloud 恢复本地缺失的原图
-```
+修改结构后运行 `python3 scripts/check_architecture.py` 与 `./scripts/test_tree_ui.sh`（首次先 `mkdir -p .build`）。原生 UI 测试需图形桌面；具体改动的验证范围见开发文档。不要为了证明 prompt 文案、格式化输出中的偶然字段或简单实现细节而添加成堆的低信号断言；优先行为测试和类型 / 构建检查。
 
 ## 协作流程（硬性）
 
@@ -53,17 +41,17 @@ PasteHistory.app/Contents/MacOS/PasteHistory --restore-images   # 从 iCloud 恢
   3. `gh auth switch --user zhaoyuehao`（gh 没有按仓库切账号的能力，切了会影响其它仓库；
      回公司仓库时用 `gh auth switch --user zhaoyuehao_codeck` 切回去）。
 
-  自查凭据到底走哪个号（应恒为 `zhaoyuehao`，与公司号活跃与否无关）：
+  只输出用户名检查凭据路由（应为 `zhaoyuehao`）；禁止直接展示 `git credential fill` 的完整输出，其中包含 token：
 
   ```bash
-  printf 'protocol=https\nhost=github.com\npath=zhaoyuehao/PasteHistory.git\n' | git credential fill
+  printf 'protocol=https\nhost=github.com\npath=zhaoyuehao/PasteHistory.git\n' | git credential fill | sed -n 's/^username=/username=/p'
   ```
 
-  保留的手工兜底（helper 脚本失效时用）：
+  仓库级凭据配置未生效时，可显式指定现有 helper 推送当前分支（helper 文件本身需可用）：
 
   ```bash
   git -c credential.helper="!$HOME/Documents/PasteHistory/.git/credential-personal.sh" \
-      push https://github.com:443/zhaoyuehao/PasteHistory.git <branch>
+      push https://github.com:443/zhaoyuehao/PasteHistory.git HEAD
   ```
 
   **`!` + 绝对路径是必须的**：写成相对路径 `.git/credential-personal.sh` 时 git 会把它当子命令，
@@ -76,40 +64,29 @@ PasteHistory.app/Contents/MacOS/PasteHistory --restore-images   # 从 iCloud 恢
 
 ## 目录与依赖边界
 
-- `Domain/`：记录与内容指纹、搜索字段；不得依赖界面框架或 Presentation 类型。
-- `Application/`：ClipStore、Settings、HistoryViewModel 与输入规则。状态只发布结果和输入时序，不能调用 `withAnimation` 或动画令牌。
-- `Infrastructure/`：Persistence、Clipboard、Media、Sync。允许 AppKit 的 NSImage/NSPasteboard 等系统适配，不创建界面窗口，不依赖 Presentation。
-- `Presentation/`：Tree、History、Preview、Windows、Sync、Shared、Style。布局与输入绑定在此；所有通用动效参数和纸面过渡实现在 `Animation/`。
-- `main.swift` 是组合入口，负责注入图片目录、网页内容与用户提示呈现器；`Shared/Localization.swift` 为各层共用文案。
-- 数据操作仍经过 HistoryViewModel / ClipStore；图片纸签只展示图片，OCR 继续用于搜索，展开预览时展示文字。
-- 树模式预览在自身窗口内接收双指缩放，无需点击；整张纸签及图文一起等比缩放，不叠加内部图片/正文缩放。阅读逻辑尺寸固定、滚动仍可用；同次预览切换记录保留倍率，关闭后重新打开复位，不持久化。手势不能扩展到树体或桌面。
-- 预览保持非键盘焦点窗口，搜索框继续接键盘。真实日志已确认非 key 预览能收到 magnify 事件，但视图识别器要点击取得 key 后才工作；因此只在预览期间安装应用内 local magnify monitor，严格匹配事件所属预览窗口和窗口内坐标，处理后消费一次，关闭/切列表移除。禁止用 global monitor 或把其他窗口事件重定向到预览。回归测试覆盖非 key 状态、窗口/范围排除和监听生命周期；模拟路由仍不能当作物理触控板验收。`anchor_trace.log` 的 `preview-pinch` 行仅记录手势阶段、倍率和窗口宽度，不记录剪贴内容。
-- 修改结构后运行 `python3 scripts/check_architecture.py` 与 `./scripts/test_tree_ui.sh`。SwiftPM 自动递归发现源文件；独立脚本也必须递归收集，不能恢复旧的顶层 `*.swift` 假设。
-- 保持同一 executable target；目录分层由边界检查约束。改变数据模型、SQLite、同步协议和剪贴板载荷必须明确说明，不能夹在视觉调整里。
+- `Domain/` 不依赖界面框架；`Application/` 管理业务状态和输入时序，不调用 `withAnimation` 或动画令牌。
+- `Infrastructure/` 可用 AppKit 系统适配，但不创建界面窗口，不依赖 Presentation。图片读取 / 降采样 / 缓存留在 Media，数据写入经过 ClipStore / HistoryDatabase。
+- `Presentation/` 负责布局和输入绑定；通用动效参数与纸面过渡留在 `Animation/`。`main.swift` 负责注入图片目录、网页和提示呈现器。
+- 保持一个 executable target。SwiftPM 与独立脚本均递归发现源文件，不能恢复顶层 `*.swift` 假设。
+- 改数据模型、SQLite、同步协议或剪贴板载荷必须明确说明，不能夹在视觉调整里。完整模块索引见[架构](docs/architecture.md)。
 
-## 修改时务必遵守
+## 交互约束
 
-1. **任何状态切换都必须有阻尼感，没有阻尼感就不觉得流畅**（用户原话，最高优先级）。
-   这条**优先于密度、优先于「一屏多显示几条」这类优化**——行内展开被删那次阻尼感跟着
-   一起没了，用户当场就发现。删交互前先问一句：还有阻尼感吗？
-   - 阻尼感 = **有一个东西真的在移动** × **幅度够大** × **连续可打断**，缺一个就没感觉。
-   - 所以选中高亮必须是**一个会移动的物体**（`matchedGeometryEffect`），而不是每行的
-     `fill` 各自淡入淡出：后者中间没有任何东西在走，人眼对交叉淡化几乎无感，
-     表现出来就是「上下选中的感觉没了」。
-   - 连按方向键时**把弹簧压短**（`Motion.selectionFast`），不是关掉
-     （`disablesAnimations = true`）。关掉等于瞬移，而连续移动恰恰最需要阻尼。
-2. **HTTP 服务不能跑 MainActor**。菜单跟踪（nested runloop）或主线程弹窗会让服务假死。
-   路由/加解密全在 `queue`（`com.verdent.pastehistory.websync`）；读用独立 SQLite 连接，写 `DispatchQueue.main.async`。
-3. **禁止用 `NSJSONSerialization` 序列化顶层 String**——会抛 ObjC 异常直接崩进程，用 `JSONEncoder`。
-4. **Vision 识别中文必须用 `.accurate`** 并显式给 `zh-Hans`/`zh-Hant`/`en-US`；`.fast` 识别中文是乱码。
-5. **不要在 SQLite 串行队列内再 `queue.sync`**（会死锁），需要总数用不 dispatch 的私有方法。
-6. 手机端是**明文 HTTP 局域网地址**（非 Secure Context），页面内任何 Web API 都要考虑不可用，见 MEMORY.md。
-7. 改手机端加密实现后，必须跑 node 交叉验证（方法见 MEMORY.md「加密自测」）。
+1. **任何状态切换都必须有阻尼感，没有阻尼感就不觉得流畅。** 这条优先于密度和「一屏多显示几条」。阻尼感需要真实移动的物体、足够幅度、连续可打断；选中高亮使用移动的共享物体（`matchedGeometryEffect`），不能退化为每行填色交叉淡化。连按方向键压短弹簧（`Motion.selectionFast`），不能关闭动画导致瞬移；系统「减少动态效果」保留专用降级路径。
+2. 图片纸签展示图片，缺图保留占位，不用 OCR 代替图片。OCR 继续参与搜索，预览中滚动阅读。
+3. 树模式预览在自身窗口内接收双指缩放，无需点击；整张纸签与图文一起等比缩放，不叠加内部缩放。阅读逻辑尺寸固定，滚动可用；同次预览切换记录保留倍率，关闭后重开复位，不持久化。手势不得扩展到树体或桌面。
+4. 预览保持非 key 窗口，键盘留在搜索框。只在预览期间安装应用内 local magnify monitor，严格匹配窗口与窗口内坐标，处理后消费一次，关闭 / 切列表时移除。禁止 global monitor 或重定向其他窗口手势。回归覆盖非 key、范围排除与生命周期；模拟路由不替代真实触控板验收。
+5. 树体装饰窗口忽略鼠标，仅纸签、搜索签和布局控件接收输入。原生拖放只复制，不移动原文件、不改系统通用剪贴板；保留取消和目标焦点行为。
 
-## 手机端自测速查
+## 数据与同步约束
 
-```bash
-curl -s http://127.0.0.1:8377/ | tail -1                    # 页面可达
-curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8377/apple-touch-icon.png
-defaults read com.verdent.pastehistory webSyncPairCode      # 配对码（服务端生成并持久化）
-```
+1. **HTTP 路由 / 加解密不能跑 MainActor**：使用 `com.verdent.pastehistory.websync` 网络队列、独立 SQLite 读连接，写入通过 `DispatchQueue.main.async`。菜单跟踪或主线程弹窗不能阻塞网络响应。
+2. **禁止用 `NSJSONSerialization` 序列化顶层 String**，使用 `JSONEncoder`，避免 ObjC 异常导致进程崩溃。
+3. **SQLite 串行队列内禁止再次 `queue.sync`**；需要内部查询时调用不重复 dispatch 的私有方法。
+4. Vision 中文识别使用 `.accurate`，显式设置 `zh-Hans` / `zh-Hant` / `en-US`。
+5. 手机默认是局域网明文 HTTP，所有 Web API 均需考虑不可用；不能把 localhost 的能力当作手机端能力。
+6. 修改手机加密实现必须按[加密自测](docs/sync.md#加密自测)执行 Node 交叉验证，核对两端协议；不得将内容加密描述成 HTTPS 或本地加密存储。
+
+## 诊断入口
+
+定位异常先读 `~/Library/Application Support/PasteHistory/anchor_trace.log`，区分 `fallback-center`（未拿到可用输入框）和已定位后的几何错误。日志超过 200,000 字节整体重写；`preview-pinch` 只记手势阶段、倍率及窗口信息，不记正文。维护参数作用于真实数据，运行前核对[前提与副作用](docs/development.md#启动与维护参数)。
