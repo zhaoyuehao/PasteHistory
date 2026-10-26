@@ -19,6 +19,9 @@ codesign/*.csr
 website/node_modules/
 website/.test-output/
 
+# Bundled installer pulled at build time (build:workbuddy); never commit binaries
+website/public/downloads/
+
 # Cloudflare local cache
 .wrangler/
 

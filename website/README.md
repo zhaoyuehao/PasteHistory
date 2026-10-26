@@ -25,6 +25,18 @@ npx wrangler pages deploy dist --project-name pastehistory --branch main
 
 Authenticate Wrangler with your own Cloudflare account before deploying. Upload only `dist`; credentials are never included in the site. This is a direct-upload deployment; the GitHub Pages workflow remains separate.
 
+## Mainland-friendly deploy (WorkBuddy)
+
+GitHub download links are unreachable in mainland China. `build:workbuddy` bundles the latest arm64 installer from GitHub Releases into the site itself and points the download button at that local file; the Cloudflare / GitHub Pages builds are unaffected and keep using GitHub links.
+
+```sh
+cd website
+npm ci
+npm run build:workbuddy
+```
+
+The script verifies the installer against the release's `SHA256SUMS.txt`, writes it to `public/downloads/` (git-ignored), and builds with `VITE_DOWNLOAD_URL` set. Deploy the resulting `dist/`.
+
 ## Experience
 
 The first visit opens the native default tree layout with eight history records, a permanent Phone Sync card and the root search tag. The same frame and point sizes remain in use when selecting, searching and previewing: there is no separate three-record hero, whole-tree zoom or layout transition. The download button is centered below the root search tag, followed by a quiet GitHub link and statistics. Copy Samples and Notes stay visible on either side of the tree. The shortcut guide and drag hint live inside Notes. The menu bar has a compact globe/current-language selector. The auxiliary Actions menu, layout editing controls, demo reset and bottom toolbar are removed. Notes has a short drop/paste prompt and four shortcut rows; Copy Samples shows a short editable sentence and photograph together, each with its own copy button. Closing the tree reveals a clickable Command-Shift-V reminder.
