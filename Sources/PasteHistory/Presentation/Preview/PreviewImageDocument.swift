@@ -7,11 +7,10 @@ struct PreviewImageDocument: NSViewRepresentable {
     let image: NSImage?
     let details: String
     let identity: UUID
-    let paperStyle: Bool
 
     func makeNSView(context: Context) -> PreviewImageScrollView { PreviewImageScrollView() }
     func updateNSView(_ scroll: PreviewImageScrollView, context: Context) {
-        scroll.update(image: image, details: details, identity: identity, paperStyle: paperStyle)
+        scroll.update(image: image, details: details, identity: identity)
     }
 }
 
@@ -24,11 +23,11 @@ final class PreviewImageScrollView: PreviewZoomScrollView {
     }
     convenience init() { self.init(frame: .zero) }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    func update(image: NSImage?, details: String, identity: UUID, paperStyle: Bool) {
-        allowsMagnification = !paperStyle
+    func update(image: NSImage?, details: String, identity: UUID) {
+        allowsMagnification = false
         let changed = self.identity != identity
         self.identity = identity
-        sheet.update(image: image, details: details, paperStyle: paperStyle)
+        sheet.update(image: image, details: details)
         if changed { resetViewport() }
         needsLayout = true
     }
@@ -64,13 +63,13 @@ final class PreviewImageSheet: NSView {
     convenience init() { self.init(frame: .zero) }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func update(image: NSImage?, details: String, paperStyle: Bool) {
+    func update(image: NSImage?, details: String) {
         picture.image = image ?? NSImage(systemSymbolName: "photo", accessibilityDescription: nil)
         if recognizedText.string != details {
             recognizedText.string = details
             layoutDirty = true
         }
-        recognizedText.textColor = paperStyle ? IvoryPaperStyle.ink : .labelColor
+        recognizedText.textColor = IvoryPaperStyle.ink
     }
     func arrange(viewport: NSSize) {
         guard viewport.width > 0, viewport.height > 0, layoutDirty || self.viewport != viewport else { return }

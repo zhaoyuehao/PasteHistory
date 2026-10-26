@@ -7,7 +7,7 @@ struct HistoryKeyboardState {
     func deleteRemovesCard(query: String, composing: Bool) -> Bool {
         !composing && (navigating || query.isEmpty)
     }
-    func spacePreviews(query: String, composing: Bool, tree: Bool) -> Bool {
-        !composing && (tree || query.isEmpty)
+    func spacePreviews(composing: Bool) -> Bool {
+        !composing
     }
 }

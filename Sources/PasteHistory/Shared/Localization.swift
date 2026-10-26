@@ -27,11 +27,10 @@ enum L10n {
     }
 
     static var treeActions: String { value("记录操作", "記錄操作", "Record Actions") }
+    static var treeUnavailable: String { value("许愿树资源无法加载，请重新安装应用。仍可搜索并按空格预览。", "許願樹資源無法載入，請重新安裝應用程式。仍可搜尋並按空白鍵預覽。", "The tree resource could not load. Reinstall the app. Search and Space to preview remain available.") }
     static var wishTree: String { value("许愿树", "許願樹", "Wish Tree") }
-    static var treeShowList: String { value("列表视图", "列表檢視", "List View") }
     static var treeHint: String { value("拖动旋转 · 点击枝头卡片", "拖動旋轉 · 點擊枝頭卡片", "Drag to rotate · Select a hanging card") }
     static var treeReset: String { value("重置视角", "重設視角", "Reset View") }
-    static var treeUnavailable: String { value("模型加载失败，请切回列表", "模型載入失敗，請切回列表", "Model unavailable. Switch to List View.") }
     static var treePrevious: String { value("上一组", "上一組", "Previous Group") }
     static var treeNext: String { value("下一组", "下一組", "Next Group") }
     static var treePreviousItem: String { value("上一条", "上一條", "Previous") }
@@ -48,7 +47,6 @@ enum L10n {
     static var phoneSync: String { value("手机同步", "手機同步", "Phone Sync") }
     static var iCloudUnsynced: String { value("iCloud 未同步", "iCloud 未同步", "iCloud Not Synced") }
     static var pauseRecording: String { value("暂停记录", "暫停記錄", "Pause Recording") }
-    static var anchorPanelToInput: String { value("面板跟随输入框", "面板跟隨輸入框", "Anchor Panel to Input") }
     static var clearHistory: String { value("清空历史…", "清除歷史記錄…", "Clear History…") }
     static var quit: String { value("退出 PasteHistory", "結束 PasteHistory", "Quit PasteHistory") }
     static var clipboardHistoryAccessibility: String { value("剪贴板历史", "剪貼簿歷史", "Clipboard history") }

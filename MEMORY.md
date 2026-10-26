@@ -7,6 +7,8 @@ SQLite 持久化 + iCloud Drive 多设备同步 + 局域网 PWA 让手机加入�
 
 ## 已定的架构决策（不要再改回）
 
+- **只保留许愿树界面**：列表及 ⌘L 切换已删除，忽略旧 `showDesktopTree` 偏好。⌘⇧V 唤起，单击预览，Delete 删除，回车粘贴。
+
 - **不用 Xcode 工程**：SwiftPM + `scripts/build_app.sh` 手工打 .app，便于脚本化与 CLI 维护参数。
 - **持久化用 SQLite3 C API** 而非 Core Data：图片原图落盘在 `Application Support/PasteHistory/images/`，DB 只存文件名，避免内存里堆图。
 - **iCloud 同步一记录一文件**（`clips/<uuid>.json`）+ `tombstones/` 墓碑 + 60s 对账：冲突少、可部分恢复；`--restore-images` 能从远端补回本地丢的原图。

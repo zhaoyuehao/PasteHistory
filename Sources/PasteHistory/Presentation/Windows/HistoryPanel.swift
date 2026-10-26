@@ -5,10 +5,9 @@ final class HistoryPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
-    private(set) var treePresentation = false
     var treeOpacity: CGFloat = 1 {
         didSet {
-            if treePresentation { alphaValue = treeOpacity }
+            alphaValue = treeOpacity
             for island in islands {
                 let expanded = island.role == .paper && expandedPaperID != nil
                     && (island.contentView as? TreePaperSurface)?.recordID == expandedPaperID
@@ -53,7 +52,7 @@ final class HistoryPanel: NSPanel {
         islands.removeAll { $0 === island }
     }
     func showIslandIfNeeded(_ island: TreeInteractionPanel) {
-        guard isVisible, treePresentation, presentsIslands else { return }
+        guard isVisible, presentsIslands else { return }
         let expanded = island.role == .paper && expandedPaperID != nil
             && (island.contentView as? TreePaperSurface)?.recordID == expandedPaperID
         island.alphaValue = expanded ? 0 : treeOpacity
@@ -87,26 +86,16 @@ final class HistoryPanel: NSPanel {
         for island in islands { island.orderOut(sender) }
         super.orderOut(sender)
     }
-    func applyPresentation(tree: Bool) {
-        treePresentation = tree
-        ignoresMouseEvents = tree
-        if !tree { for island in islands { island.orderOut(nil) } }
-
-        styleMask = tree
-            ? [.borderless, .nonactivatingPanel]
-            : [.titled, .closable, .fullSizeContentView, .nonactivatingPanel, .resizable]
-        titlebarAppearsTransparent = true
-        titleVisibility = .hidden
-        standardWindowButton(.closeButton)?.isHidden = true
-        standardWindowButton(.miniaturizeButton)?.isHidden = true
-        standardWindowButton(.zoomButton)?.isHidden = true
-        isOpaque = !tree
-        backgroundColor = tree ? .clear : .windowBackgroundColor
-        hasShadow = !tree
-        isMovableByWindowBackground = !tree
+    func configureTree() {
+        ignoresMouseEvents = true
+        styleMask = [.borderless, .nonactivatingPanel]
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = false
+        isMovableByWindowBackground = false
         contentView?.wantsLayer = true
-        contentView?.layer?.isOpaque = !tree
-        contentView?.layer?.backgroundColor = tree ? NSColor.clear.cgColor : NSColor.windowBackgroundColor.cgColor
+        contentView?.layer?.isOpaque = false
+        contentView?.layer?.backgroundColor = NSColor.clear.cgColor
         invalidateShadow()
     }
 }

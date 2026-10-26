@@ -71,20 +71,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             firstRun()
         }
 
-        // 仅供冒烟测试：--fake-field x,y,w,h 喂一个假输入框（AX 坐标），验证定位几何
-        let argv = ProcessInfo.processInfo.arguments
-        if let i = argv.firstIndex(of: "--fake-field"), i + 1 < argv.count {
-            let n = argv[i + 1].split(separator: ",").compactMap { Double($0) }
-            if n.count == 4 { PanelController.debugField = CGRect(x: n[0], y: n[1], width: n[2], height: n[3]) }
-        }
-
-        // 仅供冒烟对比：--panel-size w,h 临时替换面板外框（默认 400×647 黄金矩形；
-        // --panel-size 520,540 可复现旧框做真机 A/B），不影响默认值
-        if let i = argv.firstIndex(of: "--panel-size"), i + 1 < argv.count {
-            let n = argv[i + 1].split(separator: ",").compactMap { Double($0) }
-            if n.count == 2 { Panel.debugSize = NSSize(width: n[0], height: n[1]) }
-        }
-
         // 仅供冒烟测试：--show 启动即打开面板
         if ProcessInfo.processInfo.arguments.contains("--show") {
             DispatchQueue.main.async { PanelController.shared.show() }
@@ -238,11 +224,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
-        let anchor = NSMenuItem(title: L10n.anchorPanelToInput, action: #selector(toggleAnchor(_:)), keyEquivalent: "")
-        anchor.state = Settings.shared.anchorPanel ? .on : .off
-        anchor.image = Self.menuIcon("rectangle.bottomthird.inset.filled")
-        menu.addItem(anchor)
-
         let pause = NSMenuItem(title: L10n.pauseRecording, action: #selector(togglePause(_:)), keyEquivalent: "")
         pause.state = Settings.shared.paused ? .on : .off
         pause.image = Self.menuIcon("pause.circle")
@@ -298,12 +279,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func togglePause(_ sender: NSMenuItem) {
         Settings.shared.paused.toggle()
         sender.state = Settings.shared.paused ? .on : .off
-    }
-
-    /// 面板跟随输入框：关掉就回到老样子（屏幕中上方居中）
-    @objc private func toggleAnchor(_ sender: NSMenuItem) {
-        Settings.shared.anchorPanel.toggle()
-        sender.state = Settings.shared.anchorPanel ? .on : .off
     }
 
     @objc private func retrySync() {
