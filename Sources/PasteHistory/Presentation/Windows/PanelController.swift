@@ -322,7 +322,7 @@ final class PanelController: NSObject, NSWindowDelegate {
             if let content = event.window?.contentView {
                 var hit = content.hitTest(content.convert(event.locationInWindow, from: nil))
                 while let view = hit {
-                    if view is NSTextView || view is NSTextField {
+                    if (view as? NSTextView)?.isEditable == true || (view as? NSTextField)?.isEditable == true {
                         keyboardState.edit()
                         break
                     }

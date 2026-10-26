@@ -333,6 +333,33 @@ struct TreeUISmoke {
         run(0.2)
         precondition(controller.panelModel.current?.id == clickedID, "Filtered paper click must select")
         precondition(controller.isPreviewVisible, "A single paper click must open preview")
+        run(0.2)
+        let clickablePreview = NSApp.windows.first { $0.isVisible && $0.title == L10n.previewTitle } as! PaperPreviewPanel
+        let previewFace = clickablePreview.contentView!
+        let previewCenter = NSPoint(x: previewFace.bounds.midX, y: previewFace.bounds.midY)
+        let previewDragEnd = NSPoint(x: previewCenter.x + 30, y: previewCenter.y)
+        clickablePreview.trackClick(mouse(.leftMouseDown, view: previewFace, point: previewCenter))
+        clickablePreview.trackClick(mouse(.leftMouseDragged, view: previewFace, point: previewDragEnd))
+        clickablePreview.trackClick(mouse(.leftMouseUp, view: previewFace, point: previewDragEnd))
+        run(0.1)
+        precondition(controller.isPreviewVisible, "Selecting text by dragging must not collapse preview")
+        let previewText = zoomViews(in: previewFace).first!.documentView as! NSTextView
+        let textPoint = NSPoint(x: 30, y: 15)
+        clickablePreview.trackClick(mouse(.leftMouseDown, view: previewText, point: textPoint))
+        previewText.setSelectedRange(NSRange(location: 0, length: 1))
+        clickablePreview.trackClick(mouse(.leftMouseUp, view: previewText, point: textPoint))
+        run(0.1)
+        precondition(controller.isPreviewVisible, "Even a short text selection must keep preview open")
+        previewText.setSelectedRange(NSRange(location: 0, length: 0))
+        clickablePreview.trackClick(mouse(.leftMouseDown, view: previewFace, point: previewCenter))
+        clickablePreview.trackClick(mouse(.leftMouseUp, view: previewFace, point: previewCenter))
+        run(0.3)
+        precondition(!controller.isPreviewVisible && controller.isVisible,
+                     "Clicking the expanded paper must collapse it without dismissing the tree")
+        precondition(controller.panelModel.current?.id == clickedID && controller.previewPaper?.alphaValue == 1,
+                     "Click collapse must restore the same source card")
+        _ = key(49, chars: " ")
+        run(0.3)
         _ = key(49, chars: " ")
         run(0.25)
         let sourcePaper = controller.previewPaper!.frame
@@ -525,6 +552,14 @@ struct TreeUISmoke {
             && abs(textZoom.documentVisibleRect.width - textWidth) < 1,
             "Text keeps its logical layout; there is no second document zoom")
         precondition(NSApp.keyWindow === keyBeforePinch, "Pinch must not require or steal keyboard focus")
+        let enlargedText = textZoom.documentView as! NSTextView
+        let enlargedTextPoint = NSPoint(x: 30, y: 15)
+        zoomPanel.trackClick(mouse(.leftMouseDown, view: enlargedText, point: enlargedTextPoint))
+        enlargedText.setSelectedRange(NSRange(location: 0, length: 1))
+        zoomPanel.trackClick(mouse(.leftMouseUp, view: enlargedText, point: enlargedTextPoint))
+        run(0.1)
+        precondition(controller.isPreviewVisible, "Text selection must remain protected after paper scaling")
+        enlargedText.setSelectedRange(NSRange(location: 0, length: 0))
         let scaledPin = controller.previewPaper!.paperPin!
         let scaledTarget = PreviewPanelController.paperFrame(pin: scaledPin, visible: screen.visibleFrame,
             size: expanded.frame.size, magnification: 1.5)

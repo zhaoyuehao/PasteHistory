@@ -89,7 +89,7 @@ final class PreviewPanelController: NSObject {
             paperMagnification = 1
             gestureMagnification = 1
         }
-        (panel as? PaperPreviewPanel)?.beginPaperPinch()
+        (panel as? PaperPreviewPanel)?.beginPaperInteraction()
         (panel.contentView as? PaperPreviewSurface)?.readingSize = paperSessionSize
         let target = targetFrame()
         let paper = owner?.previewPaper
@@ -118,7 +118,7 @@ final class PreviewPanelController: NSObject {
     }
 
     private func closeToPaper(_ panel: NSPanel) {
-        (panel as? PaperPreviewPanel)?.endPaperPinch()
+        (panel as? PaperPreviewPanel)?.endPaperInteraction()
         let followVelocity = paperFollow.currentVelocity
         paperFollow.cancel()
         paperScaleReturn.cancel()
@@ -161,7 +161,7 @@ final class PreviewPanelController: NSObject {
     }
 
     func closeImmediately() {
-        (panel as? PaperPreviewPanel)?.endPaperPinch()
+        (panel as? PaperPreviewPanel)?.endPaperInteraction()
         paperFlight.cancel()
         paperFollow.cancel()
         paperScaleReturn.cancel()
@@ -241,6 +241,7 @@ final class PreviewPanelController: NSObject {
         self.hosting = hosting
         let panel = PaperPreviewPanel(contentRect: .zero, styleMask: [.nonactivatingPanel], backing: .buffered, defer: false)
         panel.contentView = PaperPreviewSurface(document: hosting.view)
+        panel.onCollapse = { [weak self] in self?.close() }
         panel.onMagnify = { [weak self] delta, phase in self?.magnifyPaper(by: delta, phase: phase) ?? false }
         // 标题不画出来，但读屏要有名字——VO 念「Untitled」等于没念
         panel.title = L10n.previewTitle
