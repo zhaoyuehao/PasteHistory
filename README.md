@@ -6,6 +6,8 @@
 
 The web demo follows the Swift tree layout and keyboard dispatch, with the full eight-record layout from the first visit. Browser-reserved shortcuts and system integrations remain subject to browser limits; see the [website notes](website/README.md#native-interaction-reference).
 
+Copy Samples and Notes use concise copy; the top bar only retains a compact language picker and no auxiliary Actions or Reset controls.
+
 Copy Samples and Notes remain visible, with shortcuts inside Notes and a clickable ⇧⌘V reminder when the tree closes. The entire demo follows the browser language, with a menu-bar override for English, Simplified Chinese, Traditional Chinese, Japanese and Korean.
 
 A macOS menu bar clipboard history app. Press **⇧⌘V** to search text, images and file paths on a desktop tree, then press Return to paste into the original app. Includes on-device OCR, iCloud sync between Macs and local-network phone access.

@@ -184,10 +184,6 @@ export class NativePreview {
       ),
     );
   }
-  zoomBy(factor: number) {
-    if (this.want && !this.tracks.length)
-      this.setZoom(clamp(this.zoom * factor, 1, this.maximum()));
-  }
   private magnify(factor: number) {
     if (this.tracks.length) return;
     this.gestureZoom = clamp(

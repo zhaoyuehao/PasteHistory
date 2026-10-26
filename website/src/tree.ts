@@ -45,7 +45,6 @@ export class TreeStage {
   private signature = "";
   private ringPose: Pose | null = null;
   private reduced = matchMedia("(prefers-reduced-motion: reduce)");
-  layoutEditing = false;
   onSelect: (id: string) => void = () => {};
   onFocus: () => void = () => {};
   onDrag: (id: string) => void = () => {};
@@ -257,7 +256,7 @@ export class TreeStage {
           let dragged = false,
             down: { x: number; y: number } | null = null;
           el.addEventListener("pointerdown", (e) => {
-            if (e.button !== 0 || this.layoutEditing) return;
+            if (e.button !== 0) return;
             this.onFocus();
             down = { x: e.clientX, y: e.clientY };
             dragged = false;
@@ -269,13 +268,12 @@ export class TreeStage {
           el.addEventListener("click", () => {
             if (
               !dragged &&
-              !this.layoutEditing &&
               performance.now() / 1000 - this.turnStart >= N.outgoing
             )
               this.onSelect(clip.id);
           });
           el.addEventListener("dragstart", (e) => {
-            if (this.layoutEditing || clip.id === PHONE_ID) {
+            if (clip.id === PHONE_ID) {
               e.preventDefault();
               return;
             }
@@ -409,8 +407,7 @@ export class TreeStage {
         opacity: String(this.hiddenPaper === c.clip.id ? 0 : c.opacity),
       });
       c.el.inert = this.hiddenPaper === c.clip.id;
-      c.el.disabled =
-        this.layoutEditing || (!phone && elapsed < N.pageDuration);
+      c.el.disabled = !phone && elapsed < N.pageDuration;
       c.cord.setAttribute(
         "d",
         `M ${a.x} ${a.y} C ${a.x} ${(a.y + c.y + 7) / 2} ${c.x + width / 2} ${c.y - 3} ${c.x + width / 2} ${c.y + 7} M ${a.x - 2} ${a.y} a 2 2 0 1 0 4 0 a 2 2 0 1 0 -4 0`,
