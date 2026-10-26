@@ -26,7 +26,6 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     private var panel: HistoryPanel?
     private let treeEntrance = TreeEntrance()
-    private var placingTree = false
     private var localMonitor: Any?
     private var outsideMouseMonitor: Any?
     private var activationObserver: Any?
@@ -226,32 +225,36 @@ final class PanelController: NSObject, NSWindowDelegate {
         self.panel = panel
     }
 
-    /// The tree stands in the desktop's usable area rather than inside an input-field card.
+    /// Each presentation centers the whole tree on the screen under the pointer.
+    /// Input focus is captured only for pasting back, never for window placement.
     private func placeTree(_ panel: NSPanel) -> NSPoint {
-        let saved = UserDefaults.standard.string(forKey: "desktopTreeOrigin").map(NSPointFromString)
         let mouse = NSEvent.mouseLocation
-        let screen = saved.flatMap { origin in NSScreen.screens.first { $0.visibleFrame.contains(origin) } }
-            ?? NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
+        let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
         let available = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1000, height: 800)
         let stored = UserDefaults.standard.double(forKey: "desktopTreeScale")
         let scale = [0.82, 1.0, 1.14].contains(stored) ? stored : 1.0
+        let frame = Self.centeredTreeFrame(in: available, scale: scale)
+        panel.setFrame(frame, display: true)
+        return frame.origin
+    }
+
+    static func centeredTreeFrame(in available: NSRect, scale: Double) -> NSRect {
         let height = min(920 * scale, available.height * 0.94)
         let width = min(880 * scale, available.width * 0.94, height * 1.04)
-        let preferred = saved ?? NSPoint(x: available.midX-width/2, y: available.minY+12)
-        let origin = NSPoint(x: min(max(preferred.x, available.minX), available.maxX-width),
-                             y: min(max(preferred.y, available.minY), available.maxY-height))
-        placingTree = true
-        panel.setFrame(NSRect(origin: origin, size: NSSize(width: width, height: height)), display: true)
-        placingTree = false
-        return origin
+        return NSRect(x: available.midX - width / 2, y: available.midY - height / 2,
+                      width: width, height: height)
     }
 
     func beginTreeLayout() {
         guard panel?.dragInProgress != true else { return }
-        if !isVisible { show() }
+        let opening = !isVisible
+        if opening { show() }
         preview.closeImmediately()
         panel?.makeKey()
         treeEntrance.cancel()
+        // Layout opened from the menu must settle at the centered destination,
+        // not at the first (lowered) frame of the entrance animation.
+        if opening, let panel { _ = placeTree(panel) }
         panel?.treeOpacity = 1
         presentation.treeLayoutEditing = true
         panel?.layoutEditing = true
@@ -270,11 +273,6 @@ final class PanelController: NSObject, NSWindowDelegate {
         guard layoutEditing, [0.82, 1.0, 1.14].contains(size), let panel else { return }
         UserDefaults.standard.set(size, forKey: "desktopTreeScale")
         _ = placeTree(panel)
-    }
-
-    func windowDidMove(_ notification: Notification) {
-        guard layoutEditing, !placingTree, let panel, panel.isVisible else { return }
-        UserDefaults.standard.set(NSStringFromPoint(panel.frame.origin), forKey: "desktopTreeOrigin")
     }
 
     // MARK: - 键盘（面板内快捷键）
@@ -341,7 +339,6 @@ final class PanelController: NSObject, NSWindowDelegate {
         if layoutEditing {
             if key == 53 { endTreeLayout(); return nil }
             if key == 15 && mods == [.command] {
-                UserDefaults.standard.removeObject(forKey: "desktopTreeOrigin")
                 UserDefaults.standard.removeObject(forKey: "desktopTreeScale")
                 if let panel { _ = placeTree(panel) }
                 Self.post(.phResetTree)

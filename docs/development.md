@@ -85,7 +85,7 @@ PasteHistory.app/Contents/MacOS/PasteHistory --show
 | 图片原图缺失 | 先确认 iCloud 文件已经到达，再使用 `--restore-images` |
 | 面板关闭后立刻重开又消失 | 检查窗口代际号与延迟焦点恢复，参见 [维护记忆](../MEMORY.md) |
 
-`anchor_trace.log` 默认写入，超过 200,000 字节后整体重写。旧版本的列表定位日志已停用，树的位置由布局设置决定。`preview-pinch` 记录手势阶段、倍率与窗口信息，不记录剪贴板正文。
+`anchor_trace.log` 默认写入，超过 200,000 字节后整体重写。旧版本的列表定位日志已停用，整棵树每次打开在鼠标所在屏幕居中，旧布局位置不再生效。`preview-pinch` 记录手势阶段、倍率与窗口信息，不记录剪贴板正文。
 
 `--print-ax` 写出同目录下的 `ax_status.txt`，内容为 `trusted` 或 `not-trusted`。
 
