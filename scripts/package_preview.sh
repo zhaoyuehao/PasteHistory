@@ -10,7 +10,8 @@ IDENTITIES=$(security find-identity -v -p codesigning)
 ./scripts/build_app.sh
 APP=PasteHistory.app
 codesign --verify --deep --strict "$APP"
-codesign -dvv "$APP" 2>&1 | grep -q '^Authority=Apple Development:' || { print -u2 'Unexpected signing identity.'; exit 1; }
+SIGNATURE=$(codesign -dvv "$APP" 2>&1)
+[[ "$SIGNATURE" == *'Authority=Apple Development:'* ]] || { print -u2 'Unexpected signing identity.'; exit 1; }
 [[ "$(lipo -archs "$APP/Contents/MacOS/PasteHistory")" == arm64 ]] || { print -u2 'Expected arm64 binary.'; exit 1; }
 [[ -f "$APP/Contents/Resources/PasteHistory_PasteHistory.bundle/ivory_tree.scn" ]] || { print -u2 'Missing bundled tree.'; exit 1; }
 OUT="dist/release/$VERSION"
