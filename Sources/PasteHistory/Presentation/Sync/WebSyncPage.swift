@@ -361,10 +361,16 @@ const canClipboard = !!(navigator.clipboard && navigator.clipboard.readText && n
 
 // ---- 配对码：URL fragment 优先，其次 localStorage ----
 async function initPair() {
-  const m = location.hash.match(/pair=(\d{6})/);
-  if (m) { localStorage.setItem('phPair', m[1]); history.replaceState(null,'','/'); }
-  let code = localStorage.getItem('phPair');
-  if (!code) { showLock(); return false; }
+  const params = new URLSearchParams(location.hash.slice(1));
+  if (params.has('pair')) {
+    localStorage.setItem('phPair', params.get('pair'));
+    history.replaceState(null,'','/');
+  }
+  const code = localStorage.getItem('phPair');
+  if (!code || !/^[!-~]{16}$/.test(code)) {
+    localStorage.removeItem('phPair');
+    showLock(); return false;
+  }
   return await unlock(code);
 }
 async function unlock(code) {

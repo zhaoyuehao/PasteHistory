@@ -6,7 +6,7 @@ Phone HTTP sync and Mac-to-Mac iCloud sync are independent. System Universal Cli
 
 ## Phone access
 
-Click the permanent **Phone Sync** tree card and scan its QR code on a reachable local network. Keep the Mac awake and PasteHistory running. The URL is `http://<Mac-IP>:8377/#pair=<six-digit-code>`; the page reads the fragment or `localStorage.phPair`, with no manual code-entry form. Refreshing the QR code rotates the code, token and key; reopening the card does not.
+Click the permanent **Phone Sync** tree card and scan its QR code on a reachable local network. Keep the Mac awake and PasteHistory running. The URL is `http://<Mac-IP>:8377/#pair=<percent-encoded-code>`; the page decodes the fragment with `URLSearchParams` or reads `localStorage.phPair`, with no manual code-entry form. Refreshing the QR code rotates the code, token and key; reopening the card does not. Startup automatically replaces legacy six-digit or invalid saved codes; phones must rescan once after this upgrade.
 
 The HTTP page uses a paste box to upload text. It can copy downloaded text/file paths and save images, but cannot transfer arbitrary Mac files. It searches at most 300 downloaded records. Clipboard/WebCrypto APIs may be unavailable on phone HTTP origins: preserve the paste-box, copy and pure-JS crypto fallbacks. A home-screen shortcut does not provide offline Service Worker support; localhost behavior is not evidence of phone capability.
 
@@ -14,7 +14,7 @@ The HTTP page uses a paste box to upload text. It can copy downloaded text/file 
 
 AES-256-GCM protects content payloads and image responses, **not the HTTP transport**. Record IDs, kinds, timestamps, pin state and image names are plaintext, as are `/api/info`, the page/scripts and authentication header. Local SQLite, originals and iCloud files have no application-level encryption; the browser stores the pairing code in localStorage.
 
-A six-digit code has only one million possibilities. The HTTP token allows offline enumeration, and HTTP does not protect page integrity. Online rate limiting does not address either issue. Use trusted local networks; do not describe this as encrypted storage or HTTPS-equivalent protection.
+Pairing codes use the OS cryptographic random generator: 16 characters sampled uniformly from 94 printable non-space ASCII characters, rejecting samples without uppercase, lowercase, digits or symbols. This provides about 104 bits of entropy against online and offline guessing. The existing online rate limit remains in place. HTTP still exposes the authentication token to capture/replay and does not protect page integrity. Use trusted local networks; do not describe this as encrypted storage or HTTPS-equivalent protection.
 
 ## Wire format
 
@@ -22,7 +22,7 @@ Sources: [WebSyncServer.swift](../Sources/PasteHistory/Infrastructure/Sync/WebSy
 
 | Field | Contract |
 | --- | --- |
-| Pair code | Six decimal digits, including leading zeros |
+| Pair code | 16 printable non-space ASCII characters; includes uppercase, lowercase, a digit and a symbol; percent-encoded in the URL fragment |
 | `X-Pair-Token` | Lowercase hex SHA-256 of the UTF-8 code |
 | Payload key | HKDF-SHA256 of the UTF-8 code, 32 bytes |
 | HKDF salt / info | UTF-8 `PasteHistory-Pairing-v1` / `clip-payload` |
@@ -65,7 +65,16 @@ Local 200 responses do not prove phone access, valid pairing or successful inges
 
 ## Crypto checks
 
-Required after encryption changes. There is no standalone Node crypto test script in this repository: extract the actual fallback from WebSyncPage rather than reimplementing the algorithm for the test.
+Required after encryption changes. The pairing check uses isolated preferences and synthetic fixtures, extracts the actual page parser and pure-JS fallback, and compares them with Swift CryptoKit and Node crypto:
+
+```sh
+mkdir -p .build
+swiftc Sources/PasteHistory/Infrastructure/Sync/WebSyncPairing.swift scripts/test_websync_pairing.swift -o .build/test-websync-pairing
+.build/test-websync-pairing > .build/pairing-fixtures.json
+node scripts/test_websync_pairing.mjs .build/pairing-fixtures.json
+```
+
+It covers generation, persistence, legacy migration, every printable symbol in a pairing URL, token/key agreement, payload interoperability and tampered tags. For broader encryption changes also check:
 
 - Compare SHA-256, HMAC and HKDF with Node `crypto.createHash`, `createHmac` and `hkdfSync`; include leading-zero codes and Unicode.
 - Check AES against FIPS-197 vectors and GCM against NIST vectors, then encrypt/decrypt both ways with Node AES-256-GCM.
