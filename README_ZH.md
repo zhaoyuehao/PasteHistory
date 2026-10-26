@@ -1,5 +1,7 @@
 # PasteHistory
 
+[体验网页许愿树](https://zhaoyuehao.github.io/PasteHistory/) · [下载 macOS 预览版](https://github.com/zhaoyuehao/PasteHistory/releases)
+
 [English](README.md)
 
 macOS 菜单栏剪贴板历史工具。按 **⇧⌘V** 在桌面许愿树中搜索文本、图片和文件路径，再按回车粘贴到原应用。支持本地 OCR、Mac 间 iCloud 同步和局域网手机访问。
