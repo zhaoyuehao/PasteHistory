@@ -1,50 +1,48 @@
-# MEMORY.md（PasteHistory 长期记忆）
+# 维护记忆
 
-## 项目是什么
+这里记录已定决策、问题成因和避免回归的理由。当前操作步骤集中在[开发与排障](docs/development.md)，协议与加密自测集中在[同步](docs/sync.md)，协作约束见 [AGENTS.md](AGENTS.md)。
 
-macOS 菜单栏常驻的剪贴板历史：⌘C 自动记录 → ⇧⌘C 唤起面板 → 搜索 → 双击/回车把内容贴回原输入框。
-SQLite 持久化 + iCloud Drive 多设备同步 + 局域网 PWA 让手机加入同一个剪贴板。
+## 已定决策
 
-## 已定的架构决策（不要再改回）
+| 决策 | 原因与维护边界 |
+| --- | --- |
+| SwiftPM + 脚本打包 `.app` | 便于 CLI 构建及启动参数维护；继续保持一个 executable target |
+| SQLite3 C API + 原图文件 | 数据库负责查询和持久化，原图不堆在内存；缩略图可存 DB |
+| iCloud 一记录一文件 + 墓碑 + 定期对账 | 支持逐条导入与图片恢复；确定性文件名不等于任意并发更新都无冲突 |
+| 手机直接访问 Mac 内置 HTTP 服务 | 不引入独立云服务；局域网页面使用粘贴框与纯 JS 加密回退 |
+| 内容加密协议两端一致 | token、HKDF 和 AES-GCM 参数是互通合同，修改后必须交叉验证；不覆盖本地和 iCloud 存储 |
+| 业务状态与界面动效分层 | ViewModel 发布状态和时序，由 Presentation 应用阻尼，避免视觉改动影响数据层 |
+| 树预览整张纸面缩放 | 保持纸面、文字与图片比例；与列表的内容缩放不同，同次预览换记录保留纸面倍率 |
+| 接力按远端标记标注来源 | 仅记录到达 Mac 的内容；保密 / 瞬态标记不记录，不承诺覆盖手机的所有复制事件 |
 
-- **不用 Xcode 工程**：SwiftPM + `scripts/build_app.sh` 手工打 .app，便于脚本化与 CLI 维护参数。
-- **持久化用 SQLite3 C API** 而非 Core Data：图片原图落盘在 `Application Support/PasteHistory/images/`，DB 只存文件名，避免内存里堆图。
-- **iCloud 同步一记录一文件**（`clips/<uuid>.json`）+ `tombstones/` 墓碑 + 60s 对账：冲突少、可部分恢复；`--restore-images` 能从远端补回本地丢的原图。
-- **跨设备不做服务端**：局域网 HTTP + 配对码派生的端到端加密（AES-256-GCM），手机浏览器直接用，不用装 App、不用开发者账号。
-- **跨设备密钥派生**：`token = SHA256(配对码)hex`；`key = HKDF-SHA256(配对码, salt="PasteHistory-Pairing-v1", info="clip-payload", 32B)`；`payload = base64(nonce12 + ct + tag16)`。改任何一端都要同步改另一端。
-- **接力来源标注**：识别 `com.apple.is-remote-clipboard` 打「接力 · iPhone/iPad」标记；`ConcealedType`/`TransientType`（密码框、1Password 等）**不记录**。
+## 回归经验
 
-## 非 Secure Context 的三条硬限制（手机端 HTTP 局域网地址）
+### 签名、焦点与窗口
 
-1. **`crypto.subtle` 不存在** → 页面内嵌纯 JS SHA-256/HMAC/HKDF/AES-256-GCM 回退（与 Mac 端同参数）。
-2. **`navigator.clipboard` 不存在** → 写走 `document.execCommand('copy')`；**读无任何 API 可用**，改为「粘贴框」交互（长按粘贴 → 加密上传）。
-3. **Service Worker 无法注册** → 不存在离线 PWA；只能靠 `apple-mobile-web-app-capable` 做主屏全屏体验。
+- **重建后辅助功能权限反复弹窗**：ad-hoc 签名缺少稳定身份。日常构建使用 Apple Development，先检查签名，再清理系统设置里的重复应用条目。
+- **应用激活行为**：项目在 macOS 14 上遇到过 `activate(ignoringOtherApps:)` 不符合预期的情况，改用 `NSApp.activate()`；粘贴还要恢复目标应用和 AX 焦点，不能只激活本应用。
+- **面板第二次打开立即消失**：关闭过程延迟执行的 `previousApp.activate()` 可能顶掉刚打开的面板。保留 `showGeneration` 作废过期回调；失焦回调检查可见状态，防止重复收起。
+- **二维码区域空白**：NSBox 关闭 autoresizing 后若未补约束，尺寸可能塌成 0。显式约束或保留正确的自动布局行为。
+- **非 key 预览不能靠视图识别器接手势**：真实日志证明窗口能收到 magnify，但识别器需点击取得 key 后才开始。使用严格限定窗口及坐标的 local monitor，保持搜索框焦点；不要扩大到全局监听。
+- **重开 / 连按的过期动画**：开合、跟随、缩放回弹都需可打断并清理过期收尾，避免关闭新窗口或留下交互窗口。系统「减少动态效果」走专门降级路径。
 
-想恢复手机端原生体验（自动读剪贴板、可离线）**唯一办法是 HTTPS**（自有域名证书指向局域网 IP，或手机信任自签证书）。
+### 数据与并发
 
-## 反复踩过的坑
+- **菜单打开时手机服务假死**：菜单跟踪的 nested runloop 或弹窗阻塞主线程。网络路由与解密留在独立队列，读用独立 SQLite 连接，写入异步派发主队列。
+- **上传 200 却没有记录**：HTTP 响应在实际入库之前发出；有效性与落库结果需再次查询确认。
+- **队列重入死锁**：SQLite 串行队列内再同步派发自身会死锁。内部复用不 dispatch 的查询方法。
+- **顶层字符串 JSON 崩溃**：不要使用 `NSJSONSerialization` 直接序列化 String，使用 `JSONEncoder`。
+- **移动目录后编译失败**：PCH / 模块缓存包含旧绝对路径，删除 `.build` 后重新构建。
 
-- **TCC 权限按签名身份匹配**：ad-hoc 签名每次重建都失效 → 必须 Apple Development 证书签名。已授权仍弹窗时，去系统设置里删掉多余的 PasteHistory 条目再重勾。
-- **macOS 14 `activate(ignoringOtherApps:)` 失效** → 统一用 `NSApp.activate()`。
-- **面板二次打不开**：`hide()` 里 0.05s 延迟的 `previousApp.activate()` 会把刚打开的面板顶掉 → `showGeneration` 代数计数器作废过期激活；`windowDidResignKey` 要判 `isVisible` 防重入。
-- **NSBox 关掉 autoresizing 又不加约束** → 尺寸塌成 0（二维码空白就是这么来的），要么显式加约束，要么别关。
-- **菜单跟踪 runloop 阻塞 MainActor** → HTTP 服务必须独立队列 + 独立 SQLite 读连接。
-- **GHASH 输入必须先 pad 密文到 16 倍数再接长度块**：NIST 的 16 字节整块向量测不出来，非整倍数（30B）才暴露。
-- **`String.fromCharCode(...大数组)` 有参数上限** → 长文本同步要 8KB 分块转 base64。
-- **移动项目目录后模块缓存报错** → `rm -rf .build` 重建。
+### 手机网页与加密
 
-## 加密自测方法（改加密代码后必做）
+- **HTTP 不具备 localhost 的 API 能力**：手机 HTTP 地址上的 `crypto.subtle` / Clipboard API 可能不可用，必须保留回退。粘贴框是正常路径，不能误写为自动读剪贴板；主屏入口不等于离线 PWA。
+- **GCM 整块向量通过、真实内容失败**：GHASH 要先把密文 pad 到 16 字节倍数，再接长度块。加入 30 字节非整块交叉验证，不能只测整块向量。
+- **长文本 Base64 失败**：一次展开大数组给 `String.fromCharCode` 会触及参数上限；实现采用分块转换，测试必须覆盖大载荷。
+- **六位码的限制**：在线 401 限速不能防离线枚举，明文 HTTP 也无法保护页面完整性。准确表述[加密边界](docs/sync.md#加密范围)，不承诺抓包不可破解或全盘加密。
 
-把页面里的纯 JS 回退实现抽出来，用 node 内置 `crypto` 交叉验证：
+## 已知使用边界
 
-- SHA-256 / HMAC / HKDF 对齐 `crypto.createHash` / `createHmac` / `hkdfSync`
-- AES：FIPS-197 已知向量；GCM：NIST 向量 + 与 `createCipheriv('aes-256-gcm')` 互加互解 + 篡改 tag 必须失败
-- 端到端：拿 `defaults read com.verdent.pastehistory webSyncPairCode` 的配对码，`GET /api/clips` 全量解密 + `POST /api/clips` 加密回传，验证 200
+手机连接依赖 Mac 持续运行、可互访网络、防火墙和本地网络权限。网页只获取最多 300 条记录，文本上传、复制文件路径和保存图片各有独立交互，不能把服务端支持的类型当作网页能力。
 
-## 仍存在的已知限制
-
-- iOS「本地网络」权限弹窗若被拒 → 手机连不上；Wi-Fi 开设备隔离（AP isolation）时同样连不上。
-- macOS 防火墙首次入站连接需允许 PasteHistory。
-- 配对码 6 位（100 万组合），已有 401 限速（60s/10 次 → 429）兜底。
-- `/api/clips` 一次返回最多 300 条（含缩略图 base64），手机端靠 `decCache` 避免重复解密。
-- 元数据（id / kind / 时间戳 / 图片名）是明文传输，只有内容密文。
+树 / 列表共用数据与选择，但预览缩放、空格键和双击语义不同，以[用户指南](README.md)和[许愿树文档](docs/ivory-tree/README.md)为准。真实触控板、外部应用粘贴和跨进程拖放仍需实机验收。
