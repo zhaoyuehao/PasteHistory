@@ -36,9 +36,18 @@ Application state publishes results and input timing, not animations. Presentati
 
 ## Validation
 
+Use change-appropriate builds and static checks by default. Run interaction/UI regression tests only when explicitly requested by the user; this includes the full suite, focused variants, interactive runs and drag tests. Structural or UI changes alone do not trigger regression runs.
+
+After structural changes:
+
+```sh
+python3 scripts/check_architecture.py
+```
+
+When the user requests the full interaction regression suite:
+
 ```sh
 mkdir -p .build
-python3 scripts/check_architecture.py
 ./scripts/test_tree_ui.sh
 ```
 
@@ -47,13 +56,13 @@ Native tests require a logged-in macOS graphical session. UI tests use synthetic
 | Change | Additional validation |
 | --- | --- |
 | Documentation | Relative links, paths, command syntax and `git diff --check` |
-| UI, input or motion | `./scripts/test_tree_ui.sh --interactive` when visual inspection is needed |
-| Cross-app drag | `./scripts/test_drag_ui.sh`, optionally `--drag-image` or `--drag-files` |
-| Model | [Geometry check](tree.md#geometry-check), then UI tests and app packaging |
+| UI, input or motion | Build and static checks; `./scripts/test_tree_ui.sh --interactive` only when explicitly requested |
+| Cross-app drag | Build and static checks; `./scripts/test_drag_ui.sh` (optionally `--drag-image` or `--drag-files`) only when explicitly requested |
+| Model | [Geometry check](tree.md#geometry-check) and app packaging; UI regression only when explicitly requested |
 | Phone encryption | [Crypto checks](sync.md#crypto-checks) against both implementations |
 | Packaging/resources | `./scripts/build_app.sh`, signature inspection and launch |
 
-UI tests verify paste callback routing, not actual paste into another app. Physical trackpad gestures, cross-process dragging and target-app pasting need real-device validation. Do not add assertions for incidental wording or implementation fields.
+UI tests verify paste callback routing, not actual paste into another app. When requested, physical trackpad gestures, cross-process dragging and target-app pasting need real-device validation. Do not add assertions for incidental wording or implementation fields.
 
 ## Startup and maintenance
 

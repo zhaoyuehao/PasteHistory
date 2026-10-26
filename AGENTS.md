@@ -31,7 +31,7 @@ PasteHistory is a macOS menu bar app built as one SwiftPM executable and package
 
 Use `./scripts/build_app.sh` and `open PasteHistory.app`. **Regular builds must use Apple Development signing**; the script's self-signed/ad-hoc fallback does not meet the TCC stability requirement. Delete `.build` after a checkout move if cached module paths fail.
 
-After structural changes, run `python3 scripts/check_architecture.py` and `./scripts/test_tree_ui.sh` (create `.build` first). UI tests require a graphical desktop. Use [change-specific checks](docs/development.md#validation); avoid low-signal assertions for wording, formatting or incidental fields. Actual trackpad input, cross-app paste and native dragging still need physical validation.
+After structural changes, run `python3 scripts/check_architecture.py`. **Run interaction/UI regression tests only when the user explicitly requests them**, including `./scripts/test_tree_ui.sh`, its interactive or focused variants, and drag regression scripts. Do not run them automatically after changes, including structural or UI changes. Otherwise use change-appropriate builds and static checks from [validation](docs/development.md#validation); avoid low-signal assertions for wording, formatting or incidental fields. Requested UI tests require a graphical desktop (create `.build` first). Actual trackpad input, cross-app paste and native dragging still need physical validation when requested.
 
 ## Implementation constraints
 
