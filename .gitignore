@@ -14,3 +14,7 @@ codesign/*.csr
 # macOS
 .DS_Store
 *.swp
+
+# Web demo
+website/node_modules/
+website/.test-output/
