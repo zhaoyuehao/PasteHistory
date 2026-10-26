@@ -52,7 +52,7 @@ final class PaperFaceLayers {
             compact.anchorPoint = CGPoint(x: 0.5, y: 1-IvoryPaperStyle.pinInset/image.size.height)
             compact.position = CGPoint(x: size.width/2, y: size.height-pose.inset)
             compact.setAffineTransform(CGAffineTransform(scaleX: fit, y: fit))
-            compact.opacity = Float(1-blend)
+            compact.opacity = Float(liveReading ? Self.compactOpacity(expansion) : 1)
             compactMask.path = CGPath(rect: NSRect(x: 2, y: 2, width: max(0,image.size.width-4),
                 height: max(0,image.size.height-12)), transform: nil)
         }
@@ -74,10 +74,19 @@ final class PaperFaceLayers {
             .max(by: { $0.pixelsWide < $1.pixelsWide }) { return bitmap.cgImage }
         return image.cgImage(forProposedRect: nil, context: nil, hints: nil)
     }
+    /// Paper chrome stays continuous independently of the text transition.
     static func blend(_ t: CGFloat) -> CGFloat {
-        // Keep the compact face during the initial travel, then reveal the live
-        // document through the remaining expansion instead of finishing at 85%.
-        let u = min(1, max(0, (t-Motion.paperContentRevealStart)/(1-Motion.paperContentRevealStart)))
+        smoothstep((t-Motion.paperChromeRevealStart)/(1-Motion.paperChromeRevealStart))
+    }
+    static func compactOpacity(_ expansion: CGFloat) -> CGFloat {
+        1-smoothstep(expansion/Motion.paperCompactFadeEnd)
+    }
+    static func readingOpacity(_ expansion: CGFloat) -> CGFloat {
+        smoothstep((expansion-Motion.paperReadingRevealStart)
+            / (Motion.paperReadingRevealEnd-Motion.paperReadingRevealStart))
+    }
+    private static func smoothstep(_ value: CGFloat) -> CGFloat {
+        let u = min(1, max(0, value))
         return u*u*(3-2*u)
     }
 }

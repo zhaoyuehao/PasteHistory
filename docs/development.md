@@ -69,9 +69,11 @@ pose while the preview owns the visible window geometry. Selecting another recor
 transfers the live document and motion state to that card's existing window.
 Reading input becomes eligible before final settling once expansion, remaining
 position/size error and speed are sufficiently small; eligibility never activates
-the window. Closing revokes it immediately. The content dissolve spans 25–100%
-of expansion so the reading face continues appearing as the paper approaches its
-final size, rather than finishing at 85%.
+the window. Closing revokes it immediately. Compact text fades out over 0–35%
+of expansion; the live reading document fades in over 75–98%. The two layouts
+never overlap, reducing double-image text during scaling. Between them the opaque
+paper shell continues moving without exchanging windows. The same phase mapping
+runs backward on collapse and remains continuous when interrupted.
 
 The numeric check needs no desktop:
 

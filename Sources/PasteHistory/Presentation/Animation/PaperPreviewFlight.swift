@@ -122,7 +122,7 @@ final class PaperFlightView: NSView {
                 y: logical.height - IvoryPaperStyle.pinInset), to: self)
             surface.setFrameOrigin(NSPoint(x: surface.frame.origin.x + pose.pin.x - canvas.minX - pin.x,
                 y: surface.frame.origin.y + pose.pin.y - canvas.minY - pin.y))
-            surface.alphaValue = PaperFaceLayers.blend(expansion)
+            surface.alphaValue = PaperFaceLayers.readingOpacity(expansion)
         }
         CATransaction.commit()
     }
