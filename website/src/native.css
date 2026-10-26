@@ -847,17 +847,30 @@ kbd {
 }
 
 /* Notes is a permanent destination with instructions beside the native tree. */
-.notes-rail {
-  max-height: calc(100% - 136px);
+/* Persistent application windows; all navigation lives in the menu bar. */
+.native-desktop #desktop-main {
+  top: 0;
+  bottom: 152px;
+}
+.native-desktop {
+  min-height: 700px;
+}
+.notes-rail,
+.samples-rail {
+  position: absolute;
+  z-index: 4;
+  max-height: calc(100% - 88px);
   overflow-y: auto;
   scrollbar-width: thin;
-  position: absolute;
-  right: 20px;
-  z-index: 4;
-  display: grid;
-  gap: 20px;
 }
-.native-desktop .notes-rail .notes-window {
+.notes-rail {
+  right: 18px;
+}
+.samples-rail {
+  left: 18px;
+}
+.native-desktop .notes-rail .notes-window,
+.native-desktop .samples-rail .browser-window {
   position: relative;
   inset: auto !important;
   width: 100%;
@@ -866,83 +879,76 @@ kbd {
   transform: none;
   pointer-events: auto;
 }
-.notes-rail .titlebar {
+.notes-rail .titlebar,
+.samples-rail .titlebar {
   cursor: default;
 }
-.notes-rail .traffic span {
+.traffic span {
   width: 10px;
   height: 10px;
   border-radius: 50%;
   display: block;
 }
-.notes-rail .traffic .red {
+.traffic .red {
   background: #ff6058;
 }
-.notes-rail .traffic .yellow {
+.traffic .yellow {
   background: #ffbd2e;
 }
-.notes-rail .traffic .green {
+.traffic .green {
   background: #28c840;
 }
-.notes-rail .notes-body {
+.notes-rail .notes-body,
+.samples-rail .browser-body {
   padding: 18px;
 }
 .notes-rail .notes-date {
   display: none;
 }
-.notes-rail .notes-body h2 {
-  font-size: 20px;
-  margin: 0 0 10px;
-}
-.note-drop-hint {
-  color: #7b776b;
-  font-size: 11px;
-  line-height: 1.7;
-  margin: 0 0 18px;
+.notes-rail .notes-body h2,
+.samples-rail .browser-body h2 {
+  font-size: 19px;
+  line-height: 1.35;
+  margin: 0 0 16px;
 }
 .notes-rail #note-editor {
-  min-height: 210px;
-  max-height: 340px;
+  min-height: 180px;
+  max-height: 280px;
   outline-offset: 4px;
 }
 .notes-rail .note-image {
   display: block;
   max-width: 100%;
   height: auto;
-  min-height: 60px;
   object-fit: contain;
   border-radius: 4px;
   margin: 6px 0;
 }
 .notes-rail .drop-ready {
   outline: 2px solid #007aff;
-  outline-offset: 4px;
+  outline-offset: -2px;
 }
 .shortcut-guide {
-  padding: 0 10px;
-  color: #303d46;
-  text-shadow: 0 1px 3px #fff9;
-}
-.shortcut-guide h2 {
-  font-size: 13px;
-  font-weight: 600;
-  margin: 0 0 7px;
+  margin-top: 18px;
+  padding-top: 15px;
+  border-top: 1px solid #e9e7df;
+  color: #6b695f;
 }
 .shortcut-guide p {
   font-size: 11px;
-  line-height: 1.7;
-  margin: 0 0 13px;
+  line-height: 1.6;
+  margin: 0 0 12px;
 }
 .shortcut-guide dl {
   margin: 0 0 12px;
   display: grid;
-  gap: 9px;
+  gap: 8px;
 }
 .shortcut-guide dl > div {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
 }
 .shortcut-guide dt {
   font:
@@ -954,56 +960,139 @@ kbd {
 .shortcut-guide dd {
   font-size: 11px;
   margin: 0;
+  text-align: right;
 }
 .shortcut-guide small {
   font-size: 10px;
   line-height: 1.8;
-  opacity: 0.8;
 }
-.sample-language {
+.samples-rail #sample-content {
+  height: 180px;
+  min-height: 180px;
+}
+.samples-rail #sample-text {
+  min-height: 160px;
+  height: 180px;
+  font-size: 14px;
+}
+.samples-rail #sample-content img {
+  max-height: 210px;
+  object-fit: contain;
+}
+.samples-rail .sample-tabs {
+  margin-bottom: 16px;
+}
+.samples-rail .collect-button {
+  margin-bottom: 12px;
+}
+.samples-rail .browser-body > small {
+  font-size: 10px;
+  line-height: 1.65;
+}
+.language-control {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  font-size: 11px;
-  color: #626b71;
-  margin: -4px 0 12px;
+  gap: 4px;
 }
-.sample-language select {
+.language-control select {
+  max-width: 170px;
+  border: 0;
+  padding: 2px;
+  background: transparent;
+  color: inherit;
   font: inherit;
-  color: #343b40;
-  border: 1px solid #d5d9dc;
-  border-radius: 5px;
-  background: #fff;
-  padding: 4px 6px;
-  max-width: 145px;
 }
-@media (max-width: 899px) {
-  .native-desktop {
-    height: max(1500px, 100svh);
+.native-desktop #reset {
+  margin-left: 0;
+}
+.native-desktop #action-menu {
+  position: absolute;
+  top: 34px;
+  left: 140px;
+  bottom: auto;
+  max-height: calc(100svh - 50px);
+  overflow-y: auto;
+}
+#reopen-tree {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 12px;
+  width: min(330px, calc(100vw - 32px));
+  padding: 22px 14px;
+  color: #36424b;
+  border: 1px solid #ffffff75;
+  border-radius: 16px;
+  background: #f6f8fa99;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 8px 30px #3646570d;
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, calc(-50% + 18px));
+  transition:
+    transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 0.2s,
+    visibility 0.3s;
+  pointer-events: none;
+}
+#reopen-tree.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+}
+#reopen-tree span {
+  font-size: 16px;
+  font-weight: 500;
+}
+#reopen-tree kbd {
+  font:
+    500 25px -apple-system,
+    sans-serif;
+  letter-spacing: 5px;
+}
+#reopen-tree small {
+  font-size: 11px;
+  line-height: 1.5;
+}
+@media (min-width: 760px) and (max-height: 850px) {
+  .notes-rail #note-editor {
+    min-height: 90px;
+    max-height: 135px;
   }
-  .notes-rail {
-    max-height: none;
-    overflow: visible;
-    right: 16px;
-    gap: 18px;
+  .notes-rail .notes-body,
+  .samples-rail .browser-body {
+    padding: 14px;
   }
-  .native-desktop .notes-rail #notes {
-    top: auto !important;
-    left: auto !important;
-    width: 100%;
-  }
-  .native-desktop .notes-rail #note-editor {
-    min-height: 170px;
-    max-height: 260px;
+  .shortcut-guide {
+    margin-top: 14px;
+    padding-top: 12px;
   }
   .shortcut-guide dl {
-    grid-template-columns: 1fr 1fr;
-    column-gap: 30px;
+    gap: 6px;
+  }
+}
+@media (max-width: 759px) {
+  .notes-rail,
+  .samples-rail {
+    right: 16px;
+    left: 16px;
+    max-height: none;
+    overflow: visible;
+  }
+  .native-desktop .notes-rail #notes,
+  .native-desktop .samples-rail #browser {
+    visibility: visible;
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+    width: 100%;
   }
   .native-desktop:not([data-mobile-view="tree"]) #tree-area {
     visibility: visible;
-    opacity: 1;
   }
   .native-desktop:not([data-mobile-view="tree"]) .root-links {
     visibility: visible;
@@ -1012,19 +1101,105 @@ kbd {
     opacity: 1;
     pointer-events: auto;
   }
-  .native-desktop .notes-rail #notes {
-    visibility: visible;
-    opacity: 1;
-    pointer-events: auto;
-    transform: none;
+  .native-desktop .menubar {
+    gap: 8px;
+    padding: 0 10px;
+  }
+  .native-desktop .system-status {
+    display: none;
+  }
+  .language-control select {
+    max-width: 130px;
+  }
+  .native-desktop #action-menu {
+    left: 12px;
+    right: 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #reopen-tree,
+  #reopen-tree.visible {
+    transform: translate(-50%, -50%);
+    transition: opacity 0.15s;
   }
 }
 
-@media (min-width: 900px) and (max-height: 850px) {
-  .notes-rail { gap: 14px; }
-  .notes-rail #note-editor { min-height: 100px; max-height: 140px; }
-  .notes-rail .notes-body { padding: 14px 18px; }
-  .note-drop-hint { margin-bottom: 12px; }
-  .shortcut-guide dl { gap: 6px; }
-  .shortcut-guide p { margin-bottom: 8px; }
+/* Notes use ink-black text; controls remain visibly actionable. */
+.notes-rail #note-editor,
+.notes-rail #note-editor:empty::before,
+.notes-rail .notes-body h2,
+.notes-rail .shortcut-guide,
+.notes-rail .notes-window footer {
+  color: #000;
+}
+.notes-rail #note-editor {
+  caret-color: #000;
+}
+.native-desktop .menubar > button:not(.brand) {
+  padding: 3px 9px;
+  border: 1px solid #ffffff70;
+  border-radius: 5px;
+  background: #ffffff55;
+}
+.native-desktop .menubar > button:not(.brand):hover {
+  background: #ffffffa6;
+}
+.language-control select {
+  padding: 3px 5px;
+  border: 1px solid #ffffff70;
+  border-radius: 5px;
+  background: #ffffff55;
+}
+#clear-note {
+  width: 26px;
+  height: 26px;
+  padding: 5px;
+  border: 1px solid #d7d9dc;
+  border-radius: 5px;
+  background: #fff;
+  color: #222;
+}
+#clear-note:hover {
+  background: #e8edf3;
+}
+.samples-rail .sample-tabs button {
+  flex: 1;
+  padding: 6px 8px;
+  color: #161616;
+}
+.samples-rail .sample-tabs [aria-selected="true"] {
+  background: #fff;
+  border: 1px solid #d9dde2;
+}
+.samples-rail .sample-tabs button:hover {
+  background: #ffffffb3;
+}
+.samples-rail .collect-button {
+  background: #007aff;
+  border: 1px solid #0068da;
+  box-shadow: inset 0 1px #ffffff38;
+}
+.samples-rail .collect-button:hover {
+  background: #006be0;
+}
+@media (min-width: 760px) and (max-width: 1049px) {
+  .notes-rail .notes-body,
+  .samples-rail .browser-body {
+    padding: 12px;
+  }
+  .notes-rail .notes-body h2,
+  .samples-rail .browser-body h2 {
+    font-size: 16px;
+  }
+  .shortcut-guide dl > div {
+    gap: 7px;
+  }
+  .notes-rail .titlebar,
+  .samples-rail .titlebar {
+    gap: 7px;
+    padding: 0 10px;
+  }
+  .samples-rail .titlebar > span {
+    font-size: 10px;
+  }
 }

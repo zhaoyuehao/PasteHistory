@@ -1,3 +1,4 @@
+import { t, locale } from "./i18n";
 import { PerspectiveCamera, Vector3 } from "three";
 import reference from "../public/native-tree.json";
 import { NATIVE as N, PHONE_ID, clamp, dateLabel, type Pose } from "./native";
@@ -52,7 +53,7 @@ export class TreeStage {
   onLayout: () => void = () => {};
   constructor(private host: HTMLElement) {
     this.image.src = `${import.meta.env.BASE_URL}tree-native.png`;
-    this.image.alt = "原生 SceneKit 许愿树与五只小鸟";
+    this.image.alt = t("原生 SceneKit 许愿树与五只小鸟");
     this.image.className = "native-sculpture";
     this.image.onerror = () => {
       this.image.src = `${import.meta.env.BASE_URL}tree-fallback.png`;
@@ -151,6 +152,7 @@ export class TreeStage {
   ) {
     if (this.selected !== selected && this.reduced.matches)
       this.selectionFade = 0;
+    this.image.alt = t("原生 SceneKit 许愿树与五只小鸟");
     this.selected = selected;
     this.visible = visible;
     if (!preview) this.hiddenPaper = null;
@@ -160,7 +162,7 @@ export class TreeStage {
     const phone: Clip = {
       id: PHONE_ID,
       kind: "text",
-      text: "手机同步",
+      text: t("手机同步"),
       source: "",
       created: 0,
       pinned: false,
@@ -279,7 +281,10 @@ export class TreeStage {
             }
             dragged = true;
             e.dataTransfer?.setData("application/x-pastehistory", clip.id);
-            e.dataTransfer?.setData("text/plain", clip.text);
+            e.dataTransfer?.setData(
+              "text/plain",
+              this.cards.get(clip.id)?.clip.text ?? clip.text,
+            );
             if (e.dataTransfer) e.dataTransfer.effectAllowed = "copy";
             this.onDrag(clip.id);
           });
@@ -289,14 +294,14 @@ export class TreeStage {
           });
         }
         c.clip = clip;
-        c.el.lang = clip.lang ?? "zh-Hans";
+        c.el.lang = clip.lang ?? locale;
         c.slot = clip.id === PHONE_ID ? 8 : index;
         c.el.draggable = clip.id !== PHONE_ID;
         c.el.classList.toggle("phone-paper", clip.id === PHONE_ID);
         c.el.classList.toggle("image-paper", !!clip.image);
         c.el.setAttribute(
           "aria-label",
-          clip.id === PHONE_ID ? "手机同步" : `${clip.source}：${clip.text}`,
+          clip.id === PHONE_ID ? t("手机同步") : `${clip.source}：${clip.text}`,
         );
         c.el.replaceChildren();
         if (clip.id === PHONE_ID) {
@@ -305,7 +310,7 @@ export class TreeStage {
           glyph.textContent = "▦";
           const label = document.createElement("span");
           label.className = "phone-label";
-          label.textContent = "手机同步";
+          label.textContent = t("手机同步");
           c.el.append(glyph, label);
         } else {
           const meta = document.createElement("span");

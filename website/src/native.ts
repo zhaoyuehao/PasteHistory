@@ -1,3 +1,4 @@
+import { locale } from "./i18n";
 // Direct ports of IvoryTreeLayout, IvoryPaperStyle, TreeMotion and Motion.
 // Reference: native main 0765399. Keep source references beside non-obvious math.
 export const NATIVE = {
@@ -33,7 +34,7 @@ export type Pose = {
 export const clamp = (v: number, a: number, b: number) =>
   Math.max(a, Math.min(b, v));
 export const dateLabel = (time: number) =>
-  new Date(time).toLocaleString("zh-CN", {
+  new Date(time).toLocaleString(locale, {
     month: "short",
     day: "numeric",
     hour: "2-digit",

@@ -1,17 +1,21 @@
 import "./style.css";
 import "./native.css";
 import { HistoryStore, type Clip } from "./store";
-import {
-  initialClips,
-  sampleImage,
-  sampleLanguages,
-  type SampleLanguage,
-} from "./fixtures";
+import { initialClips, sampleImage, sampleLanguages } from "./fixtures";
 import { TreeStage } from "./tree";
 import { TreeEntrance } from "./entrance";
 import { NativePreview } from "./preview";
 import { PHONE_ID, dateLabel } from "./native";
-import { loadStats, REPO } from "./github";
+import { loadStats, REPO, type Stats } from "./github";
+import {
+  t,
+  locale,
+  setLocale,
+  browserLocale,
+  locales,
+  bindLabels,
+  refreshLabels,
+} from "./i18n";
 const $ = <T extends HTMLElement = HTMLElement>(selector: string) =>
   document.querySelector<T>(selector)!;
 const icons = {
@@ -33,21 +37,21 @@ const icons = {
 };
 const icon = (name: keyof typeof icons) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]}</svg>`;
-const lights = (name: string) =>
-  `<div class="traffic"><button class="red" data-minimize="${name}" aria-label="关闭${name === "browser" ? "素材窗口" : "备忘录"}"></button><button class="yellow" data-minimize="${name}" aria-label="最小化${name === "browser" ? "素材窗口" : "备忘录"}"></button><button class="green" data-expand="${name}" aria-label="放大窗口"></button></div>`;
+const lights = () =>
+  `<div class="traffic" aria-hidden="true"><span class="red"></span><span class="yellow"></span><span class="green"></span></div>`;
 $("#app").innerHTML = `
 <div class="desktop native-desktop exploring" data-mobile-view="tree">
  <div class="wallpaper" aria-hidden="true"></div>
- <header class="menubar"><button class="brand" id="menu-tree">${icon("tree")}<b>PasteHistory</b></button><button data-open="browser">复制样例</button><div class="menu-spacer"></div><span class="system-status" aria-hidden="true">⌁ &nbsp; ▰</span><time id="clock"></time></header>
+ <header class="menubar"><button class="brand" id="menu-tree">${icon("tree")}<b>PasteHistory</b></button><button id="actions-button" aria-expanded="false">操作</button><button id="reset" aria-label="重置演示">重置</button><div class="menu-spacer"></div><label class="language-control"><span aria-hidden="true">◎</span><select id="site-language" aria-label="语言"></select></label><span class="system-status" aria-hidden="true">⌁ &nbsp; ▰</span><time id="clock"></time></header>
  <main id="desktop-main">
   <section class="hero-heading"><p>PasteHistory</p><h1>复制过的，随时找回。</h1></section>
   <section id="tree-area" aria-label="许愿树剪贴板"><div id="tree-stage"></div><div id="empty" hidden>枝头暂时空了。<br><small>换个关键词，或复制一条新灵感。</small></div><p class="tree-hint">点一张纸签，试试看。</p><div class="tree-controls"><span class="search-cord"></span><div class="search-tag"><span class="search-hole"></span>${icon("search")}<input id="search" aria-label="搜索剪贴板" autocomplete="off" spellcheck="false"><span id="page-label"></span></div></div><div id="layout-controls" hidden><button id="layout-drag">移动</button><button data-size=".82">小</button><button data-size="1">标准</button><button data-size="1.14">大</button><button id="layout-done">完成</button></div></section>
   <section class="download-area" aria-label="下载 PasteHistory"><button id="download-button" class="download-button">${icon("download")} 下载 Mac 版</button><p>Apple Silicon · macOS 14+</p><small>预览版 · 未经 Apple 公证</small></section>
-  <section id="browser" class="window browser-window minimized" inert aria-label="素材浏览器"><div class="titlebar" data-drag-window="browser">${lights("browser")}<span>${icon("compass")} 复制一点灵感</span></div><div class="browser-body"><h2>从这里，挂上枝头。</h2><div class="sample-tabs" role="tablist" aria-label="素材类型"><button role="tab" aria-selected="true" data-sample="text">文字</button><button role="tab" aria-selected="false" data-sample="image">图片</button><button role="tab" aria-selected="false" data-sample="file">文件</button></div><label class="sample-language">示例语言<select id="sample-language" aria-label="示例语言"></select></label><div id="sample-content"></div><button id="collect" class="collect-button">${icon("copy")} 复制到许愿树</button><button id="more-samples" class="text-link">载入更多示例</button><small>仅在本页演示，不读取系统剪贴板。</small></div></section>
-  <section id="notes" class="window notes-window" aria-label="备忘录"><div class="titlebar"><div class="traffic" aria-hidden="true"><span class="red"></span><span class="yellow"></span><span class="green"></span></div><span>备忘录</span><button id="clear-note" aria-label="清空备忘录">${icon("trash")}</button></div><div class="notes-body"><div class="notes-date">今天 · 我的灵感</div><h2>备忘录</h2><p class="note-drop-hint">把文字、图片纸签拖到这里，也可以直接粘贴图片。</p><div id="note-editor" role="textbox" aria-label="备忘录内容" contenteditable="true" aria-multiline="true" data-placeholder="写点什么，或把纸签拖进来…"></div></div><footer><span id="note-status">粘贴目标 · 保留光标位置</span><span>仅本次体验</span></footer></section>
+  <section id="browser" class="window browser-window" aria-label="素材浏览器"><div class="titlebar">${lights()}<span>${icon("compass")} 复制一点灵感</span></div><div class="browser-body"><h2>从这里，挂上枝头。</h2><div class="sample-tabs" role="tablist" aria-label="素材类型"><button role="tab" aria-selected="true" data-sample="text">文字</button><button role="tab" aria-selected="false" data-sample="image">图片</button><button role="tab" aria-selected="false" data-sample="file">文件</button></div><div id="sample-content"></div><button id="collect" class="collect-button">${icon("copy")} 复制到许愿树</button><small>仅在本页演示，不读取系统剪贴板。</small></div></section>
+  <section id="notes" class="window notes-window" aria-label="备忘录"><div class="titlebar"><div class="traffic" aria-hidden="true"><span class="red"></span><span class="yellow"></span><span class="green"></span></div><span>备忘录</span><button id="clear-note" aria-label="清空备忘录">${icon("trash")}</button></div><div class="notes-body"><div class="notes-date">今天 · 我的灵感</div><h2>备忘录</h2><div id="note-editor" role="textbox" aria-label="备忘录内容" contenteditable="true" aria-multiline="true" data-placeholder="写点什么，或把纸签拖进来…"></div></div><footer><span id="note-status">粘贴目标 · 保留光标位置</span><span>仅本次体验</span></footer></section>
  </main>
  <footer class="site-footer"><a href="${REPO}" target="_blank" rel="noopener" class="github-link">${icon("github")} GitHub</a><a href="${REPO}" target="_blank" rel="noopener" class="repo-url">github.com/zhaoyuehao/PasteHistory</a><div class="stats"><a id="stars" href="${REPO}/stargazers" target="_blank" rel="noopener">Star <span>—</span></a><span id="downloads">下载次数 <span>—</span></span></div></footer>
- <nav class="experience-tools" aria-label="体验工具" inert><button data-open="browser" aria-label="打开素材浏览器">${icon("copy")}<span>复制样例</span></button><button data-open="notes" aria-label="打开备忘录">${icon("note")}<span>备忘录</span></button><button data-open="tree" title="⇧⌘V">${icon("tree")}<span>许愿树</span></button><button id="actions-button" aria-expanded="false">网页辅助操作</button><button id="reset" aria-label="重置演示">${icon("reset")}<span>重置</span></button></nav>
+
  <div id="action-menu" hidden><button id="previous">上一组 <kbd>Page Up</kbd></button><button id="next">下一组 <kbd>Page Down</kbd></button><button id="toggle-preview">预览 <kbd>Space / ⌘Y</kbd></button><button id="paste">粘贴到原输入位置 <kbd>↵</kbd></button><button id="real-copy">复制到系统 <kbd>⌘C</kbd></button><button id="pin">置顶 / 取消置顶 <kbd>⌘P</kbd></button><button id="delete">删除 <kbd>Delete</kbd></button><button id="clear-search">清空搜索</button><button id="layout-toggle">调整布局 <kbd>⇧⌘M</kbd></button><button id="zoom-in">放大预览 ＋</button><button id="zoom-out">缩小预览 −</button><button id="close-preview">关闭预览 <kbd>Esc</kbd></button><button id="close-tree">关闭许愿树 <kbd>⌘W</kbd></button></div>
  <div id="preview" class="preview" hidden aria-label="纸签预览"><div class="preview-compact"></div><div class="preview-face"><div class="preview-hole"></div><div class="preview-heading"><span id="preview-source"></span></div><div id="preview-content"></div><div id="preview-date"></div></div></div>
  <div id="toast" role="status" aria-live="polite"></div>
@@ -68,7 +72,6 @@ $(".desktop").append(rootLinks);
 function placeRootLinks() {
   const tag = $(".tree-controls").getBoundingClientRect();
   const desktop = $(".desktop").getBoundingClientRect();
-  const toolbar = $(".experience-tools").getBoundingClientRect();
   const width = rootLinks.offsetWidth;
   const x = Math.max(
     width / 2 + 12,
@@ -79,7 +82,7 @@ function placeRootLinks() {
   );
   const y = Math.min(
     tag.bottom - desktop.top + 12,
-    toolbar.top - desktop.top - rootLinks.offsetHeight - 8,
+    desktop.height - rootLinks.offsetHeight - 16,
   );
   rootLinks.style.left = `${x}px`;
   rootLinks.style.top = `${Math.max(42, y)}px`;
@@ -87,37 +90,73 @@ function placeRootLinks() {
 new ResizeObserver(placeRootLinks).observe(rootLinks);
 $(".hero-heading").remove();
 $(".tree-hint").remove();
-$(".experience-tools").inert = false;
 const notesRail = document.createElement("aside");
 notesRail.className = "notes-rail";
 const shortcuts = document.createElement("section");
 shortcuts.className = "shortcut-guide";
 shortcuts.setAttribute("aria-label", "常用快捷键");
-shortcuts.innerHTML = `<h2>随手试一试</h2><p>拖一张纸签到备忘录，文字和图片都能留下。</p><dl><div><dt>↑ / ↓</dt><dd>选择纸签</dd></div><div><dt>空格</dt><dd>展开 / 收起预览</dd></div><div><dt>↵</dt><dd>粘贴到输入位置</dd></div><div><dt>⌘P</dt><dd>置顶 / 取消置顶</dd></div><div><dt>Delete</dt><dd>删除选中的记录</dd></div><div><dt>⇧⌘V</dt><dd>唤起 / 收起许愿树</dd></div></dl><small>直接输入可搜索 · ⇧空格输入空格<br>Esc 逐层关闭 · 中文组词时优先交给输入法</small>`;
-notesRail.append($("#notes"), shortcuts);
+shortcuts.innerHTML = `<p>拖一张纸签到这里，文字和图片都能留下。</p><dl><div><dt>↑ / ↓</dt><dd>选择纸签</dd></div><div><dt>Space</dt><dd>展开 / 收起预览</dd></div><div><dt>↵</dt><dd>粘贴到输入位置</dd></div><div><dt>⌘P</dt><dd>置顶 / 取消置顶</dd></div><div><dt>Delete</dt><dd>删除选中的记录</dd></div><div><dt>⇧⌘V</dt><dd>唤起 / 收起许愿树</dd></div></dl><small>直接输入可搜索 · ⇧Space 输入空格<br>Esc 逐层关闭 · 组词时优先交给输入法</small>`;
+$(".notes-body").append(shortcuts);
+notesRail.append($("#notes"));
 $(".desktop").append(notesRail);
+const samplesRail = document.createElement("aside");
+samplesRail.className = "samples-rail";
+samplesRail.append($("#browser"));
+$(".desktop").append(samplesRail);
+const reopenTree = document.createElement("button");
+reopenTree.id = "reopen-tree";
+reopenTree.setAttribute("aria-keyshortcuts", "Meta+Shift+V");
+reopenTree.innerHTML = `<span>找回复制过的内容</span><kbd>⌘ ⇧ V</kbd><small>按快捷键或点这里，打开许愿树</small>`;
+reopenTree.onclick = presentTree;
+screen.append(reopenTree);
 let layoutScale = 1;
 function enterExperience() {
   $(".desktop").classList.add("exploring");
   $(".tree-controls").inert = false;
-  $(".experience-tools").inert = false;
 }
 let sampleKind: Clip["kind"] = "text";
-let sampleLanguage: SampleLanguage = "zh-Hans";
 const sampleDrafts = new Map<string, string>();
-const languageSelect = $<HTMLSelectElement>("#sample-language");
-for (const language of sampleLanguages) {
+const languageSelect = $<HTMLSelectElement>("#site-language");
+for (const [code, label] of [["auto", "跟随浏览器"], ...locales]) {
   const option = document.createElement("option");
-  option.value = language.code;
-  option.textContent = language.label;
+  option.value = code;
+  option.textContent = label;
   languageSelect.append(option);
 }
-languageSelect.onchange = () => {
+languageSelect.value = "auto";
+let lastStats: { stats: Stats | null; stale: boolean } | null = null;
+languageSelect.onchange = () => applyLanguage();
+window.addEventListener("languagechange", () => {
+  if (languageSelect.value === "auto") applyLanguage();
+});
+function applyLanguage() {
   const editor = $<HTMLTextAreaElement>("#sample-text");
-  if (editor) sampleDrafts.set(sampleLanguage, editor.value);
-  sampleLanguage = languageSelect.value as SampleLanguage;
+  if (editor) sampleDrafts.set(locale, editor.value);
+  setLocale(
+    languageSelect.value === "auto" ? browserLocale() : languageSelect.value,
+  );
+  refreshLabels();
+  document.title = `PasteHistory — ${t("复制过的，随时找回。")}`;
+  document
+    .querySelector('meta[name="description"]')
+    ?.setAttribute("content", t("复制过的，随时找回。"));
+  const fixtures = new Map(initialClips().map((clip) => [clip.id, clip]));
+  // Only localize fixture records; user drafts, collected records and Notes are content.
+  store.clips = store.clips.map((clip) => {
+    const translated = fixtures.get(clip.id);
+    return translated
+      ? { ...translated, created: clip.created, pinned: clip.pinned }
+      : clip;
+  });
+  if (!store.selected) store.selectedId = store.results[0]?.id ?? null;
   displaySample();
-};
+  updateNoteStatus();
+  previewId = null;
+  render();
+  clock();
+  renderStats();
+  placeRootLinks();
+}
 let composing = false;
 let keyboardCards = false;
 let draggingCard = false;
@@ -139,38 +178,59 @@ let toastTimer: ReturnType<typeof setTimeout>;
 let downloadUrl: string | null = null;
 let latestVersion: string | null = null;
 function placeNativeTree() {
-  const stacked = screen.clientWidth < 900;
+  const stacked = screen.clientWidth < 760;
   const railWidth = stacked
     ? 0
-    : Math.min(300, Math.max(250, screen.clientWidth * 0.24));
-  notesRail.style.width = stacked ? "calc(100% - 32px)" : `${railWidth}px`;
-  const availableWidth = screen.clientWidth - (stacked ? 0 : railWidth + 40);
-  const availableHeight = Math.max(
-    1,
-    screen.clientHeight - 30 - (stacked ? 650 : 0),
-  );
+    : Math.min(290, Math.max(196, screen.clientWidth * 0.21));
+  for (const rail of [notesRail, samplesRail])
+    rail.style.width = stacked ? "calc(100% - 32px)" : `${railWidth}px`;
+  const inset = stacked ? 0 : railWidth + 28;
+  const availableWidth = screen.clientWidth - inset * 2;
+  const availableHeight = stacked
+    ? Math.min(720, screen.clientWidth * 1.05)
+    : Math.max(1, screen.clientHeight - 54);
   const height = 920 * layoutScale;
   const width = 880 * layoutScale;
   const scale = Math.min(
     1,
-    (availableWidth - 24) / width,
+    (availableWidth - 16) / width,
     availableHeight / height,
   );
+  const left = inset + (availableWidth - width * scale) / 2;
   Object.assign($("#tree-area").style, {
     width: `${width}px`,
     height: `${height}px`,
-    left: `${(availableWidth - width * scale) / 2}px`,
-    top: `${30 + (availableHeight - height * scale) / 2}px`,
+    left: `${left}px`,
+    top: `${42 + (availableHeight - height * scale) / 2}px`,
     transform: `scale(${scale})`,
     transformOrigin: "0 0",
   });
-  notesRail.style.top = stacked ? `${availableHeight + 180}px` : "76px";
+  Object.assign(reopenTree.style, {
+    width: `${Math.min(330, availableWidth - 16)}px`,
+    left: `${inset + availableWidth / 2}px`,
+    top: `${42 + availableHeight * 0.44}px`,
+  });
+  samplesRail.style.top = stacked ? `${availableHeight + 230}px` : "68px";
+  notesRail.style.top = stacked
+    ? `${availableHeight + 230 + samplesRail.offsetHeight + 24}px`
+    : "68px";
+  if (stacked)
+    $(".desktop").style.height =
+      `${availableHeight + 280 + samplesRail.offsetHeight + notesRail.offsetHeight}px`;
+  else $(".desktop").style.removeProperty("height");
 }
 
 placeNativeTree();
 window.addEventListener("resize", placeNativeTree);
+new ResizeObserver(placeNativeTree).observe(samplesRail);
+new ResizeObserver(placeNativeTree).observe(notesRail);
 const tree = new TreeStage($("#tree-stage"));
 const note = $("#note-editor");
+let noteStatus = "粘贴目标 · 保留光标位置";
+function updateNoteStatus(key = noteStatus) {
+  noteStatus = key;
+  $("#note-status").textContent = t(key);
+}
 const search = $<HTMLInputElement>("#search");
 const preview = $("#preview");
 let previewId: string | null = null;
@@ -254,23 +314,23 @@ function togglePreview() {
   render();
 }
 function toast(message: string) {
-  $("#toast").textContent = message;
+  $("#toast").textContent = t(message);
   $("#toast").classList.add("visible");
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => $("#toast").classList.remove("visible"), 2600);
 }
 function displaySample() {
   const host = $("#sample-content");
-  const language = sampleLanguages.find((l) => l.code === sampleLanguage)!;
+  const language = sampleLanguages.find((l) => l.code === locale)!;
   host.replaceChildren();
   if (sampleKind === "text") {
-    const t = document.createElement("textarea");
-    t.id = "sample-text";
-    t.setAttribute("aria-label", "可复制的示例文字");
-    t.value = sampleDrafts.get(sampleLanguage) ?? language.text;
-    t.lang = sampleLanguage;
-    t.oninput = () => sampleDrafts.set(sampleLanguage, t.value);
-    host.append(t);
+    const editor = document.createElement("textarea");
+    editor.id = "sample-text";
+    editor.setAttribute("aria-label", t("可复制的示例文字"));
+    editor.value = sampleDrafts.get(locale) ?? language.text;
+    editor.lang = locale;
+    editor.oninput = () => sampleDrafts.set(locale, editor.value);
+    host.append(editor);
   } else if (sampleKind === "image") {
     const img = document.createElement("img");
     img.src = sampleImage;
@@ -280,9 +340,9 @@ function displaySample() {
     const p = document.createElement("div");
     p.className = "file-sample";
     p.textContent = `▤  ${language.file}`;
-    p.lang = sampleLanguage;
+    p.lang = locale;
     const small = document.createElement("small");
-    small.textContent = `/Users/demo/Documents/${language.file} · 示例文件路径`;
+    small.textContent = `/Users/demo/Documents/${language.file} · ${t("示例文件路径")}`;
     p.append(small);
     host.append(p);
   }
@@ -293,47 +353,27 @@ function displaySample() {
     );
 }
 function syncInteraction() {
-  const mobile = innerWidth < 800;
-  const view = $(".desktop").dataset.mobileView;
-  $(".download-area").inert = false;
   $("#tree-area").inert = !store.visible;
-  for (const name of ["browser"]) {
-    const window = $(`#${name}`);
-    window.inert =
-      window.classList.contains("minimized") || (mobile && view !== name);
-  }
 }
-window.addEventListener("resize", syncInteraction);
 function showWindow(name: string) {
   enterExperience();
-  $(".desktop").dataset.mobileView = name;
-  if (name === "tree") {
-    presentTree();
-  } else {
-    if (store.visible) closeTree();
-    const w = $(`#${name}`);
-    w.classList.remove("minimized");
-    if (name !== "notes") {
-      w.classList.add("window-pop");
-      setTimeout(() => w.classList.remove("window-pop"), 350);
-    }
-    syncInteraction();
-    if (name === "notes") {
-      pasteTarget = note;
-      note.focus({ preventScroll: true });
-      if (innerWidth < 900) {
-        window.scrollTo({
-          top: notesRail.getBoundingClientRect().top + scrollY - 16,
-          behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
-            ? "instant"
-            : "smooth",
-        });
-      }
-    }
+  if (name === "tree") return presentTree();
+  if (store.visible) closeTree();
+  const target = name === "notes" ? note : $("#sample-text");
+  target?.focus({ preventScroll: true });
+  if (name === "notes") pasteTarget = note;
+  if (innerWidth < 760) {
+    const rail = name === "notes" ? notesRail : samplesRail;
+    window.scrollTo({
+      top: rail.getBoundingClientRect().top + scrollY - 16,
+      behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "instant"
+        : "smooth",
+    });
   }
 }
 function collect() {
-  const language = sampleLanguages.find((l) => l.code === sampleLanguage)!;
+  const language = sampleLanguages.find((l) => l.code === locale)!;
   const clip: Clip = {
     id: crypto.randomUUID(),
     kind: sampleKind,
@@ -343,11 +383,11 @@ function collect() {
         : sampleKind === "image"
           ? language.image
           : language.file,
-    lang: sampleLanguage,
+    lang: locale,
     ...(sampleKind === "file"
       ? { paths: [`/Users/demo/Documents/${language.file}`] }
       : {}),
-    source: sampleKind === "file" ? "访达" : "Safari",
+    source: sampleKind === "file" ? t("访达") : "Safari",
     created: Date.now(),
     pinned: false,
     ...(sampleKind === "image" ? { image: sampleImage } : {}),
@@ -364,7 +404,6 @@ function collect() {
   showWindow("tree");
   render();
   toast("已收藏到许愿树");
-  $("#browser").classList.add("minimized");
   syncInteraction();
 }
 function render() {
@@ -376,6 +415,9 @@ function render() {
     store.page * 8,
   );
   treeEntrance.show(store.visible);
+  reopenTree.classList.toggle("visible", !store.visible);
+  reopenTree.inert = store.visible;
+  reopenTree.setAttribute("aria-hidden", String(store.visible));
   $("#tree-area").classList.toggle("closed", !store.visible);
   $("#empty").hidden = store.results.length > 0;
   $("#page-label").textContent = store.results.length
@@ -437,19 +479,20 @@ function updatePreview() {
   if (contentChanged) {
     previewId = id;
     $("#preview-source").textContent = phoneSelected
-      ? "手机同步"
+      ? t("手机同步")
       : `${String(store.index + 1).padStart(2, "0")}${clip?.pinned ? " · ↟" : ""} · ${clip?.source || "—"}`;
     $("#preview-date").textContent = clip
       ? dateLabel(clip.created)
-      : "网页演示 · 未连接设备";
+      : t("网页演示 · 未连接设备");
     const content = $("#preview-content");
     content.replaceChildren();
-    content.lang = clip?.lang ?? "zh-Hans";
+    content.lang = clip?.lang ?? locale;
     content.classList.toggle("image-content", !!clip?.image);
     if (phoneSelected) {
       const p = document.createElement("p");
-      p.textContent =
-        "手机同步\n\nMac 版可以通过局域网与手机配对。网页体验不连接真实设备，也不生成配对二维码。";
+      p.textContent = t(
+        "手机同步\n\nMac 版可以通过局域网与手机配对。网页体验不连接真实设备，也不生成配对二维码。",
+      );
       content.append(p);
     } else if (clip) {
       if (clip.image) {
@@ -459,7 +502,7 @@ function updatePreview() {
         content.append(img);
         if (clip.ocr) {
           const label = document.createElement("small");
-          label.textContent = "预置 OCR 示例文字";
+          label.textContent = t("预置 OCR 示例文字");
           content.append(label);
         }
       }
@@ -479,7 +522,7 @@ function updatePreview() {
           const directory = document.createElement("small");
           directory.textContent = path.includes("/")
             ? path.slice(0, path.lastIndexOf("/"))
-            : "演示文件";
+            : t("演示文件");
           labels.append(name, directory);
           row.append(glyph, labels);
           files.append(row);
@@ -583,9 +626,9 @@ function imageFiles(files: File[]): Clip[] {
       return {
         id: crypto.randomUUID(),
         kind: "image",
-        text: file.name || "粘贴的图片",
+        text: file.name || t("粘贴的图片"),
         image,
-        source: "本次粘贴",
+        source: t("本次粘贴"),
         created: Date.now(),
         pinned: false,
       };
@@ -615,7 +658,7 @@ function insertIntoNotes(clips: Clip[], position: Range | null = noteRange) {
       img.draggable = false;
       img.addEventListener("error", () => {
         img.replaceWith(
-          document.createTextNode(`[图片无法显示：${clip.text}]`),
+          document.createTextNode(`[${t("图片无法显示")}: ${clip.text}]`),
         );
       });
       fragment.append(img, document.createElement("br"));
@@ -631,9 +674,9 @@ function insertIntoNotes(clips: Clip[], position: Range | null = noteRange) {
   selection?.removeAllRanges();
   selection?.addRange(range);
   noteRange = range;
-  $("#note-status").textContent = clips.some((clip) => clip.image)
-    ? "图片已放入备忘录"
-    : "已粘贴到备忘录";
+  updateNoteStatus(
+    clips.some((clip) => clip.image) ? "图片已放入备忘录" : "已粘贴到备忘录",
+  );
   store.preview = false;
   store.visible = false;
   render();
@@ -683,6 +726,7 @@ function deleteSelected() {
 }
 function modal(html: string) {
   $("#info-content").innerHTML = html;
+  bindLabels($("#info-content"));
   $<HTMLDialogElement>("#info-dialog").showModal();
 }
 $("#download-button").onclick = () => {
@@ -692,22 +736,12 @@ $("#download-button").onclick = () => {
   const link = $<HTMLAnchorElement>("#release-link");
   link.href = downloadUrl ?? `${REPO}/releases`;
   link.textContent = downloadUrl
-    ? "下载 Apple Silicon 预览版 ↓"
-    : "查看发布进度 ↗";
+    ? t("下载 Apple Silicon 预览版 ↓")
+    : t("查看发布进度 ↗");
   $("#release-details").textContent =
-    latestVersion ?? "安装包尚未发布。你现在就可以体验网页中的许愿树。";
+    latestVersion ?? t("安装包尚未发布。你现在就可以体验网页中的许愿树。");
 };
 $("#collect").onclick = collect;
-$("#more-samples").onclick = () => {
-  const ids = new Set(store.clips.map((c) => c.id));
-  store.clips.push(...initialClips().filter((c) => !ids.has(c.id)));
-  store.search("");
-  search.value = "";
-  showWindow("tree");
-  $("#browser").classList.add("minimized");
-  render();
-  toast("已载入文字、图片与文件示例");
-};
 document.querySelectorAll<HTMLButtonElement>("[data-sample]").forEach(
   (b) =>
     (b.onclick = () => {
@@ -815,7 +849,7 @@ $("#info-dialog").onclick = (e) => {
 };
 $("#clear-note").onclick = () => {
   clearNotes();
-  $("#note-status").textContent = "粘贴目标 · 保留光标位置";
+  updateNoteStatus("粘贴目标 · 保留光标位置");
 };
 $("#reset").onclick = () => {
   store = new HistoryStore(initialClips());
@@ -827,21 +861,17 @@ $("#reset").onclick = () => {
   resetTreePosition();
   $(".desktop").classList.add("exploring");
   $(".tree-controls").inert = false;
-  $(".experience-tools").inert = false;
   search.value = "";
   clearNotes();
   pasteTarget = null;
   previewId = null;
   sampleKind = "text";
-  sampleLanguage = "zh-Hans";
-  languageSelect.value = sampleLanguage;
   sampleDrafts.clear();
   keyboardCards = false;
-  $("#note-status").textContent = "粘贴目标 · 保留光标位置";
+  updateNoteStatus("粘贴目标 · 保留光标位置");
   displaySample();
   document.querySelectorAll<HTMLElement>(".window").forEach((w) => {
     w.classList.remove("expanded");
-    if (w.id !== "notes") w.classList.add("minimized");
     w.style.removeProperty("left");
     w.style.removeProperty("top");
     w.style.removeProperty("right");
@@ -853,45 +883,6 @@ $("#reset").onclick = () => {
 document
   .querySelectorAll<HTMLButtonElement>("[data-open]")
   .forEach((b) => (b.onclick = () => showWindow(b.dataset.open!)));
-document.querySelectorAll<HTMLButtonElement>("[data-minimize]").forEach(
-  (b) =>
-    (b.onclick = () => {
-      $(`#${b.dataset.minimize}`).classList.add("minimized");
-      $(".desktop").dataset.mobileView = "tree";
-      syncInteraction();
-    }),
-);
-document
-  .querySelectorAll<HTMLButtonElement>("[data-expand]")
-  .forEach(
-    (b) =>
-      (b.onclick = () =>
-        $(`#${b.dataset.expand}`).classList.toggle("expanded")),
-  );
-// Only title bars move windows. Content interaction remains native text selection.
-document.querySelectorAll<HTMLElement>("[data-drag-window]").forEach((bar) => {
-  let drag: { x: number; y: number; left: number; top: number } | null = null;
-  const w = $(`#${bar.dataset.dragWindow}`);
-  bar.onpointerdown = (e) => {
-    if ((e.target as Element).closest("button") || innerWidth < 800) return;
-    const r = w.getBoundingClientRect();
-    drag = { x: e.clientX, y: e.clientY, left: r.left, top: r.top };
-    bar.setPointerCapture(e.pointerId);
-    w.classList.add("dragging");
-  };
-  bar.onpointermove = (e) => {
-    if (!drag) return;
-    w.style.left = `${Math.max(0, Math.min(innerWidth - w.offsetWidth, drag.left + e.clientX - drag.x))}px`;
-    w.style.top = `${Math.max(42, Math.min(innerHeight - 130, drag.top + e.clientY - drag.y))}px`;
-    w.style.right = "auto";
-  };
-  const end = () => {
-    drag = null;
-    w.classList.remove("dragging");
-  };
-  bar.onpointerup = end;
-  bar.onpointercancel = end;
-});
 const notesWindow = $("#notes");
 notesWindow.addEventListener("dragover", (e) => {
   e.preventDefault();
@@ -1021,7 +1012,7 @@ document.addEventListener("keydown", (e) => {
   }
   if (
     target.closest(
-      ".menubar,.experience-tools,#action-menu,.download-area,.site-footer,#browser,#notes",
+      ".menubar,#action-menu,.download-area,.site-footer,#browser,#notes,#reopen-tree",
     )
   )
     return;
@@ -1156,29 +1147,41 @@ screen.addEventListener("pointerdown", (e) => {
   closeTree();
 });
 function clock() {
-  $("#clock").textContent = new Date().toLocaleTimeString("zh-CN", {
+  $("#clock").textContent = new Date().toLocaleTimeString(locale, {
     hour: "2-digit",
     minute: "2-digit",
   });
 }
 clock();
 setInterval(clock, 60000);
+function renderStats() {
+  if (!lastStats) return;
+  const { stats, stale } = lastStats;
+  for (const id of ["stars", "downloads"]) {
+    $(`#${id} span`).textContent = stats
+      ? new Intl.NumberFormat(locale, { notation: "compact" }).format(
+          id === "stars" ? stats.stars : stats.downloads,
+        )
+      : t("暂不可用");
+    $(`#${id}`).title = stats
+      ? `${id === "stars" ? "GitHub Stars" : t("所有公开 Release 安装包累计下载")} · ${stale ? t("缓存数据") + " · " : ""}${new Date(stats.updatedAt).toLocaleString(locale)}`
+      : t("GitHub 数据暂不可用");
+  }
+}
 void loadStats(`${import.meta.env.BASE_URL}github-stats.json`).then(
-  ({ stats, stale }) => {
-    for (const id of ["stars", "downloads"]) {
-      $(`#${id} span`).textContent = stats
-        ? new Intl.NumberFormat("zh-CN", { notation: "compact" }).format(
-            id === "stars" ? stats.stars : stats.downloads,
-          )
-        : "暂不可用";
-      $(`#${id}`).title = stats
-        ? `${id === "stars" ? "GitHub Stars" : "所有公开 Release 安装包累计下载"} · ${stale ? "缓存数据 · " : ""}${new Date(stats.updatedAt).toLocaleString("zh-CN")}`
-        : "GitHub 数据暂不可用";
-    }
-    downloadUrl = stats?.downloadUrl ?? null;
-    latestVersion = stats?.version ?? null;
+  (result) => {
+    lastStats = result;
+    downloadUrl = result.stats?.downloadUrl ?? null;
+    latestVersion = result.stats?.version ?? null;
+    renderStats();
   },
 );
+bindLabels($("#app"));
+document.documentElement.lang = locale;
+document.title = `PasteHistory — ${t("复制过的，随时找回。")}`;
+document
+  .querySelector('meta[name="description"]')
+  ?.setAttribute("content", t("复制过的，随时找回。"));
 displaySample();
 render();
 focusSearch();

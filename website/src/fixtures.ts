@@ -1,3 +1,4 @@
+import { locale, t } from "./i18n";
 import type { Clip } from "./store";
 const base = import.meta.env.BASE_URL;
 export const sampleImage = `${base}sample-lake.jpg`;
@@ -41,71 +42,41 @@ export const sampleLanguages = [
 export type SampleLanguage = (typeof sampleLanguages)[number]["code"];
 export function initialClips(): Clip[] {
   const now = Date.now();
+  const sample = sampleLanguages.find((language) => language.code === locale)!;
+  const text = (
+    value: string,
+    source = t("备忘录"),
+  ): Omit<Clip, "id" | "created" | "pinned"> => ({
+    kind: "text",
+    text: value,
+    source,
+    lang: locale,
+  });
   const records: Omit<Clip, "id" | "created" | "pinned">[] = [
-    {
-      kind: "text",
-      text: "今天也有好灵感。\n复制过的，随时找回。",
-      source: "备忘录",
-      lang: "zh-Hans",
-    },
+    text(t("今天也有好灵感。\n复制过的，随时找回。")),
     {
       kind: "image",
-      text: sampleLanguages[0].image,
+      text: sample.image,
       image: sampleImage,
-      source: "照片",
-      lang: "zh-Hans",
+      source: t("照片"),
+      lang: locale,
     },
-    {
-      kind: "text",
-      text: sampleLanguages[1].text,
-      source: "Safari",
-      lang: "en",
-    },
-    {
-      kind: "text",
-      text: sampleLanguages[2].text,
-      source: "備忘錄",
-      lang: "zh-Hant",
-    },
-    { kind: "text", text: sampleLanguages[3].text, source: "メモ", lang: "ja" },
+    text(sample.text, "Safari"),
+    text(t("把灵感收好，再慢慢展开。")),
+    text(t("给生活留一点空白。")),
     {
       kind: "file",
-      text: "灵感笔记.pdf",
-      source: "访达",
-      paths: ["/Users/demo/Documents/灵感笔记.pdf"],
-      lang: "zh-Hans",
+      text: t("灵感笔记.pdf"),
+      source: t("访达"),
+      paths: [`/Users/demo/Documents/${t("灵感笔记.pdf")}`],
+      lang: locale,
     },
-    { kind: "text", text: sampleLanguages[4].text, source: "메모", lang: "ko" },
-    {
-      kind: "text",
-      text: "周五 15:00\n聊聊下一个让人心动的想法。",
-      source: "信息",
-      lang: "zh-Hans",
-    },
-    {
-      kind: "text",
-      text: "Small ideas deserve a place to grow.",
-      source: "Notes",
-      lang: "en",
-    },
-    {
-      kind: "text",
-      text: "明天的清單：散步、閱讀、把想法變成作品。",
-      source: "備忘錄",
-      lang: "zh-Hant",
-    },
-    {
-      kind: "text",
-      text: "明日の予定：散歩、読書、アイデアを形にする。",
-      source: "メモ",
-      lang: "ja",
-    },
-    {
-      kind: "text",
-      text: "내일 할 일: 산책, 독서, 그리고 아이디어를 현실로 만들기.",
-      source: "메모",
-      lang: "ko",
-    },
+    text(t("复制过的，随时找回。")),
+    text(t("周五 15:00\n聊聊下一个让人心动的想法。"), t("信息")),
+    text(t("小小的想法，也值得慢慢长大。")),
+    text(t("明天的清单：散步、阅读、把想法变成作品。")),
+    text(sample.text),
+    text(t("给生活留一点空白。")),
   ];
   return records.map((c, i) => ({
     ...c,
