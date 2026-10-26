@@ -49,7 +49,7 @@ export class HistoryStore {
   }
   search(query: string) {
     this.query = query;
-    if (!this.selected) this.selectedId = this.results[0]?.id ?? null;
+    this.selectedId = this.results[0]?.id ?? null;
     if (!this.selected) this.preview = false;
   }
   select(id: string, preview = false) {
@@ -64,8 +64,7 @@ export class HistoryStore {
       r[Math.max(0, Math.min(r.length - 1, this.index + delta))]?.id ?? null;
   }
   turn(delta: number) {
-    const page = Math.max(0, Math.min(this.pages - 1, this.page + delta));
-    this.selectedId = this.results[page * PAGE_SIZE]?.id ?? null;
+    this.move(delta * PAGE_SIZE);
   }
   pin() {
     const c = this.selected;
@@ -75,8 +74,8 @@ export class HistoryStore {
     const index = this.index;
     this.clips = this.clips.filter((c) => c.id !== this.selectedId);
     this.selectedId =
-      this.results[Math.max(0, Math.min(index, this.results.length - 1))]?.id ??
-      null;
+      this.results[Math.max(0, Math.min(index - 1, this.results.length - 1))]
+        ?.id ?? null;
     if (!this.selected) this.preview = false;
   }
   add(clip: Clip) {

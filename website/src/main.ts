@@ -1,8 +1,11 @@
 import "./style.css";
+import "./native.css";
 import { HistoryStore, type Clip } from "./store";
 import { initialClips, welcomeClips, sampleImage } from "./fixtures";
 import { TreeStage } from "./tree";
-import { Spring } from "./motion";
+import { TreeEntrance } from "./entrance";
+import { NativePreview } from "./preview";
+import { PHONE_ID, dateLabel } from "./native";
 import { loadStats, REPO } from "./github";
 const $ = <T extends HTMLElement = HTMLElement>(selector: string) =>
   document.querySelector<T>(selector)!;
@@ -33,19 +36,20 @@ $("#app").innerHTML = `
  <header class="menubar"><button class="brand" id="menu-tree">${icon("tree")}<b>PasteHistory</b></button><button data-open="browser">复制样例</button><button id="about-button">帮助</button><div class="menu-spacer"></div><span class="system-status" aria-hidden="true">⌁ &nbsp; ▰</span><time id="clock"></time></header>
  <main id="desktop-main">
   <section class="hero-heading"><p>PasteHistory</p><h1>复制过的，随时找回。</h1></section>
-  <section id="tree-area" aria-label="许愿树剪贴板"><div id="tree-stage"></div><div id="empty" hidden>枝头暂时空了。<br><small>换个关键词，或复制一条新灵感。</small></div><p class="tree-hint">点一张纸签，试试看。</p><div class="tree-controls" inert><div class="search-wrap">${icon("search")}<input id="search" aria-label="搜索剪贴板" placeholder="搜索剪贴板历史…" autocomplete="off"><button id="clear-search" aria-label="清空搜索">×</button></div><div class="tree-toolbar"><button id="previous" aria-label="上一组">‹</button><span id="page-label"></span><button id="next" aria-label="下一组">›</button><span class="toolbar-divider"></span><button id="pin" title="置顶选中纸签" aria-label="置顶选中纸签">${icon("pin")}</button><button id="delete" title="删除选中纸签" aria-label="删除选中纸签">${icon("trash")}</button><button id="paste" class="paste-button">粘贴 ↵</button></div></div></section>
+  <section id="tree-area" aria-label="许愿树剪贴板"><div id="tree-stage"></div><div id="empty" hidden>枝头暂时空了。<br><small>换个关键词，或复制一条新灵感。</small></div><p class="tree-hint">点一张纸签，试试看。</p><div class="tree-controls"><span class="search-cord"></span><div class="search-tag"><span class="search-hole"></span>${icon("search")}<input id="search" aria-label="搜索剪贴板" autocomplete="off" spellcheck="false"><span id="page-label"></span></div></div><div id="layout-controls" hidden><button id="layout-drag">移动</button><button data-size=".82">小</button><button data-size="1">标准</button><button data-size="1.14">大</button><button id="layout-done">完成</button></div></section>
   <section class="download-area" aria-label="下载 PasteHistory"><button id="download-button" class="download-button">${icon("download")} 下载 Mac 版</button><p>Apple Silicon · macOS 14+</p><small>预览版 · 未经 Apple 公证</small></section>
   <section id="browser" class="window browser-window minimized" inert aria-label="素材浏览器"><div class="titlebar" data-drag-window="browser">${lights("browser")}<span>${icon("compass")} 复制一点灵感</span></div><div class="browser-body"><h2>从这里，挂上枝头。</h2><div class="sample-tabs" role="tablist" aria-label="素材类型"><button role="tab" aria-selected="true" data-sample="text">文字</button><button role="tab" aria-selected="false" data-sample="image">图片</button><button role="tab" aria-selected="false" data-sample="file">文件</button></div><div id="sample-content"></div><button id="collect" class="collect-button">${icon("copy")} 复制到许愿树</button><button id="more-samples" class="text-link">载入更多示例</button><small>仅在本页演示，不读取系统剪贴板。</small></div></section>
   <section id="notes" class="window notes-window minimized" inert aria-label="备忘录"><div class="titlebar" data-drag-window="notes">${lights("notes")}<span>备忘录</span><button id="clear-note" aria-label="清空备忘录">${icon("trash")}</button></div><div class="notes-body"><div class="notes-date">今天 · 我的灵感</div><h2>先记下来。</h2><div id="note-editor" role="textbox" aria-label="备忘录内容" contenteditable="true" aria-multiline="true" data-placeholder="在这里写点什么…&#10;也可以把纸签拖进来。"></div></div><footer><span id="note-status">准备接住你的灵感</span><span>仅本次体验</span></footer></section>
  </main>
  <footer class="site-footer"><a href="${REPO}" target="_blank" rel="noopener" class="github-link">${icon("github")} GitHub</a><a href="${REPO}" target="_blank" rel="noopener" class="repo-url">github.com/zhaoyuehao/PasteHistory</a><div class="stats"><a id="stars" href="${REPO}/stargazers" target="_blank" rel="noopener">Star <span>—</span></a><span id="downloads">下载次数 <span>—</span></span></div></footer>
- <nav class="experience-tools" aria-label="体验工具" inert><button data-open="browser" aria-label="打开素材浏览器">${icon("copy")}<span>复制样例</span></button><button data-open="notes" aria-label="打开备忘录">${icon("note")}<span>备忘录</span></button><button data-open="tree" aria-label="打开许愿树">${icon("tree")}<span>许愿树</span></button><button id="reset" aria-label="重置演示">${icon("reset")}<span>重置</span></button></nav>
- <div id="preview" class="preview" hidden aria-label="纸签预览"><div class="preview-hole"></div><div class="preview-heading"><span id="preview-source"></span><button id="close-preview" aria-label="关闭预览">${icon("close")}</button></div><div id="preview-content"></div><footer><button id="real-copy">${icon("copy")} 复制到系统</button><button id="preview-paste">粘贴到备忘录 ↵</button></footer></div>
+ <nav class="experience-tools" aria-label="体验工具" inert><button data-open="browser" aria-label="打开素材浏览器">${icon("copy")}<span>复制样例</span></button><button data-open="notes" aria-label="打开备忘录">${icon("note")}<span>备忘录</span></button><button data-open="tree" title="⇧⌘V">${icon("tree")}<span>许愿树</span></button><button id="actions-button" aria-expanded="false">操作 ···</button><button id="reset" aria-label="重置演示">${icon("reset")}<span>重置</span></button></nav>
+ <div id="action-menu" hidden><button id="previous">上一组 <kbd>Page Up</kbd></button><button id="next">下一组 <kbd>Page Down</kbd></button><button id="toggle-preview">预览 <kbd>Space / ⌘Y</kbd></button><button id="paste">粘贴到备忘录 <kbd>↵</kbd></button><button id="real-copy">复制到系统 <kbd>⌘C</kbd></button><button id="pin">置顶 / 取消置顶 <kbd>⌘P</kbd></button><button id="delete">删除 <kbd>Delete</kbd></button><button id="clear-search">清空搜索</button><button id="layout-toggle">调整布局 <kbd>⇧⌘M</kbd></button><button id="zoom-in">放大预览 ＋</button><button id="zoom-out">缩小预览 −</button><button id="close-preview">关闭预览 <kbd>Esc</kbd></button><button id="close-tree">关闭许愿树 <kbd>⌘W</kbd></button></div>
+ <div id="preview" class="preview" hidden aria-label="纸签预览"><div class="preview-compact"></div><div class="preview-face"><div class="preview-hole"></div><div class="preview-heading"><span id="preview-source"></span></div><div id="preview-content"></div><div id="preview-date"></div></div></div>
  <div id="toast" role="status" aria-live="polite"></div>
  <dialog id="info-dialog"><button class="dialog-close" aria-label="关闭说明">${icon("close")}</button><div id="info-content"></div></dialog>
 </div>`;
 let store = new HistoryStore(welcomeClips());
-store.selectedId = null;
+
 let exploring = false;
 function enterExperience() {
   exploring = true;
@@ -56,24 +60,89 @@ function enterExperience() {
 let sampleKind: Clip["kind"] = "text";
 let composing = false;
 let keyboardCards = false;
+let draggingCard = false;
 let noteRange: Range | null = null;
 let toastTimer: ReturnType<typeof setTimeout>;
 let downloadUrl: string | null = null;
 let latestVersion: string | null = null;
+function fitWelcomeTree() {
+  document.documentElement.style.setProperty(
+    "--welcome-scale",
+    String(
+      Math.max(
+        0.2,
+        Math.min(1, (innerHeight - 375) / 920, (innerWidth * 0.94) / 880),
+      ),
+    ),
+  );
+}
+fitWelcomeTree();
+window.addEventListener("resize", fitWelcomeTree);
 const tree = new TreeStage($("#tree-stage"));
 const note = $("#note-editor");
 const search = $<HTMLInputElement>("#search");
 const preview = $("#preview");
-const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 let previewId: string | null = null;
-const openMotion = new Spring(0),
-  px = new Spring(0),
-  py = new Spring(0),
-  previewScale = new Spring(1);
-let previewFrame = 0,
-  previewLast = 0;
-let source = { x: 0, y: 0, width: 150 };
-let previewWidth = 370;
+let previewSize = { width: 340, height: 210 };
+let phoneSelected = false;
+let layoutMode = false;
+let layoutScale = 1;
+const nativePreview = new NativePreview(preview);
+const treeEntrance = new TreeEntrance($("#tree-area"));
+treeEntrance.onLayout = updatePreview;
+nativePreview.onClosed = () => {
+  tree.conceal(null);
+  previewId = null;
+};
+nativePreview.onCollapse = () => {
+  store.preview = false;
+  focusSearch();
+  render();
+};
+function focusSearch() {
+  search.focus({ preventScroll: true });
+}
+function presentTree() {
+  enterExperience();
+  store.visible = true;
+  store.preview = false;
+  phoneSelected = false;
+  store.selectedId = store.results[0]?.id ?? null;
+  keyboardCards = false;
+  $(".desktop").dataset.mobileView = "tree";
+  resetTreePosition();
+  render();
+  focusSearch();
+}
+function closeTree() {
+  store.preview = false;
+  store.visible = false;
+  if (layoutMode) setLayoutMode(false);
+  render();
+}
+function resetTreePosition() {
+  const area = $("#tree-area");
+  area.style.removeProperty("left");
+  area.style.removeProperty("top");
+  area.style.removeProperty("transform");
+}
+function setLayoutMode(value: boolean) {
+  layoutMode = value;
+  tree.layoutEditing = value;
+  store.preview = false;
+  $("#layout-controls").hidden = !value;
+  $(".desktop").classList.toggle("layout-editing", value);
+  $(".tree-controls").inert = value;
+  render();
+  if (!value) focusSearch();
+}
+function togglePreview() {
+  if (!store.selected && !phoneSelected) return;
+  enterExperience();
+  store.preview = !store.preview;
+  focusSearch();
+  render();
+}
 function toast(message: string) {
   $("#toast").textContent = message;
   $("#toast").classList.add("visible");
@@ -126,8 +195,7 @@ function showWindow(name: string) {
   enterExperience();
   $(".desktop").dataset.mobileView = name;
   if (name === "tree") {
-    store.visible = true;
-    render();
+    presentTree();
   } else {
     const w = $(`#${name}`);
     w.classList.remove("minimized");
@@ -170,18 +238,33 @@ function collect() {
 function render() {
   tree.render(
     store.entries,
-    store.selectedId,
-    store.preview || openMotion.value > 0,
+    phoneSelected ? PHONE_ID : store.selectedId,
+    store.preview || nativePreview.isVisible,
     store.visible,
+    store.page * 8,
   );
+  treeEntrance.show(store.visible);
   $("#tree-area").classList.toggle("closed", !store.visible);
   $("#empty").hidden = store.results.length > 0;
-  $("#page-label").textContent =
-    `${store.page + 1} / ${store.pages} · ${store.results.length} 张`;
-  $<HTMLButtonElement>("#previous").disabled = store.page === 0;
-  $<HTMLButtonElement>("#next").disabled = store.page === store.pages - 1;
-  for (const id of ["pin", "delete", "paste"])
-    $<HTMLButtonElement>(`#${id}`).disabled = !store.selected;
+  $("#page-label").textContent = store.results.length
+    ? `${store.page + 1} / ${store.pages} · ${store.results.length}`
+    : "0 / 0";
+  $<HTMLButtonElement>("#previous").disabled =
+    !store.visible || store.index <= 0;
+  $<HTMLButtonElement>("#next").disabled =
+    !store.visible || store.index >= store.results.length - 1;
+  for (const id of ["pin", "delete", "paste", "real-copy"])
+    $<HTMLButtonElement>(`#${id}`).disabled =
+      !store.selected || phoneSelected || !store.visible;
+  for (const id of [
+    "toggle-preview",
+    "layout-toggle",
+    "clear-search",
+    "close-tree",
+  ])
+    $<HTMLButtonElement>(`#${id}`).disabled = !store.visible;
+  for (const id of ["zoom-in", "zoom-out", "close-preview"])
+    $<HTMLButtonElement>(`#${id}`).disabled = !store.preview;
   $("#pin").setAttribute(
     "aria-pressed",
     String(store.selected?.pinned ?? false),
@@ -190,110 +273,110 @@ function render() {
   updatePreview();
 }
 function select(id: string) {
-  store.select(id, true);
+  phoneSelected = id === PHONE_ID;
+  if (phoneSelected) store.preview = true;
+  else store.select(id, true);
   enterExperience();
+  focusSearch();
   keyboardCards = true;
   render();
 }
 tree.onSelect = select;
+tree.onDragEnd = () => {
+  draggingCard = false;
+};
 tree.onDrag = (id) => {
+  draggingCard = true;
+  nativePreview.dismissImmediately();
   enterExperience();
   showWindow("notes");
+  phoneSelected = false;
   store.select(id);
   store.preview = false;
   keyboardCards = true;
   render();
 };
 function updatePreview() {
-  const clip = store.selected;
-  const want = !!(store.preview && clip && store.visible);
-  openMotion.target = want ? 1 : 0;
-  if (clip && (want || openMotion.value > 0)) {
-    const rect = tree.rect(clip.id);
-    if (rect) source = { x: rect.left, y: rect.top, width: rect.width };
-    previewWidth = Math.min(370, innerWidth - 32);
-    preview.style.width = `${previewWidth}px`;
-    const tx = Math.max(
-      16,
-      Math.min(innerWidth - previewWidth - 16, source.x - 35),
-    );
-    const ty = Math.max(48, Math.min(innerHeight - 420, source.y - 60));
-    if (preview.hidden) {
-      px.value = source.x;
-      py.value = source.y;
-      previewScale.value = source.width / previewWidth;
-      previewScale.velocity = 0;
-      px.velocity = 0;
-      py.velocity = 0;
-    }
-    px.target = want ? tx : source.x;
-    py.target = want ? ty : source.y;
-    previewScale.target = want ? 1 : source.width / previewWidth;
-    if (previewId !== clip.id) {
-      previewId = clip.id;
-      $("#preview-source").textContent =
-        `${clip.source} · ${clip.pinned ? "已置顶" : "刚刚的灵感"}`;
-      const content = $("#preview-content");
-      content.replaceChildren();
+  const clip = phoneSelected ? undefined : store.selected;
+  const id = phoneSelected ? PHONE_ID : (clip?.id ?? null);
+  const want = !!(store.preview && id && store.visible && !layoutMode);
+  const contentChanged = want && id !== previewId;
+  if (contentChanged) {
+    previewId = id;
+    $("#preview-source").textContent = phoneSelected
+      ? "手机同步"
+      : `${String(store.index + 1).padStart(2, "0")}${clip?.pinned ? " · ↟" : ""} · ${clip?.source || "—"}`;
+    $("#preview-date").textContent = clip
+      ? dateLabel(clip.created)
+      : "网页演示 · 未连接设备";
+    const content = $("#preview-content");
+    content.replaceChildren();
+    content.classList.toggle("image-content", !!clip?.image);
+    if (phoneSelected) {
+      const p = document.createElement("p");
+      p.textContent =
+        "手机同步\n\nMac 版可以通过局域网与手机配对。网页体验不连接真实设备，也不生成配对二维码。";
+      content.append(p);
+    } else if (clip) {
       if (clip.image) {
         const img = document.createElement("img");
         img.src = clip.image;
         img.alt = clip.text;
         content.append(img);
-        const label = document.createElement("small");
-        label.textContent = clip.ocr
-          ? "预置 OCR 示例文字"
-          : "真实摄影 · Luca Bravo · 布莱埃斯湖";
-        content.append(label);
+        if (clip.ocr) {
+          const label = document.createElement("small");
+          label.textContent = "预置 OCR 示例文字";
+          content.append(label);
+        }
       }
-      const p = document.createElement("p");
-      p.textContent = clip.image ? (clip.ocr ?? clip.text) : clip.text;
-      content.append(p);
-      content.scrollTop = 0;
+      if (!clip.image || clip.ocr) {
+        const p = document.createElement("p");
+        p.textContent = clip.image ? clip.ocr! : clip.text;
+        content.append(p);
+      }
     }
+    content.scrollTop = 0;
   }
-  if (want) {
-    preview.hidden = false;
-    preview.inert = false;
-  } else preview.inert = true;
-  wakePreview();
-}
-function wakePreview() {
-  if (!previewFrame && !document.hidden) {
-    previewLast = performance.now();
-    previewFrame = requestAnimationFrame(animatePreview);
+  if (contentChanged) {
+    let size = { width: 340, height: 210 };
+    if (phoneSelected) size = { width: 340, height: 390 };
+    else if (clip?.image) size = { width: 480, height: 297 };
+    else if (clip?.kind === "file") size = { width: 400, height: 247 };
+    else if (clip) {
+      // Measure the same fixed logical reading layouts used by PreviewPanel.
+      const measure = document.createElement("div");
+      Object.assign(measure.style, {
+        position: "fixed",
+        visibility: "hidden",
+        font: "15px -apple-system, BlinkMacSystemFont, sans-serif",
+        lineHeight: "normal",
+        whiteSpace: "pre-wrap",
+        overflowWrap: "anywhere",
+      });
+      measure.textContent = clip.text.slice(0, 3000);
+      document.body.append(measure);
+      for (const candidate of [
+        { width: 340, height: 210 },
+        { width: 400, height: 247 },
+        { width: 480, height: 297 },
+      ]) {
+        size = candidate;
+        measure.style.width = `${candidate.width - 42}px`;
+        if (measure.offsetHeight + 84 <= candidate.height) break;
+      }
+      measure.remove();
+    }
+    previewSize = size;
   }
-}
-function animatePreview(now: number) {
-  previewFrame = 0;
-  const dt = Math.min(0.04, (now - previewLast) / 1000);
-  previewLast = now;
-  for (const s of [openMotion, px, py, previewScale]) {
-    if (reduced.matches) {
-      s.value = s.target;
-      s.velocity = 0;
-    } else s.step(dt);
-  }
-  preview.style.transform = `translate(${px.value}px,${py.value}px) scale(${previewScale.value})`;
-  preview.style.opacity = String(
-    Math.max(0, Math.min(1, openMotion.value * 3)),
+  nativePreview.update(
+    id,
+    id ? tree.pose(id) : undefined,
+    want,
+    previewSize,
+    () => (id ? tree.compact(id) : undefined),
   );
-  const settled = [openMotion, px, py, previewScale].every((s) => s.settled);
-  if (openMotion.target === 0 && settled) {
-    preview.hidden = true;
-    previewId = null;
-    tree.render(store.entries, store.selectedId, false, store.visible);
-    return;
-  }
-  if (!settled) previewFrame = requestAnimationFrame(animatePreview);
 }
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden) {
-    cancelAnimationFrame(previewFrame);
-    previewFrame = 0;
-  } else wakePreview();
-});
-tree.onLayout = () => updatePreview();
+tree.onLayout = updatePreview;
 function rememberSelection() {
   const s = getSelection();
   if (s?.rangeCount && note.contains(s.anchorNode))
@@ -301,7 +384,7 @@ function rememberSelection() {
 }
 document.addEventListener("selectionchange", rememberSelection);
 function paste(clip = store.selected) {
-  if (!clip) return;
+  if (!clip || phoneSelected) return;
   showWindow("notes");
   let range: Range;
   if (noteRange && note.contains(noteRange.commonAncestorContainer)) {
@@ -337,21 +420,47 @@ function paste(clip = store.selected) {
       minute: "2-digit",
     });
   store.preview = false;
+  store.visible = false;
   render();
   toast("已粘贴到备忘录");
 }
 async function realCopy() {
   const clip = store.selected;
-  if (!clip) return;
+  if (!clip || phoneSelected) return;
+  closeTree();
   try {
-    await navigator.clipboard.writeText(clip.text);
-    toast(clip.image ? "已复制图片标题" : "已复制到系统剪贴板");
+    if (clip.image && typeof ClipboardItem !== "undefined") {
+      // Keep write() inside the user gesture, including Safari's activation window.
+      const png = (async () => {
+        const response = await fetch(clip.image!);
+        if (!response.ok) throw new Error("image unavailable");
+        const bitmap = await createImageBitmap(await response.blob());
+        const canvas = document.createElement("canvas");
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        canvas.getContext("2d")!.drawImage(bitmap, 0, 0);
+        bitmap.close();
+        return await new Promise<Blob>((resolve, reject) =>
+          canvas.toBlob(
+            (blob) =>
+              blob ? resolve(blob) : reject(new Error("PNG unavailable")),
+            "image/png",
+          ),
+        );
+      })();
+      await navigator.clipboard.write([
+        new ClipboardItem({ "image/png": png }),
+      ]);
+    } else if (clip.image) {
+      throw new Error("image clipboard unavailable");
+    } else await navigator.clipboard.writeText(clip.text);
+    toast("已复制到系统剪贴板");
   } catch {
     toast("浏览器未允许复制；仍可粘贴到演示备忘录");
   }
 }
 function deleteSelected() {
-  if (!store.selected) return;
+  if (!store.selected || phoneSelected) return;
   store.remove();
   previewId = null;
   render();
@@ -363,7 +472,7 @@ function modal(html: string) {
 }
 function help() {
   modal(
-    `<span class="eyebrow">A QUIETER PLACE FOR IDEAS</span><h2>一棵树，收好你的灵感。</h2><p>这是浏览器中的可操作演示。文字、图片与文件路径均为示例，你输入的内容只保留在当前页面中。</p><dl><dt>打开许愿树</dt><dd>菜单栏图标 / 许愿树按钮 / ⇧⌘V</dd><dt>选择与预览</dt><dd>↑ ↓ 选择 · 单击或空格展开</dd><dt>粘贴与整理</dt><dd>回车粘贴 · Delete 删除 · 按钮置顶</dd><dt>翻组</dt><dd>Page Up / Page Down 或树下方箭头</dd><dt>关闭</dt><dd>Esc 先关闭预览，再收起许愿树</dd></dl><p class="muted">浏览器占用的快捷键请使用按钮。macOS App 另支持本地 Vision OCR、iCloud 和局域网手机同步；本网页不连接这些服务。</p><a href="${REPO}" target="_blank" rel="noopener" class="dialog-link">查看 GitHub 与完整说明 ↗</a>`,
+    `<span class="eyebrow">A QUIETER PLACE FOR IDEAS</span><h2>一棵树，收好你的灵感。</h2><p>这是浏览器中的可操作演示。文字、图片与文件路径均为示例，你输入的内容只保留在当前页面中。</p><dl><dt>打开许愿树</dt><dd>菜单栏图标 / 许愿树按钮 / ⇧⌘V</dd><dt>选择与预览</dt><dd>↑ ↓ 选择 · 单击 / 空格 / ⌘Y 展开 · ⇧空格输入空格</dd><dt>粘贴与整理</dt><dd>回车粘贴 · Delete 删除 · ⌘P 置顶 · ⌘C 复制</dd><dt>翻组</dt><dd>Page Up / Page Down，保留当前组内位置</dd><dt>关闭</dt><dd>Esc 先关闭预览，再收起许愿树</dd></dl><p class="muted">浏览器占用的快捷键请使用按钮。⌘1–9 粘贴搜索结果前九项；⇧⌘M 调整布局，⌘R 还原布局，Esc 完成。浏览器可能优先处理 ⌘W、⌘R、⌘1–9、⌘Y 和系统快捷键；网页无法注册全局热键。macOS App 另支持本地 Vision OCR、iCloud 和局域网手机同步；本网页不连接这些服务。</p><a href="${REPO}" target="_blank" rel="noopener" class="dialog-link">查看 GitHub 与完整说明 ↗</a>`,
   );
 }
 $("#download-button").onclick = () => {
@@ -399,6 +508,7 @@ document.querySelectorAll<HTMLButtonElement>("[data-sample]").forEach(
 search.addEventListener("input", () => {
   if (composing) return;
   store.search(search.value);
+  phoneSelected = false;
   keyboardCards = false;
   render();
 });
@@ -407,36 +517,80 @@ search.addEventListener("pointerdown", () => (keyboardCards = false));
 $("#clear-search").onclick = () => {
   search.value = "";
   store.search("");
+  phoneSelected = false;
   render();
   search.focus();
 };
 $("#previous").onclick = () => {
+  phoneSelected = false;
+  focusSearch();
+  keyboardCards = true;
   store.turn(-1);
   render();
 };
 $("#next").onclick = () => {
+  phoneSelected = false;
+  focusSearch();
+  keyboardCards = true;
   store.turn(1);
   render();
 };
 $("#pin").onclick = () => {
+  if (phoneSelected) return;
   store.pin();
   previewId = null;
   render();
 };
 $("#delete").onclick = deleteSelected;
 $("#paste").onclick = () => paste();
-$("#preview-paste").onclick = () => paste();
+$("#toggle-preview").onclick = togglePreview;
 $("#real-copy").onclick = realCopy;
 $("#close-preview").onclick = () => {
   store.preview = false;
   render();
 };
-$("#menu-tree").onclick = () => {
-  enterExperience();
-  store.visible = !store.visible;
-  if (!store.visible) store.preview = false;
-  $(".desktop").dataset.mobileView = "tree";
-  render();
+$("#menu-tree").onclick = () => (store.visible ? closeTree() : presentTree());
+$("#close-tree").onclick = closeTree;
+$("#zoom-in").onclick = () => nativePreview.zoomBy(1.1);
+$("#zoom-out").onclick = () => nativePreview.zoomBy(1 / 1.1);
+$("#actions-button").onclick = () => {
+  const menu = $("#action-menu");
+  menu.hidden = !menu.hidden;
+  $("#actions-button").setAttribute("aria-expanded", String(!menu.hidden));
+};
+$("#action-menu").addEventListener("click", (e) => {
+  if ((e.target as Element).closest("button")) {
+    $("#action-menu").hidden = true;
+    $("#actions-button").setAttribute("aria-expanded", "false");
+  }
+});
+$("#layout-toggle").onclick = () => setLayoutMode(!layoutMode);
+$("#layout-done").onclick = () => setLayoutMode(false);
+document.querySelectorAll<HTMLButtonElement>("[data-size]").forEach(
+  (button) =>
+    (button.onclick = () => {
+      layoutScale = Number(button.dataset.size);
+      $("#tree-area").style.setProperty("--layout-scale", String(layoutScale));
+      resetTreePosition();
+    }),
+);
+let layoutDrag: { x: number; y: number; left: number; top: number } | null =
+  null;
+$("#layout-drag").onpointerdown = (e) => {
+  const r = $("#tree-area").getBoundingClientRect();
+  layoutDrag = { x: e.clientX, y: e.clientY, left: r.left, top: r.top };
+  $("#layout-drag").setPointerCapture(e.pointerId);
+};
+$("#layout-drag").onpointermove = (e) => {
+  if (!layoutDrag) return;
+  const area = $("#tree-area");
+  area.style.left = `${Math.max(0, Math.min(innerWidth - area.offsetWidth, layoutDrag.left + e.clientX - layoutDrag.x))}px`;
+  area.style.top = `${Math.max(32, Math.min(innerHeight - area.offsetHeight, layoutDrag.top + e.clientY - layoutDrag.y))}px`;
+  area.style.transform = "none";
+  tree.wake();
+};
+$("#layout-drag").onpointerup = $("#layout-drag").onpointercancel = () => {
+  layoutDrag = null;
 };
 $("#about-button").onclick = help;
 $(".dialog-close").onclick = () => $<HTMLDialogElement>("#info-dialog").close();
@@ -451,10 +605,15 @@ $("#clear-note").onclick = () => {
 };
 $("#reset").onclick = () => {
   store = new HistoryStore(welcomeClips());
-  store.selectedId = null;
+
+  phoneSelected = false;
+  setLayoutMode(false);
+  layoutScale = 1;
+  $("#tree-area").style.removeProperty("--layout-scale");
+  resetTreePosition();
   exploring = false;
   $(".desktop").classList.remove("exploring");
-  $(".tree-controls").inert = true;
+  $(".tree-controls").inert = false;
   $(".experience-tools").inert = true;
   search.value = "";
   note.replaceChildren();
@@ -550,71 +709,185 @@ document.addEventListener("compositionstart", () => (composing = true));
 document.addEventListener("compositionend", () => {
   composing = false;
   if (document.activeElement === search) {
+    phoneSelected = false;
+    keyboardCards = false;
     store.search(search.value);
     render();
   }
 });
+// PanelController + HistoryKeyboardState dispatch order. Browser/system shortcuts
+// can be intercepted before keydown; all actions also have explicit controls.
 document.addEventListener("keydown", (e) => {
-  if (composing || e.isComposing || $<HTMLDialogElement>("#info-dialog").open)
+  if (
+    draggingCard ||
+    composing ||
+    e.isComposing ||
+    e.keyCode === 229 ||
+    $<HTMLDialogElement>("#info-dialog").open
+  )
     return;
   const target = e.target as HTMLElement;
   const editing =
     target.isContentEditable ||
     target instanceof HTMLTextAreaElement ||
     (target instanceof HTMLInputElement && target !== search);
-  if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.code === "KeyV" && !editing) {
+  const command = e.metaKey;
+  const commandOnly = command && !e.shiftKey && !e.altKey && !e.ctrlKey;
+  const noModifiers = !command && !e.shiftKey && !e.altKey && !e.ctrlKey;
+  if (
+    command &&
+    e.shiftKey &&
+    !e.ctrlKey &&
+    !e.altKey &&
+    e.code === "KeyV" &&
+    !editing
+  ) {
     e.preventDefault();
-    store.visible = !store.visible;
-    store.preview = false;
-    render();
+    if (!e.repeat) store.visible ? closeTree() : presentTree();
     return;
   }
   if (editing || !store.visible) return;
-  const cardTarget =
-    target === document.body || target === search || !!target.closest(".paper");
+  if (command && e.shiftKey && !e.ctrlKey && !e.altKey && e.code === "KeyM") {
+    e.preventDefault();
+    if (!e.repeat) setLayoutMode(!layoutMode);
+    return;
+  }
+  if (layoutMode) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setLayoutMode(false);
+    } else if (commandOnly && e.code === "KeyR") {
+      e.preventDefault();
+      layoutScale = 1;
+      $("#tree-area").style.removeProperty("--layout-scale");
+      resetTreePosition();
+    }
+    return;
+  }
+  if (
+    target.closest(
+      ".menubar,.experience-tools,#action-menu,.download-area,.site-footer,#browser,#notes",
+    )
+  )
+    return;
   if (e.key === "Escape") {
     e.preventDefault();
-    if (store.preview) store.preview = false;
-    else store.visible = false;
+    if (e.repeat) return;
+    if (store.preview) {
+      store.preview = false;
+      render();
+    } else closeTree();
+    return;
+  }
+  if (e.key === " " && e.shiftKey && !command && !e.ctrlKey && !e.altKey) {
+    keyboardCards = false;
+    if (target !== search) {
+      e.preventDefault();
+      focusSearch();
+      search.setRangeText(
+        " ",
+        search.selectionStart ?? search.value.length,
+        search.selectionEnd ?? search.value.length,
+        "end",
+      );
+      search.dispatchEvent(new Event("input"));
+    }
+    return;
+  }
+  if (
+    (e.key === " " && !command && !e.ctrlKey && !e.altKey) ||
+    (commandOnly && e.code === "KeyY")
+  ) {
+    e.preventDefault();
+    if (!e.repeat) togglePreview();
+    return;
+  }
+  if (
+    ["ArrowDown", "ArrowUp"].includes(e.key) ||
+    (noModifiers && ["PageDown", "PageUp"].includes(e.key))
+  ) {
+    e.preventDefault();
+    enterExperience();
+    phoneSelected = false;
+    focusSearch();
+    keyboardCards = true;
+    const previousId = store.selectedId;
+    store.move(
+      e.key === "ArrowDown"
+        ? 1
+        : e.key === "ArrowUp"
+          ? -1
+          : e.key === "PageDown"
+            ? 8
+            : -8,
+    );
+    if (previousId === store.selectedId && store.results.length)
+      nativePreview.bounce(
+        e.key === "ArrowDown" || e.key === "PageDown" ? -1 : 1,
+      );
     render();
     return;
   }
-  if (e.metaKey || e.ctrlKey || e.altKey || !cardTarget) return;
+  if (e.key === "Enter") {
+    e.preventDefault();
+    if (phoneSelected) {
+      store.preview = true;
+      render();
+    } else paste();
+    return;
+  }
+  if (commandOnly && e.code === "KeyC") {
+    e.preventDefault();
+    void realCopy();
+    return;
+  }
+  if (commandOnly && e.code === "KeyP") {
+    e.preventDefault();
+    if (!phoneSelected) {
+      store.pin();
+      previewId = null;
+      render();
+    }
+    return;
+  }
+  if (commandOnly && e.code === "KeyW") {
+    e.preventDefault();
+    closeTree();
+    return;
+  }
+  if (commandOnly && /^Digit[1-9]$/.test(e.code)) {
+    e.preventDefault();
+    phoneSelected = false;
+    const clip = store.results[Number(e.code.slice(-1)) - 1];
+    if (clip) paste(clip);
+    return;
+  }
+  const deletion = e.key === "Delete" || e.key === "Backspace";
   if (
-    ["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Enter", " "].includes(e.key)
-  )
-    enterExperience();
-  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-    e.preventDefault();
-    keyboardCards = true;
-    store.move(e.key === "ArrowDown" ? 1 : -1);
-    render();
-  } else if (e.key === "PageDown" || e.key === "PageUp") {
-    e.preventDefault();
-    keyboardCards = true;
-    store.turn(e.key === "PageDown" ? 1 : -1);
-    render();
-  } else if (
-    e.key === "Enter" &&
-    (target !== search || keyboardCards || !search.value)
-  ) {
-    e.preventDefault();
-    paste();
-  } else if (
-    e.key === " " &&
+    deletion &&
+    !command &&
+    !e.ctrlKey &&
+    !e.altKey &&
     !e.shiftKey &&
-    (target !== search || keyboardCards)
+    (keyboardCards || !store.query)
   ) {
     e.preventDefault();
-    store.preview = !store.preview;
-    render();
-  } else if (
-    (e.key === "Delete" || e.key === "Backspace") &&
-    !e.repeat &&
-    (keyboardCards || target !== search)
-  ) {
-    e.preventDefault();
-    deleteSelected();
+    if (!e.repeat) deleteSelected();
+    return;
+  }
+  if (!command && !e.ctrlKey && (e.key.length === 1 || deletion)) {
+    keyboardCards = false;
+    if (target !== search && e.key.length === 1 && !e.altKey) {
+      e.preventDefault();
+      focusSearch();
+      search.setRangeText(
+        e.key,
+        search.selectionStart ?? search.value.length,
+        search.selectionEnd ?? search.value.length,
+        "end",
+      );
+      search.dispatchEvent(new Event("input"));
+    }
   }
 });
 function clock() {
