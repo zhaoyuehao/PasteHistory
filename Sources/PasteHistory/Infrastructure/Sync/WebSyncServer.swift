@@ -32,9 +32,7 @@ final class WebSyncServer {
     private var payloadKey: SymmetricKey
 
     private init() {
-        let saved = UserDefaults.standard.string(forKey: "webSyncPairCode")
-        let code = saved ?? String(format: "%06d", Int.random(in: 0..<1_000_000))
-        if saved == nil { UserDefaults.standard.set(code, forKey: "webSyncPairCode") }
+        let code = WebSyncPairing.loadOrCreate(defaults: .standard)
         pairCode = code
 
         pairToken = SHA256.hash(data: Data(code.utf8)).map { String(format: "%02x", $0) }.joined()
@@ -57,7 +55,7 @@ final class WebSyncServer {
     func refreshPairingCode() {
         var code: String
         repeat {
-            code = String(format: "%06d", Int.random(in: 0..<1_000_000))
+            code = WebSyncPairing.generate()
         } while code == pairCode
         UserDefaults.standard.set(code, forKey: "webSyncPairCode")
         let token = SHA256.hash(data: Data(code.utf8)).map { String(format: "%02x", $0) }.joined()
@@ -127,7 +125,7 @@ final class WebSyncServer {
     var pairingURL: String? {
         for name in ["en0", "en1"] {
             guard let ip = Self.ifAddress(name) else { continue }
-            return "http://\(ip):\(Self.port)/#pair=\(pairCode)"
+            return "http://\(ip):\(Self.port)/#\(WebSyncPairing.fragment(for: pairCode))"
         }
         return nil
     }
@@ -239,7 +237,7 @@ final class WebSyncServer {
             break
         }
 
-        // 暴力破解防护：60 秒内连续 10 次 401 就短暂拒绝（6 位码只有 100 万组合）
+        // 暴力破解防护：60 秒内连续 10 次 401 就短暂拒绝。
         let now = Date().timeIntervalSince1970
         authFailures = authFailures.filter { now - $0 < 60 }
         guard authFailures.count < 10 else {

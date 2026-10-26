@@ -51,7 +51,7 @@ Layout changes preserve the size preset; moving the tree only affects the curren
 
 ## Sync
 
-- **Phone:** click the tree's Phone Sync card and scan the QR code on the same reachable local network. Paste text into the web page to send it to the Mac; copy text/file paths or save images from Mac history. Refreshing the QR code invalidates old pairing sessions. HTTP phone pages cannot automatically read the clipboard or work offline.
+- **Phone:** click the tree's Phone Sync card and scan the QR code on the same reachable local network. Paste text into the web page to send it to the Mac; copy text/file paths or save images from Mac history. Pairing uses a random 16-character code with letters, digits and symbols, carried automatically by the QR code. Upgrading from six-digit pairing requires one rescan. Refreshing the QR code invalidates old pairing sessions. HTTP phone pages cannot automatically read the clipboard or work offline.
 - **Other Macs:** use the same Apple account with iCloud Drive available. Sync is enabled by default; the menu shows a retry item when unavailable. Records, images and deletions propagate through `iCloud Drive/PasteHistory/` as files arrive.
 
 The phone page searches at most 300 downloaded records. File entries contain paths, not arbitrary file contents. See [sync details and security boundaries](docs/sync.md).
