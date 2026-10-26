@@ -5,6 +5,8 @@ import AppKit
 /// or reflowing paragraphs on every pinch event.
 final class PaperPreviewSurface: NSView {
     let document: NSView
+    private let chrome = PaperFaceLayers()
+    private let documentMask = CAShapeLayer()
     private var drawingScale: CGFloat = 0
     var readingSize: NSSize? { didSet { needsLayout = true } }
 
@@ -12,7 +14,11 @@ final class PaperPreviewSurface: NSView {
         self.document = document
         super.init(frame: document.frame)
         document.autoresizingMask = []
+        wantsLayer = true
+        document.wantsLayer = true
         addSubview(document)
+        layer?.insertSublayer(chrome.root, at: 0)
+        document.layer?.mask = documentMask
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
@@ -23,6 +29,14 @@ final class PaperPreviewSurface: NSView {
         if bounds.size != logical { setBoundsSize(logical) }
         if document.frame != bounds { document.frame = bounds }
         super.layout()
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        chrome.place(PaperPose(frame: bounds), canvas: bounds, expansion: 1,
+                     backingScale: window?.backingScaleFactor ?? 2)
+        // The live document and the two cached faces expose the same shell.
+        // Keep text selection native inside the fixed logical reading layout.
+        documentMask.path = CGPath(rect: NSRect(x: 2, y: document.isFlipped ? 10 : 2,
+            width: max(0,bounds.width-4), height: max(0,bounds.height-12)), transform: nil)
+        CATransaction.commit()
         let scale = (window?.backingScaleFactor ?? 2) * frame.width / max(1, bounds.width)
         if abs(scale - drawingScale) > 0.001 {
             drawingScale = scale
@@ -44,6 +58,7 @@ final class PaperPreviewSurface: NSView {
 /// view recognizers until a click makes it key. Route only this window's events
 /// before that focus gate; the search editor remains the keyboard destination.
 final class PaperPreviewPanel: NSPanel {
+    var acceptsKeyboardFocus = true
     var onCollapse: (() -> Void)?
     private var clickOrigin: NSPoint?
     private var clickGeneration = 0
@@ -51,7 +66,7 @@ final class PaperPreviewPanel: NSPanel {
     var onMagnify: ((CGFloat, NSEvent.Phase) -> Bool)?
     private var interactionMonitor: Any?
     var handlesPaperPinch: Bool { interactionMonitor != nil }
-    override var canBecomeKey: Bool { true }
+    override var canBecomeKey: Bool { acceptsKeyboardFocus }
     override var canBecomeMain: Bool { false }
 
     func beginPaperInteraction() {

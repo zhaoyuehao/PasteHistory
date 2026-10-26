@@ -38,7 +38,8 @@ final class IvoryTreeSceneView: SCNView {
     private var anchors: [SCNVector3] = []
     private var entries: [IvoryTreeEntry] = []
     private var selectedID: UUID?
-    private var timer: Timer?
+    private let clock = MotionClock()
+    private var clockRunning = false
     private var yaw: CGFloat = -0.24
     private var pitch: CGFloat = -0.04
     private var targetYaw: CGFloat = -0.24
@@ -46,7 +47,6 @@ final class IvoryTreeSceneView: SCNView {
     private var yawVelocity: CGFloat = 0
     private var pitchVelocity: CGFloat = 0
     private var sway: CGFloat = 0
-    private var lastStep: CFTimeInterval = 0
     var onSelect: ((UUID) -> Void)?
     var onPreview: ((UUID) -> Void)?
     var layoutEditing = false { didSet { paper.layoutEditing = layoutEditing; startSettling() } }
@@ -99,8 +99,8 @@ final class IvoryTreeSceneView: SCNView {
         applyRotation()
         setAccessibilityElement(false)
     }
+    deinit { MainActor.assumeIsolated { clock.stop() } }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    deinit { timer?.invalidate() }
 
     private func addLight(
         type: SCNLight.LightType, intensity: CGFloat, position: SCNVector3, shadows: Bool = false
@@ -226,8 +226,8 @@ final class IvoryTreeSceneView: SCNView {
         if window == nil { stopRendering() } else { present() }
     }
     func stopRendering() {
-        timer?.invalidate()
-        timer = nil
+        clock.stop()
+        clockRunning = false
     }
     private func applyRotation() {
         let rotation = SCNVector3(pitch, yaw, 0)
@@ -238,20 +238,17 @@ final class IvoryTreeSceneView: SCNView {
         SCNTransaction.commit()
     }
     private func startSettling() {
-        guard timer == nil else { return }
-        lastStep = CACurrentMediaTime()
-        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in self?.step() }
-        self.timer = timer
-        RunLoop.main.add(timer, forMode: .common)
+        guard !clockRunning, let window else { return }
+        clockRunning = true
+        preferredFramesPerSecond = window.screen?.maximumFramesPerSecond ?? 60
+        clock.start(on: window) { [weak self] frame in self?.step(frame) }
     }
-    private func step() {
+    private func step(_ frame: MotionClock.Frame) {
         guard window?.isVisible == true else {
             stopRendering()
             return
         }
-        let now = CACurrentMediaTime()
-        let dt = CGFloat(min(1.0 / 30, max(1.0 / 240, now - lastStep)))
-        lastStep = now
+        let dt = CGFloat(min(1.0 / 30, frame.delta))
         let reduced = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         let steps = dt * 60
         let damping = pow(0.71, steps)

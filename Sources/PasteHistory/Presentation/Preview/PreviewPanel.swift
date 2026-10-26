@@ -31,11 +31,10 @@ final class PreviewPanelController: NSObject {
     private var isClosing = false
     private var sink: Any?
     private let paperFlight = PaperPreviewFlight()
-    private let paperFollow = PaperPreviewFollow()
-    private let paperScaleReturn = PaperScaleReturn()
     private var previewedID: UUID?
     private var paperReturnPose: PaperPose?
     private var paperReturnImage: NSImage?
+    private var paperReturnColor = IvoryPaperStyle.fill
     private var paperSessionSize: NSSize?
     private var paperMagnification: CGFloat = 1
     private var gestureMagnification: CGFloat = 1
@@ -51,6 +50,8 @@ final class PreviewPanelController: NSObject {
         self.mediaLoader = PreviewMediaLoader(imagesDirectory: model.store.imagesDirectory)
         self.owner = owner
         super.init()
+        paperFlight.onToggle = { [weak self] in self?.toggle() }
+        paperFlight.onMagnify = { [weak self] delta, phase in self?.magnifyPaper(by: delta, phase: phase) ?? false }
         // 预览开着时记录发生了删除 / 清空 / 过滤：跟随下一条；记录空了就收窗，
         // 不做孤儿窗口。objectWillChange 是改前通知，转一道主队列再看，读到的一定是改后状态
         sink = Publishers.Merge(model.objectWillChange, presentation.objectWillChange)
@@ -99,13 +100,12 @@ final class PreviewPanelController: NSObject {
     /// Animate a lightweight paper snapshot, not a resizing text layout. The
     /// actual preview stays at its final size; arrow navigation never queues flights.
     private func openFromPaper(_ panel: NSPanel, continuing: Bool = false) {
+        let reuseFaces = continuing && paperFlight.isAnimating(recordID: selectionID)
         if !continuing {
             AnchorTrace.write("preview-input open pid=\(ProcessInfo.processInfo.processIdentifier) active=\(NSApp.isActive) key=\(panel.isKeyWindow)")
         }
         // Choose once per opening. Arrows move the sheet without resizing the
         // text container on every animation frame.
-        paperFollow.cancel()
-        paperScaleReturn.cancel()
         needsFlightRetarget = false
         if !continuing {
             paperSessionSize = selectedPaperSize
@@ -113,26 +113,31 @@ final class PreviewPanelController: NSObject {
             gestureMagnification = 1
         }
         (panel as? PaperPreviewPanel)?.beginPaperInteraction()
-        (panel.contentView as? PaperPreviewSurface)?.readingSize = paperSessionSize
+        if !reuseFaces { (panel.contentView as? PaperPreviewSurface)?.readingSize = paperSessionSize }
         let target = targetFrame()
         let paper = owner?.previewPaper
         let origin = paper?.paperPose ?? paperReturnPose ?? PaperPose(frame: target)
-        let compactFace = paper?.paperSnapshot?() ?? paperReturnImage
-        paperReturnImage = compactFace
+        let compactFace = reuseFaces ? nil : (paper?.paperSnapshot?() ?? paperReturnImage)
+        if !reuseFaces {
+            paperReturnImage = compactFace
+            paperReturnColor = paper?.paperColor ?? paperReturnColor
+        }
         previewedID = selectionID
         paperReturnPose = paper?.paperPose
         panel.setFrame(target, display: false)
         panel.alphaValue = 0
         panel.ignoresMouseEvents = true
-        panel.orderFrontRegardless()
-        panel.contentView?.layoutSubtreeIfNeeded()
-        let expandedFace = snapshot(panel.contentView)
+        if !reuseFaces {
+            panel.orderFrontRegardless()
+            panel.contentView?.layoutSubtreeIfNeeded()
+        }
+        let expandedFace = reuseFaces ? nil : snapshot(panel.contentView)
         let targetPose = readingPose(frame: panel.frame)
         paperFlight.animate(from: Motion.reduceMotion ? targetPose : origin, to: targetPose,
-                            readingImage: expandedFace, compactImage: compactFace, recordID: previewedID, duration: Motion.reduceMotion ? 0.12 : Motion.paperOpenDuration,
+                            readingImage: expandedFace, compactImage: compactFace, compactColor: paperReturnColor, recordID: previewedID,
                             opening: true, onReady: { [weak self] in
             guard let self else { return }
-            self.owner?.setExpandedPaper(self.previewedID)
+            if !reuseFaces { self.owner?.setExpandedPaper(self.previewedID) }
         }) { [weak self, weak panel] in
             panel?.alphaValue = 1
             panel?.ignoresMouseEvents = false
@@ -142,9 +147,6 @@ final class PreviewPanelController: NSObject {
 
     private func closeToPaper(_ panel: NSPanel) {
         (panel as? PaperPreviewPanel)?.endPaperInteraction()
-        let followVelocity = paperFollow.currentVelocity
-        paperFollow.cancel()
-        paperScaleReturn.cancel()
         if panel.isKeyWindow, owner?.previewAnchorVisible == true { owner?.makePanelKeyAgain() }
         let finish: () -> Void = { [weak self] in
             guard let self else { return }
@@ -155,17 +157,18 @@ final class PreviewPanelController: NSObject {
             self.owner?.setExpandedPaper(nil)
         }
         let origin = readingPose(frame: panel.frame)
-        let paper = owner?.previewPaper
+        let paper = owner?.previewPaper(for: previewedID)
         let destination = paper?.paperPose ?? paperReturnPose ?? origin
-        let compactFace = paper?.paperSnapshot?() ?? paperReturnImage
+        let continuing = paperFlight.visiblePose != nil
+        let compactFace = continuing ? nil : (paper?.paperSnapshot?() ?? paperReturnImage)
         // Capture the current reading viewport once, without resizing it. During
         // a reversal, the existing flight retains its exact face and momentum.
         let readingFace = paperFlight.visiblePose == nil ? snapshot(panel.contentView) : nil
         panel.ignoresMouseEvents = true
         paperFlight.animate(from: origin, to: Motion.reduceMotion ? origin : destination,
-            readingImage: readingFace, compactImage: compactFace, recordID: previewedID,
-            duration: Motion.reduceMotion ? 0.12 : Motion.paperCloseDuration, opening: false,
-            initialVelocity: followVelocity, onReady: { [weak panel] in
+            readingImage: readingFace, compactImage: compactFace, compactColor: paper?.paperColor ?? paperReturnColor, recordID: previewedID,
+            opening: false,
+            onReady: { [weak panel] in
                 panel?.alphaValue = 0
             }, completion: finish)
     }
@@ -186,8 +189,6 @@ final class PreviewPanelController: NSObject {
     func closeImmediately() {
         (panel as? PaperPreviewPanel)?.endPaperInteraction()
         paperFlight.cancel()
-        paperFollow.cancel()
-        paperScaleReturn.cancel()
         owner?.setExpandedPaper(nil)
         panel?.orderOut(nil)
         panel?.alphaValue = 1
@@ -247,17 +248,28 @@ final class PreviewPanelController: NSObject {
     }
 
     func followPaper() {
-        guard isVisible, !isClosing,
-              owner?.previewPaper != nil, let panel else { return }
+        guard let panel else { return }
+        if isClosing {
+            if let paper = owner?.previewPaper(for: previewedID), let pose = paper.paperPose {
+                paperFlight.retargetFlight(to: pose, opening: false,
+                    compactImage: paper.paperSnapshot?(), compactColor: paper.paperColor)
+            }
+            return
+        }
+        guard isVisible, owner?.previewPaper != nil else { return }
         if paperFlight.visibleFrame != nil {
-            // A new page may not have laid out its paper when selection changes.
-            // Wait for that actual pin instead of flying to the tree's center.
-            if needsFlightRetarget { openFromPaper(panel, continuing: true) }
+            if needsFlightRetarget {
+                configureAppearance()
+                openFromPaper(panel, continuing: true)
+            } else {
+                panel.setFrame(targetFrame(), display: false)
+                paperFlight.retargetFlight(to: readingPose(frame: panel.frame), opening: true)
+            }
             return
         }
         let target = targetFrame()
         paperReturnPose = owner?.previewPaper?.paperPose ?? paperReturnPose
-        paperFollow.move(panel, to: target.origin)
+        paperFlight.moveLive(panel, to: readingPose(frame: target))
     }
 
     private func buildPanel() {
@@ -302,9 +314,6 @@ final class PreviewPanelController: NSObject {
     private func magnifyPaper(by delta: CGFloat, phase: NSEvent.Phase) -> Bool {
         guard isVisible, !isClosing,
               let panel, let base = paperSessionSize else { return false }
-        // Let an unfinished unfold complete before taking over its geometry.
-        // Consume the gesture so descendants cannot start a second zoom layer.
-        guard paperFlight.visibleFrame == nil else { return true }
         let screen = owner?.previewPaper.flatMap { paper in
             NSScreen.screens.first { $0.frame.intersects(paper.frame) }
         } ?? panel.screen ?? NSScreen.main
@@ -316,17 +325,21 @@ final class PreviewPanelController: NSObject {
             AnchorTrace.write("preview-pinch began delta=\(delta) scale=\(paperMagnification) maximum=\(maximum) key=\(panel.isKeyWindow)")
         }
         if phase.contains(.began) { gestureMagnification = paperMagnification }
-        paperScaleReturn.cancel()
         gestureMagnification = min(maximum * 1.5, max(0.5, gestureMagnification * (1 + delta)))
         let bounded = min(maximum, max(1, gestureMagnification))
         // A little elastic travel at the limits, never beyond screen capacity.
         let elastic = min(screenMaximum, bounded + (gestureMagnification - bounded) * 0.12)
-        applyPaperMagnification(elastic)
+        if delta != 0 || phase.contains(.began) { applyPaperMagnification(elastic) }
         if phase.contains(.ended) || phase.contains(.cancelled) {
             AnchorTrace.write("preview-pinch ended scale=\(bounded) width=\(panel.frame.width)")
             gestureMagnification = bounded
-            paperScaleReturn.settle(from: paperMagnification, to: bounded) { [weak self] scale in
-                self?.applyPaperMagnification(scale)
+            paperMagnification = bounded
+            let target = targetFrame()
+            if paperFlight.visibleFrame != nil {
+                panel.setFrame(target, display: false)
+                paperFlight.retargetFlight(to: readingPose(frame: panel.frame), opening: true)
+            } else {
+                paperFlight.moveLive(panel, to: readingPose(frame: target))
             }
         }
         return true
@@ -335,10 +348,13 @@ final class PreviewPanelController: NSObject {
     private func applyPaperMagnification(_ scale: CGFloat) {
         guard let panel, isVisible, !isClosing else { return }
         paperMagnification = scale
-        paperFollow.cancel()
-        panel.setFrame(targetFrame(), display: true)
-        panel.contentView?.needsLayout = true
-        panel.contentView?.layoutSubtreeIfNeeded()
+        let target = targetFrame()
+        if paperFlight.visibleFrame != nil {
+            panel.setFrame(target, display: false)
+            paperFlight.retargetFlight(to: readingPose(frame: panel.frame), opening: true)
+        } else {
+            paperFlight.trackLive(panel, pose: readingPose(frame: target))
+        }
     }
 
     private func syncAfterModelChange() {

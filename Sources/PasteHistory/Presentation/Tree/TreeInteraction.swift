@@ -14,6 +14,7 @@ final class TreeInteractionPanel: NSPanel {
     }
     var paperSize: NSSize = .zero
     var paperAngle: CGFloat = 0
+    var paperColor = IvoryPaperStyle.fill
     var paperSnapshot: (() -> NSImage?)?
     var paperPose: PaperPose? {
         paperPin.map { PaperPose(pin: $0, size: paperSize, angle: paperAngle, padding: 3) }
@@ -28,7 +29,7 @@ final class TreeInteractionPanel: NSPanel {
                    backing: .buffered, defer: false)
         isOpaque = false
         backgroundColor = .clear
-        hasShadow = false
+        hasShadow = role == .paper
         isReleasedWhenClosed = false
         isMovable = false
         isMovableByWindowBackground = false

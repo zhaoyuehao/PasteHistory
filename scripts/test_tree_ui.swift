@@ -6,6 +6,7 @@ import Vision
 @main
 struct TreeUISmoke {
     @MainActor static func main() throws {
+        setbuf(stdout, nil)
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
         checkPaperMotion()
@@ -266,11 +267,17 @@ struct TreeUISmoke {
                 modifierFlags: mods, timestamp: 0, windowNumber: 0, context: nil,
                 characters: chars, charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code)!)
         }
+        func settlePreview() {
+            let deadline = Date().addingTimeInterval(1.2)
+            while NSApp.windows.contains(where: { $0.isVisible && $0.title == "纸签预览过渡" }), Date() < deadline { run(0.01) }
+            precondition(!NSApp.windows.contains { $0.isVisible && $0.title == "纸签预览过渡" },
+                         "Preview must settle within its bounded physical response")
+        }
         store.query = "设计"
         run(0.7)
         precondition(controller.panelModel.results.count == 24)
         precondition(key(49, chars: " ") == nil)
-        run(0.3)
+        run(0.3); settlePreview()
         precondition(controller.isPreviewVisible, "Space must preview immediately after search")
         let followingPreview = NSApp.windows.first { $0.isVisible && $0.title == L10n.previewTitle }!
         let previousPreviewFrame = followingPreview.frame
@@ -306,29 +313,29 @@ struct TreeUISmoke {
         // Reverse before the spring settles, then cross a page boundary while
         // its new paper windows are still being created.
         for code: UInt16 in [125, 125, 126, 125, 126] { _ = key(code); run(0.025) }
-        run(0.4)
+        run(0.4); settlePreview()
         assertPreviewFollowsSelection()
         controller.panelModel.select(7)
-        run(0.4)
+        run(0.4); settlePreview()
         _ = key(125)
         run(0.5)
         precondition(controller.panelModel.safeSelection == 8)
         assertPreviewFollowsSelection()
         _ = key(49, chars: " ")
-        run(0.3)
+        run(0.3); settlePreview()
         precondition(!controller.isPreviewVisible)
         controller.panelModel.select(0)
-        run(0.4)
+        run(0.4); settlePreview()
         _ = key(49, chars: " ")
         run(0.04)
         _ = key(125) // redirect an unfinished unfold, not a stationary full-size popup
         run(0.04)
         precondition(followingPreview.alphaValue == 0,
                      "Interrupting the unfold must keep the real window hidden until the moving sheet arrives")
-        run(0.4)
+        run(0.4); settlePreview()
         assertPreviewFollowsSelection()
         _ = key(49, chars: " ")
-        run(0.3)
+        run(0.3); settlePreview()
         precondition(key(49, chars: " ", mods: [.shift]) != nil,
                      "Shift-Space must remain available to type multiword queries")
         let liveWindow = NSApp.windows.first { $0.isVisible && $0 is HistoryPanel }!
@@ -355,7 +362,7 @@ struct TreeUISmoke {
         run(0.2)
         precondition(controller.panelModel.current?.id == clickedID, "Filtered paper click must select")
         precondition(controller.isPreviewVisible, "A single paper click must open preview")
-        run(0.2)
+        run(0.2); settlePreview()
         let clickablePreview = NSApp.windows.first { $0.isVisible && $0.title == L10n.previewTitle } as! PaperPreviewPanel
         let previewFace = clickablePreview.contentView!
         let previewCenter = NSPoint(x: previewFace.bounds.midX, y: previewFace.bounds.midY)
@@ -375,13 +382,13 @@ struct TreeUISmoke {
         previewText.setSelectedRange(NSRange(location: 0, length: 0))
         clickablePreview.trackClick(mouse(.leftMouseDown, view: previewFace, point: previewCenter))
         clickablePreview.trackClick(mouse(.leftMouseUp, view: previewFace, point: previewCenter))
-        run(0.3)
+        run(0.3); settlePreview()
         precondition(!controller.isPreviewVisible && controller.isVisible,
                      "Clicking the expanded paper must collapse it without dismissing the tree")
         precondition(controller.panelModel.current?.id == clickedID && controller.previewPaper?.alphaValue == 1,
                      "Click collapse must restore the same source card")
         _ = key(49, chars: " ")
-        run(0.3)
+        run(0.3); settlePreview()
         _ = key(49, chars: " ")
         let returnDeadline = Date().addingTimeInterval(1.5)
         while NSApp.windows.contains(where: { $0.isVisible && $0.title == "纸签预览过渡" }) && Date() < returnDeadline {
@@ -400,7 +407,7 @@ struct TreeUISmoke {
         _ = key(49, chars: " ") // interrupt opening with close
         run(0.04)
         _ = key(49, chars: " ") // reopen during return flight
-        run(0.3)
+        run(0.3); settlePreview()
         precondition(controller.isPreviewVisible)
         precondition(!NSApp.windows.contains { $0.isVisible && $0.title == "纸签预览过渡" }, "No stale flight may survive rapid toggling")
         let expanded = NSApp.windows.first { $0.isVisible && $0.title == L10n.previewTitle }!
@@ -470,7 +477,7 @@ struct TreeUISmoke {
         precondition(closingSheet.frame == reverseFrame
                      && (closingSheet.contentView as! PaperFlightView).expansion == reversePhase,
                      "Mid-return reopening must preserve the presented geometry and content phase")
-        run(0.3)
+        run(0.3); settlePreview()
         precondition(controller.isPreviewVisible && expanded.frame == readingFrameBeforeClose)
         let returnStarted = ProcessInfo.processInfo.systemUptime
         _ = key(49, chars: " ")
@@ -478,7 +485,7 @@ struct TreeUISmoke {
         var closingTimeline = "elapsed_ms,width,height,phase\n"
         var previousClosingWidth = readingFrameBeforeClose.width + 2
         var priorPhase: CGFloat = -1
-        while ProcessInfo.processInfo.systemUptime-returnStarted < 0.34 {
+        while closingSheet.isVisible && ProcessInfo.processInfo.systemUptime-returnStarted < 1.2 {
             if closingSheet.isVisible, let face = closingSheet.contentView as? PaperFlightView,
                face.expansion != priorPhase {
                 precondition(closingSheet.frame.width <= previousClosingWidth+1, "A resting paper must shrink continuously back to its branch")
@@ -508,10 +515,10 @@ struct TreeUISmoke {
         try NSBitmapImageRep(data: closingStrip.tiffRepresentation!)!.representation(using: .png, properties: [:])!
             .write(to: URL(fileURLWithPath: ".build/preview-symmetric-close.png"))
         _ = key(49, chars: " ")
-        run(0.3)
+        run(0.3); settlePreview()
         // Observe actual paper motion: visible travel, monotone settling, exact live-view handoff.
         _ = key(49, chars: " ")
-        run(0.3)
+        run(0.3); settlePreview()
         _ = key(49, chars: " ")
         let settlingPaper = NSApp.windows.first { $0.isVisible && $0.title == "纸签预览过渡" }!
         var widest: CGFloat = 0
@@ -545,6 +552,7 @@ struct TreeUISmoke {
         try NSBitmapImageRep(data: strip.tiffRepresentation!)!.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: ".build/preview-motion-frames.png"))
         precondition(widest > expected.width * 0.95 && widest <= expected.width + 1,
                      "Paper must travel to its reading size without ornamental overshoot")
+        settlePreview()
         precondition(!settlingPaper.isVisible && abs(expanded.frame.width-expected.width) < 1)
         let textZoom = zoomViews(in: expanded.contentView!).first!
         let textWidth = textZoom.documentVisibleRect.width
@@ -553,7 +561,7 @@ struct TreeUISmoke {
         // In particular, preview must remain non-key before and after the pinch.
         func nativePinch(_ panel: PaperPreviewPanel, by delta: CGFloat) {
             let point = NSPoint(x: panel.frame.width / 2, y: panel.frame.height / 2)
-            precondition(panel.routeMagnification(from: panel, at: point, delta: delta, phase: .began))
+            precondition(panel.routeMagnification(from: panel, at: point, delta: delta, phase: .began), "Pinch must reach live paper: visible=\(panel.isVisible) alpha=\(panel.alphaValue) ignores=\(panel.ignoresMouseEvents) monitor=\(panel.handlesPaperPinch) frame=\(panel.frame)")
             run(0.02)
             precondition(panel.routeMagnification(from: panel, at: NSPoint(x: 20, y: 20), delta: 0, phase: .ended))
             run(0.02)
@@ -596,9 +604,9 @@ struct TreeUISmoke {
         let longText = String(repeating: "设计：长文本预览应按可见段落排版，方向键直接切换。\n", count: 4000)
         store.syncDatabase.upsert(ClipItem(kind: .text, text: longText, sourceApp: "Regression"))
         store.refresh()
-        run(0.3)
+        run(0.3); settlePreview()
         controller.panelModel.select(0)
-        run(0.3)
+        run(0.3); settlePreview()
         let stablePreviewSize = expanded.frame.size
         var slowest: TimeInterval = 0
         for _ in 0..<8 {
@@ -611,7 +619,7 @@ struct TreeUISmoke {
         }
         precondition(controller.isPreviewVisible && controller.panelModel.safeSelection == 0)
         precondition(expanded.frame.size == stablePreviewSize, "Arrow navigation must not repeatedly reflow long text by resizing the paper")
-        run(0.4)
+        run(0.4); settlePreview()
         let zoomedPin = controller.previewPaper!.paperPin!
         let zoomedTarget = PreviewPanelController.paperFrame(pin: zoomedPin, visible: screen.visibleFrame,
             size: stablePreviewSize, magnification: 1.5)
@@ -619,7 +627,7 @@ struct TreeUISmoke {
                      "Arrow navigation preserves zoom and the scaled hanging point")
         print("Preview 100k-text navigation: slowest down/up pair = \(Int(slowest*1000)) ms")
         _ = key(53)
-        run(0.3)
+        run(0.3); settlePreview()
         precondition(!zoomPanel.handlesPaperPinch && !zoomPanel.routeMagnification(from: zoomPanel, at: NSPoint(x: 20, y: 20), delta: 0.5, phase: .began), "Closing must remove the monitor, not just hide its window")
         precondition(controller.previewPaper?.alphaValue == 1, "Closing restores the hanging paper")
         precondition(!controller.isPreviewVisible && controller.isVisible,
@@ -655,7 +663,7 @@ struct TreeUISmoke {
                      "Image pixels must occupy the paper body, not a small side thumbnail")
         try imageBitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: ".build/image-first-card.png"))
         _ = key(49, chars: " ")
-        run(0.5)
+        run(0.5); settlePreview()
         func textViews(in view: NSView) -> [NSTextView] {
             (view as? NSTextView).map { [$0] } ?? view.subviews.flatMap { textViews(in: $0) }
         }
@@ -683,13 +691,15 @@ struct TreeUISmoke {
             "Whole-card scaling must preserve the image/OCR document layout")
         // Oversized gestures remain on screen and settle back from the limit.
         nativePinch(imagePanel, by: 4)
-        run(0.25)
+        let upperZoomDeadline = Date().addingTimeInterval(0.8)
+        while imagePreview.frame.width > readingFrame.width*2+1 && Date() < upperZoomDeadline { run(0.01) }
         precondition(imagePreview.frame.width <= readingFrame.width * 2 + 1
             && imagePreview.screen!.visibleFrame.contains(imagePreview.frame), "Pinch limit must fit the screen")
         imagePanel.magnifyPaper(by: -0.9, phase: .began)
         precondition(imagePreview.frame.width < readingFrame.width, "Lower zoom limit has a small elastic response")
         imagePanel.magnifyPaper(by: 0, phase: .ended)
-        run(0.25)
+        let zoomDeadline = Date().addingTimeInterval(0.8)
+        while abs(imagePreview.frame.width-readingFrame.width) >= 1 && Date() < zoomDeadline { run(0.01) }
         precondition(abs(imagePreview.frame.width - readingFrame.width) < 1, "Elastic return must settle at default size")
         nativePinch(imagePanel, by: 0.4)
         imageZoom.contentView.scroll(to: NSPoint(x: 0, y: ocrFrame.minY))
@@ -712,9 +722,9 @@ struct TreeUISmoke {
                      && abs(closingViewport.height-closingOCRViewport.height) < 0.5
                      && imageZoom.sheet.picture.frame == closingPictureFrame,
                      "OCR return changed its viewport: \(closingOCRViewport) -> \(closingViewport), image \(closingPictureFrame) -> \(imageZoom.sheet.picture.frame)")
-        run(0.25)
+        run(0.25); settlePreview()
         _ = key(49, chars: " ")
-        run(0.3)
+        run(0.3); settlePreview()
         let reopenedZoom = zoomViews(in: imagePreview.contentView!).first as! PreviewImageScrollView
         precondition(reopenedZoom.magnification == 1 && reopenedZoom.documentVisibleRect.minY < 1,
                      "Reopening returns to the image, rather than leaving OCR or zoom from the previous viewing")
@@ -735,7 +745,7 @@ struct TreeUISmoke {
                      "Preview loader must read the injected store, not the user's global history")
         precondition(fileMetadata?.exists == true && fileMetadata?.bytes == 1, "File preview metadata must come from the filesystem service")
         _ = key(53)
-        run(0.3)
+        run(0.3); settlePreview()
         store.query = "设计"
         run(0.7)
         // A rejected/missing payload cancels the click and never moves the tree.
@@ -774,7 +784,7 @@ struct TreeUISmoke {
         precondition(visibleIDs.isSubset(of: Set(controller.panelModel.results.map(\.id)).union([IvoryTreeEntry.phoneSyncID])), "No stale cards after drag refresh")
         precondition(liveScene.scene!.rootNode.childNodes[0].eulerAngles.y == originalRotation.y)
         controller.beginTreeLayout()
-        run(0.4)
+        run(0.4); settlePreview()
         precondition(controller.layoutEditing && controller.isVisible)
         precondition(treeWindow.islands.filter { $0.role == .paper }.allSatisfy { ($0.contentView as? TreePaperSurface)?.enabled == false })
         precondition(!treeWindow.islands.contains { $0.role == .search })
@@ -791,24 +801,24 @@ struct TreeUISmoke {
         grip.mouseUp(with: mouse(.leftMouseUp, view: grip, point: NSPoint(x: 55, y: 15)))
         precondition(treeWindow.frame.origin != originalFrame.origin, "Only the explicit grip moves the tree")
         NotificationCenter.default.post(name: .phTreeSize, object: 0.82)
-        run(0.3)
+        run(0.3); settlePreview()
         precondition(treeWindow.frame.height < originalFrame.height)
         precondition(key(36, chars: "\r") != nil, "Return in layout mode must not paste")
         _ = key(53)
-        run(0.3)
+        run(0.3); settlePreview()
         precondition(!controller.layoutEditing && controller.isVisible)
         precondition(treeWindow.islands.contains { $0.role == .search })
         precondition(!treeWindow.islands.contains { $0.role == .layout })
         precondition(treeWindow.islands.filter { $0.role == .paper }.allSatisfy { !$0.ignoresMouseEvents })
         controller.hide(restoreFocus: false)
-        run(0.3)
+        run(0.3); settlePreview()
         precondition(treeWindow.islands.allSatisfy { !$0.isVisible }, "Dismissal must leave no input windows behind")
         controller.beginTreeLayout()
-        run(0.3)
+        run(0.3); settlePreview()
         precondition(controller.layoutEditing && treeWindow.islands.contains { $0.role == .layout },
                      "Layout invoked while hidden must still create controls")
         controller.endTreeLayout()
-        run(0.3)
+        run(0.3); settlePreview()
         assertCentered(treeWindow.frame)
         precondition(!controller.layoutEditing && controller.isVisible)
         store.query = ""
@@ -816,7 +826,7 @@ struct TreeUISmoke {
         // Delete follows card navigation, but search editing and IME keep their key.
         let deleteCandidate = controller.panelModel.current!.id
         precondition(key(51) == nil)
-        run(0.3)
+        run(0.3); settlePreview()
         precondition(store.syncDatabase.get(id: deleteCandidate) == nil, "Plain Delete removes the selected card")
         store.query = "设计"
         run(0.6)
@@ -833,7 +843,7 @@ struct TreeUISmoke {
         precondition(key(51) != nil && store.totalCount == searchCount, "IME Delete cannot remove a card")
         editor.unmarkText()
         precondition(key(117) == nil)
-        run(0.3)
+        run(0.3); settlePreview()
         precondition(store.syncDatabase.get(id: filteredCandidate) == nil, "Forward Delete removes the navigated search result")
         store.query = ""
         run(0.5)
@@ -857,7 +867,7 @@ struct TreeUISmoke {
         try bitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: ".build/tree-boundary-preview.png"))
         let selectedBeforeShortcut = controller.panelModel.current?.id
         precondition(key(37, chars: "l", mods: [.command]) != nil)
-        run(0.3)
+        run(0.3); settlePreview()
         precondition(scene(in: treeWindow.contentView!) != nil && !treeWindow.isOpaque,
                      "The removed list shortcut must leave the tree visible")
         precondition(controller.panelModel.current?.id == selectedBeforeShortcut)

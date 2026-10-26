@@ -435,6 +435,9 @@ final class PanelController: NSObject, NSWindowDelegate {
         guard let id = previewSelectionID else { return nil }
         return panel?.paper(for: id)
     }
+    func previewPaper(for id: UUID?) -> TreeInteractionPanel? {
+        id.flatMap { panel?.paper(for: $0) }
+    }
     func setExpandedPaper(_ id: UUID?) { panel?.expandedPaperID = id }
     var previewAnchorVisible: Bool { (panel?.isVisible ?? false) && !isHiding }
     func makePanelKeyAgain() { panel?.makeKey(); panel?.focusSearch() }

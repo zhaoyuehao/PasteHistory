@@ -23,6 +23,8 @@ Copy content in another app, open the tree and type to search. Each group contai
 
 Click a history card to preview it. Click the expanded paper to close it; text selection, scrolling and pinching do not close it. Pinching inside the preview scales the whole paper without taking keyboard focus from search. Drag history cards into compatible apps to copy their content without moving source files.
 
+Opening, closing and following share a damped motion state: repeated input redirects the moving paper without restarting it. Pinching also works while the paper is opening, and the system Reduce Motion setting remains supported.
+
 | Action | Shortcut |
 | --- | --- |
 | Toggle history globally | ⇧⌘V |
