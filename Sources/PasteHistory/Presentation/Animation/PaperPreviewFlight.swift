@@ -189,19 +189,20 @@ final class PaperPreviewFlight {
             face.readingImage = readingImage; face.compactImage = compactImage
             face.compactColor = compactColor ?? IvoryPaperStyle.fill
         }
-        if !wasFlying {
-            face.expansion = reduce ? 1 : (opening ? 0 : 1)
-            face.place(reduce && opening ? to : from, in: panel)
-            panel.alphaValue = reduce && opening ? 0 : 1
-            panel.orderFrontRegardless()
+        PaperWindowHandoff.perform {
+            if !wasFlying {
+                face.expansion = reduce ? 1 : (opening ? 0 : 1)
+                face.place(reduce && opening ? to : from, in: panel)
+                panel.alphaValue = reduce && opening ? 0 : 1
+                panel.orderFrontRegardless()
+            }
+            flying = true
+            liveWindow = nil
+            panel.ignoresMouseEvents = false
+            panel.beginPaperInteraction()
+            PaperWindowHandoff.prepare(panel)
+            onReady()
         }
-        flying = true
-        liveWindow = nil
-        panel.ignoresMouseEvents = false
-        panel.beginPaperInteraction()
-        // Commit the starting layers in the same transaction as the source handoff.
-        CATransaction.flush()
-        onReady()
         startClock(on: panel)
     }
 
@@ -263,9 +264,12 @@ final class PaperPreviewFlight {
                 panel.endPaperInteraction()
                 let completedGeneration = generation
                 let done = completion; completion = nil
-                // The new surface is made visible before the retained flight leaves.
-                done?()
-                if generation == completedGeneration { panel.orderOut(nil) }
+                PaperWindowHandoff.perform {
+                    // The completion reveals and draws the destination before the
+                    // old window leaves. Both changes commit in this display group.
+                    done?()
+                    if generation == completedGeneration { panel.orderOut(nil) }
+                }
             }
         } else if let panel = liveWindow, panel.isVisible {
             panel.setFrame(pose.frame, display: false)

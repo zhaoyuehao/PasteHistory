@@ -47,7 +47,12 @@ final class IvoryTreePaperView: NSView {
             owner.resumePaperUpdates = { [weak self] in self?.syncIslands() }
             return
         }
-        owner.onPaperAppearanceChanged = { [weak self] in self?.needsDisplay = true }
+        owner.onPaperAppearanceChanged = { [weak self] in
+            // The selection outline belongs to the decorative tree window. Draw
+            // it inside the same handoff group as the paper windows, not one frame later.
+            self?.needsDisplay = true
+            self?.displayIfNeeded()
+        }
         let current = visuals()
         let ids = Set(current.map { $0.entry.id })
         for id in Array(islands.keys) where !ids.contains(id) {

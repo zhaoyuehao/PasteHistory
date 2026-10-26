@@ -141,6 +141,7 @@ final class PreviewPanelController: NSObject {
         }) { [weak self, weak panel] in
             panel?.alphaValue = 1
             panel?.ignoresMouseEvents = false
+            PaperWindowHandoff.prepare(panel)
             self?.followPaper()
         }
     }
@@ -155,6 +156,7 @@ final class PreviewPanelController: NSObject {
             self.panel?.ignoresMouseEvents = false
             self.isClosing = false
             self.owner?.setExpandedPaper(nil)
+            PaperWindowHandoff.prepare(self.owner?.previewPaper(for: self.previewedID))
         }
         let origin = readingPose(frame: panel.frame)
         let paper = owner?.previewPaper(for: previewedID)
