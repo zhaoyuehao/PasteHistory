@@ -31,6 +31,7 @@ final class PanelController: NSObject, NSWindowDelegate {
     private var activationObserver: Any?
     private var layoutObservers: [NSObjectProtocol] = []
     private let presentation = HistoryPresentationState()
+    private let pairing: PairModel
     var layoutEditing: Bool { presentation.treeLayoutEditing }
     private var keyboardState = HistoryKeyboardState()
     private var previousApp: NSRunningApplication?
@@ -45,11 +46,12 @@ final class PanelController: NSObject, NSWindowDelegate {
     /// 惰性创建：构造它需要 self（owner），不能在属性初始化期拿到
     private var preview: PreviewPanelController {
         if let previewStorage { return previewStorage }
-        let created = PreviewPanelController(model: panelModel, owner: self)
+        let created = PreviewPanelController(model: panelModel, owner: self, presentation: presentation, pairing: pairing)
         previewStorage = created
         return created
     }
-    init(store: ClipStore, observesDesktopFocus: Bool = true) {
+    init(store: ClipStore, observesDesktopFocus: Bool = true, pairing: PairModel? = nil) {
+        self.pairing = pairing ?? PairModel()
         self.store = store
         self.observesDesktopFocus = observesDesktopFocus
         self.panelModel = HistoryViewModel(store: store)
@@ -191,7 +193,7 @@ final class PanelController: NSObject, NSWindowDelegate {
             onPreview: { [weak self] in
                 guard let self else { return }
                 keyboardState.navigate()
-                if !preview.isVisible { preview.open() }
+                preview.presentSelection()
             }
         )
 
@@ -426,8 +428,11 @@ final class PanelController: NSObject, NSWindowDelegate {
     // MARK: - 预览窗联动（PreviewPanelController 回调）
 
     var previewAnchorFrame: NSRect? { panel?.frame }
+    var previewSelectionID: UUID? {
+        presentation.phoneSyncSelected ? IvoryTreeEntry.phoneSyncID : panelModel.current?.id
+    }
     var previewPaper: TreeInteractionPanel? {
-        guard let id = panelModel.current?.id else { return nil }
+        guard let id = previewSelectionID else { return nil }
         return panel?.paper(for: id)
     }
     func setExpandedPaper(_ id: UUID?) { panel?.expandedPaperID = id }

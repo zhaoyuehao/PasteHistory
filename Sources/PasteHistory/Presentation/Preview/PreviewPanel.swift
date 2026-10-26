@@ -19,10 +19,14 @@ import SwiftUI
 @MainActor
 final class PreviewPanelController: NSObject {
     private let model: HistoryViewModel
+    private let presentation: HistoryPresentationState
+    private let pairing: PairModel
+    private var showingPhone = false
+    private var selectionID: UUID? { owner?.previewSelectionID }
     private let mediaLoader: PreviewMediaLoader
     private weak var owner: PanelController?
     private var panel: NSPanel?
-    private var hosting: NSHostingController<PreviewContentView>?
+    private var hosting: NSHostingController<AnyView>?
     /// 淡出进行中：窗口还没 orderOut，但逻辑上已经算关了
     private var isClosing = false
     private var sink: Any?
@@ -40,14 +44,16 @@ final class PreviewPanelController: NSObject {
     var window: NSPanel? { panel }
     var isVisible: Bool { (panel?.isVisible ?? false) && !isClosing }
 
-    init(model: HistoryViewModel, owner: PanelController) {
+    init(model: HistoryViewModel, owner: PanelController, presentation: HistoryPresentationState, pairing: PairModel) {
+        self.presentation = presentation
+        self.pairing = pairing
         self.model = model
         self.mediaLoader = PreviewMediaLoader(imagesDirectory: model.store.imagesDirectory)
         self.owner = owner
         super.init()
         // 预览开着时记录发生了删除 / 清空 / 过滤：跟随下一条；记录空了就收窗，
         // 不做孤儿窗口。objectWillChange 是改前通知，转一道主队列再看，读到的一定是改后状态
-        sink = model.objectWillChange
+        sink = Publishers.Merge(model.objectWillChange, presentation.objectWillChange)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.syncAfterModelChange() }
     }
@@ -57,14 +63,31 @@ final class PreviewPanelController: NSObject {
     }
 
     func open() {
-        guard model.current != nil else { return }   // 记录空不开窗
+        guard selectionID != nil else { return }
         if panel == nil { buildPanel() }
         guard let panel else { return }
         isClosing = false
         panel.ignoresMouseEvents = false
-        let resuming = paperFlight.visiblePose != nil && previewedID == model.current?.id
+        let resuming = paperFlight.visiblePose != nil && previewedID == selectionID
         if !resuming { configureAppearance() }
         openFromPaper(panel, continuing: resuming)
+    }
+
+    /// Both ordinary records and the permanent phone card enter the same flight.
+    func presentSelection() {
+        if isVisible { syncAfterModelChange() }
+        else { open() }
+    }
+
+    private var selectedPaperSize: NSSize {
+        presentation.phoneSyncSelected ? NSSize(width: 340, height: 390) : Self.paperSize(for: model.current)
+    }
+
+    private var detailContent: AnyView {
+        if presentation.phoneSyncSelected {
+            return AnyView(PairPanelView(model: pairing, onRefresh: { [pairing] in pairing.renew() }, paperStyle: true))
+        }
+        return AnyView(PreviewContentView(model: model, mediaLoader: mediaLoader))
     }
 
     func close() {
@@ -85,7 +108,7 @@ final class PreviewPanelController: NSObject {
         paperScaleReturn.cancel()
         needsFlightRetarget = false
         if !continuing {
-            paperSessionSize = Self.paperSize(for: model.current)
+            paperSessionSize = selectedPaperSize
             paperMagnification = 1
             gestureMagnification = 1
         }
@@ -96,7 +119,7 @@ final class PreviewPanelController: NSObject {
         let origin = paper?.paperPose ?? paperReturnPose ?? PaperPose(frame: target)
         let compactFace = paper?.paperSnapshot?() ?? paperReturnImage
         paperReturnImage = compactFace
-        previewedID = model.current?.id
+        previewedID = selectionID
         paperReturnPose = paper?.paperPose
         panel.setFrame(target, display: false)
         panel.alphaValue = 0
@@ -176,7 +199,10 @@ final class PreviewPanelController: NSObject {
 
     private func configureAppearance() {
         guard let panel else { return }
-        hosting?.rootView = PreviewContentView(model: model, mediaLoader: mediaLoader)
+        showingPhone = presentation.phoneSyncSelected
+        if showingPhone { pairing.prepare() }
+        hosting?.rootView = detailContent
+        panel.title = showingPhone ? L10n.phoneSync : L10n.previewTitle
         panel.styleMask = [.borderless, .nonactivatingPanel]
         panel.minSize = NSSize(width: 1, height: 1)
         panel.isMovable = false
@@ -235,7 +261,7 @@ final class PreviewPanelController: NSObject {
     }
 
     private func buildPanel() {
-        let view = PreviewContentView(model: model, mediaLoader: mediaLoader)
+        let view = detailContent
         let hosting = NSHostingController(rootView: view)
         hosting.safeAreaRegions = []
         self.hosting = hosting
@@ -316,8 +342,15 @@ final class PreviewPanelController: NSObject {
     }
 
     private func syncAfterModelChange() {
-        if isVisible, previewedID != model.current?.id {
-            previewedID = model.current?.id
+        if isVisible && selectionID == nil { close(); return }
+        if isVisible, showingPhone != presentation.phoneSyncSelected, let panel {
+            configureAppearance()
+            paperSessionSize = selectedPaperSize
+            openFromPaper(panel, continuing: true)
+            return
+        }
+        if isVisible, previewedID != selectionID {
+            previewedID = selectionID
             owner?.setExpandedPaper(previewedID)
             paperReturnPose = owner?.previewPaper?.paperPose ?? paperReturnPose
             // Retarget an unfinished unfold from its visible sheet, never reveal
@@ -325,7 +358,7 @@ final class PreviewPanelController: NSObject {
             needsFlightRetarget = paperFlight.visibleFrame != nil
         }
         guard (panel?.isVisible ?? false), !isClosing else { return }
-        guard model.current != nil else {
+        guard selectionID != nil else {
             close()   // 记录被删空 / 过滤后无结果：预览不孤儿化
             return
         }

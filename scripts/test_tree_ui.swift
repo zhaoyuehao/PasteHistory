@@ -1,6 +1,7 @@
 // Compiles against production UI/store/model with an isolated, disposable database.
 import AppKit
 import SwiftUI
+import Vision
 
 @main
 struct TreeUISmoke {
@@ -122,7 +123,7 @@ struct TreeUISmoke {
             store: store, model: model,
             onPaste: { pasted = $0.id }, onCopyOnly: { copied = $0.id },
             onClose: { window.orderOut(nil) }, onPreview: {})
-        let hosting = NSHostingView(rootView: root)
+        let hosting = NSHostingView(rootView: AnyView(root))
         window.title = "PasteHistory — Desktop Tree Preview"
         window.contentView = hosting
         window.configureTree()
@@ -203,7 +204,12 @@ struct TreeUISmoke {
         precondition(!model.results.contains { $0.id == removed } && store.matchCount == 71 && store.syncDatabase.get(id: removed) == nil)
         // Exercise the real controller/preview/key routing with the same isolated store.
         window.orderOut(nil)
-        let controller = PanelController(store: store, observesDesktopFocus: false)
+        hosting.rootView = AnyView(EmptyView()) // Retire the first harness's notification subscriptions.
+        var pairingStarts = 0
+        var pairingRevision = 123456
+        let pairing = PairModel(readConnection: { ("http://192.0.2.1:8377/#pair=\(pairingRevision)", "") },
+                                startService: { pairingStarts += 1 }, renewCode: { pairingRevision += 1 })
+        let controller = PanelController(store: store, observesDesktopFocus: false, pairing: pairing)
         controller.show()
         run(0.5)
         // Reopening a warm scene must move all native paper windows with the
@@ -330,7 +336,7 @@ struct TreeUISmoke {
         let clickedID = controller.panelModel.results[3].id
         let treeWindow = liveWindow as! HistoryPanel
         precondition(treeWindow.ignoresMouseEvents, "Decorations and all transparent gaps must pass through at OS window level")
-        precondition(treeWindow.islands.filter { $0.role == .paper }.count == 8)
+        precondition(treeWindow.islands.filter { $0.role == .paper }.count == 9)
         precondition(treeWindow.islands.filter { $0.role == .search }.count == 1)
         treeWindow.focusSearch()
         precondition(treeWindow.islands.first { $0.role == .search }?.firstResponder is NSTextView,
@@ -377,7 +383,12 @@ struct TreeUISmoke {
         _ = key(49, chars: " ")
         run(0.3)
         _ = key(49, chars: " ")
-        run(0.25)
+        let returnDeadline = Date().addingTimeInterval(1.5)
+        while NSApp.windows.contains(where: { $0.isVisible && $0.title == "纸签预览过渡" }) && Date() < returnDeadline {
+            run(0.02)
+        }
+        precondition(!NSApp.windows.contains { $0.isVisible && $0.title == "纸签预览过渡" },
+                     "Return flight must complete before testing a fresh opening")
         let sourcePaper = controller.previewPaper!.frame
         _ = key(49, chars: " ")
         let openingSheet = NSApp.windows.first { $0.isVisible && $0.title == "纸签预览过渡" }!
@@ -732,7 +743,7 @@ struct TreeUISmoke {
         treeWindow.prepareDrag = { _ in { nil } }
         let originalFrame = treeWindow.frame
         let originalRotation = liveScene.scene!.rootNode.childNodes[0].eulerAngles
-        let currentPaper = treeWindow.islands.first { $0.role == .paper }!.contentView as! TreePaperSurface
+        let currentPaper = treeWindow.islands.first { $0.role == .paper && ($0.contentView as? TreePaperSurface)?.draggable == true }!.contentView as! TreePaperSurface
         let center = NSPoint(x: currentPaper.bounds.midX, y: currentPaper.bounds.midY)
         let moved = NSPoint(x: center.x+35, y: center.y+12)
         currentPaper.mouseDown(with: mouse(.leftMouseDown, view: currentPaper, point: center))
@@ -760,7 +771,7 @@ struct TreeUISmoke {
         controller.show()
         run(0.5)
         let visibleIDs = Set(treeWindow.islands.compactMap { ($0.contentView as? TreePaperSurface)?.recordID })
-        precondition(visibleIDs.isSubset(of: Set(controller.panelModel.results.map(\.id))), "No stale cards after drag refresh")
+        precondition(visibleIDs.isSubset(of: Set(controller.panelModel.results.map(\.id)).union([IvoryTreeEntry.phoneSyncID])), "No stale cards after drag refresh")
         precondition(liveScene.scene!.rootNode.childNodes[0].eulerAngles.y == originalRotation.y)
         controller.beginTreeLayout()
         run(0.4)
@@ -850,6 +861,82 @@ struct TreeUISmoke {
         precondition(scene(in: treeWindow.contentView!) != nil && !treeWindow.isOpaque,
                      "The removed list shortcut must leave the tree visible")
         precondition(controller.panelModel.current?.id == selectedBeforeShortcut)
+        // The permanent phone card has no history row and uses the production
+        // preview flight, input boundaries and teardown, with an isolated QR source.
+        store.query = ""
+        run(0.8)
+        let phoneID = IvoryTreeEntry.phoneSyncID
+        let phoneIsland = treeWindow.paper(for: phoneID)!
+        let phonePin = phoneIsland.paperPin!
+        precondition((phoneIsland.contentView as! TreePaperSurface).draggable == false)
+        controller.panelModel.select(8)
+        run(0.6)
+        precondition(treeWindow.paper(for: phoneID) === phoneIsland, "Paging retains the same phone paper window")
+        precondition(hypot(phoneIsland.paperPin!.x-phonePin.x, phoneIsland.paperPin!.y-phonePin.y) < 1,
+                     "History paging must not relocate the permanent phone card")
+        let countBeforePhone = store.matchCount
+        let historyBeforePhone = controller.panelModel.current!
+        let phoneSurface = phoneIsland.contentView as! TreePaperSurface
+        let phoneCenter = NSPoint(x: phoneSurface.bounds.midX, y: phoneSurface.bounds.midY)
+        phoneSurface.mouseDown(with: mouse(.leftMouseDown, view: phoneSurface, point: phoneCenter))
+        phoneSurface.mouseUp(with: mouse(.leftMouseUp, view: phoneSurface, point: phoneCenter))
+        run(0.8)
+        precondition(controller.isPreviewVisible && controller.previewSelectionID == phoneID && pairingStarts == 1)
+        let phonePreview = NSApp.windows.first { $0 is PaperPreviewPanel && $0.isVisible } as! PaperPreviewPanel
+        precondition(phoneIsland.alphaValue == 0 && phoneIsland.ignoresMouseEvents && phonePreview.handlesPaperPinch)
+        precondition(!phonePreview.isKeyWindow, "QR preview leaves keyboard focus in search")
+        _ = key(51)
+        _ = key(35, chars: "p", mods: [.command])
+        _ = key(8, chars: "c", mods: [.command])
+        run(0.2)
+        precondition(store.matchCount == countBeforePhone && controller.isVisible)
+        precondition(store.syncDatabase.get(id: historyBeforePhone.id)?.pinned == historyBeforePhone.pinned,
+                     "Delete, pin and copy on the phone card must not act on the last history selection")
+        func nativeButtons(_ view: NSView) -> [NSButton] {
+            (view as? NSButton).map { [$0] } ?? view.subviews.flatMap(nativeButtons)
+        }
+        let refreshButton = nativeButtons(phonePreview.contentView!).first { $0.accessibilityLabel() == L10n.refreshQRCode }!
+        let refreshPoint = NSPoint(x: refreshButton.bounds.midX, y: refreshButton.bounds.midY)
+        phonePreview.trackClick(mouse(.leftMouseDown, view: refreshButton, point: refreshPoint))
+        refreshButton.performClick(nil)
+        phonePreview.trackClick(mouse(.leftMouseUp, view: refreshButton, point: refreshPoint))
+        run(0.2)
+        precondition(pairingRevision == 123457 && controller.isPreviewVisible,
+                     "Refreshing the QR code is a control action, not a paper-collapse click")
+        let qrView = phonePreview.contentView!
+        let qrBitmap = qrView.bitmapImageRepForCachingDisplay(in: qrView.bounds)!
+        qrView.cacheDisplay(in: qrView.bounds, to: qrBitmap)
+        try qrBitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: ".build/phone-sync-preview.png"))
+        let barcode = VNDetectBarcodesRequest()
+        barcode.symbologies = [.qr]
+        try VNImageRequestHandler(cgImage: qrBitmap.cgImage!).perform([barcode])
+        precondition(barcode.results?.contains { $0.payloadStringValue == pairing.address } == true,
+                     "The rendered expanded paper must contain the current, scannable pairing URL")
+        _ = key(53)
+        run(0.06)
+        _ = key(49, chars: " ")
+        run(0.7)
+        precondition(controller.isPreviewVisible && controller.previewSelectionID == phoneID,
+                     "Space reverses the phone paper's interrupted return through the shared flight")
+        _ = key(125)
+        run(0.7)
+        precondition(controller.previewSelectionID == controller.panelModel.current?.id && controller.isPreviewVisible)
+        precondition(phoneIsland.alphaValue == 1, "Navigating back to history restores the permanent card")
+        _ = key(53)
+        run(0.6)
+        store.query = "no-such-phone-test-record"
+        run(0.6)
+        precondition(controller.panelModel.current == nil && treeWindow.paper(for: phoneID) != nil)
+        precondition((treeWindow.paper(for: phoneID)!.contentView as! TreePaperSurface).accessibilityPerformPress())
+        run(0.6)
+        precondition(controller.isPreviewVisible && controller.previewSelectionID == phoneID,
+                     "Phone pairing remains available when search has no history results")
+        _ = key(53)
+        run(0.6)
+        precondition(!controller.isPreviewVisible && !phonePreview.handlesPaperPinch && phoneIsland.alphaValue == 1)
+        store.query = ""
+        run(0.6)
+        print("PASS: permanent phone card, stable page anchor, protected history actions, shared interruptible preview, QR refresh controls, rendered QR decoding, empty search pairing")
         print(
             "PASS: borderless transparent key window, filtered search, packaged resource, shared selection/copy/paste/pin/delete, tree-only presentation with legacy preferences, page selection, lazy loading, empty search, query reset, compact panel, OS click-through, bounded paper/search windows, drag payload round trips, paper-origin preview and interruptible return, explicit move/size mode, clean dismissal"
         )
