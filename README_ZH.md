@@ -1,6 +1,14 @@
 # PasteHistory
 
+[体验网页许愿树](https://zhaoyuehao.github.io/PasteHistory/) · [下载 macOS 预览版](https://github.com/zhaoyuehao/PasteHistory/releases)
+
 [English](README.md)
+
+网页体验按 Swift 的许愿树布局与按键分发实现，首屏即显示原生每组八条的完整布局。浏览器保留快捷键和系统集成受网页环境限制，详见[网页实现说明](website/README.md#native-interaction-reference)。 桌面放大许愿树、缩小两侧黄金矩形窗口，间距与纸签使用黄金比例；文字和图片样例同时展示，各自提供复制按钮。
+
+两个窗口精简文案；顶部语言入口仅显示图标与当前语言，移除辅助操作菜单和整页重置功能。
+
+复制样例和备忘录常驻，快捷键提示放在备忘录内；树收起后显示可点击的 ⇧⌘V 唤起提示。整页默认跟随浏览器语言，顶部菜单栏可统一切换英文、简体中文、繁体中文、日文和韩文。
 
 macOS 菜单栏剪贴板历史工具。按 **⇧⌘V** 在桌面许愿树中搜索文本、图片和文件路径，再按回车粘贴到原应用。支持本地 OCR、Mac 间 iCloud 同步和局域网手机访问。
 

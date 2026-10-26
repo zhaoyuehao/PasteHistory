@@ -1,0 +1,59 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { HistoryStore, type Clip } from "./store";
+const clips = (): Clip[] =>
+  Array.from({ length: 12 }, (_, i) => ({
+    id: String(i),
+    kind: i === 1 ? "image" : "text",
+    text: `note ${i}`,
+    source: "备忘录",
+    created: 100 - i,
+    pinned: false,
+    ...(i === 1 ? { ocr: "山野来信" } : {}),
+  }));
+test("copy, search OCR, select across pages, pin and delete keep one coherent selection", () => {
+  const s = new HistoryStore(clips());
+  s.move(8);
+  assert.equal(s.page, 1);
+  assert.equal(s.selected?.text, "note 8");
+  s.pin();
+  assert.equal(s.page, 0);
+  assert.equal(s.results[0].id, "8");
+  s.search("山野");
+  assert.equal(s.selected?.id, "1");
+  s.preview = true;
+  s.remove();
+  assert.equal(s.results.length, 0);
+  assert.equal(s.selectedId, null);
+  assert.equal(s.preview, false);
+  s.search("");
+  s.add({ ...clips()[0], id: "copied", text: "a new thought", created: 200 });
+  assert.equal(s.selected?.text, "a new thought");
+  assert.equal(
+    s.entries.some((c) => c.id === "copied"),
+    true,
+  );
+});
+test("page navigation clamps to valid entries and removing last item stays usable", () => {
+  const s = new HistoryStore(clips());
+  s.turn(99);
+  assert.equal(s.page, 1);
+  s.move(99);
+  assert.equal(s.selected?.id, "11");
+  s.remove();
+  assert.equal(s.selected?.id, "10");
+  while (s.results.length) s.remove();
+  assert.equal(s.page, 0);
+  assert.equal(s.pages, 1);
+  s.move(1);
+  s.turn(-1);
+  assert.equal(s.selectedId, null);
+});
+test("collecting duplicate content refreshes it without duplicate cards", () => {
+  const s = new HistoryStore(clips());
+  s.search("missing");
+  s.add({ ...clips()[0], id: "copy", created: 200 });
+  assert.equal(s.clips.length, 12);
+  assert.equal(s.query, "");
+  assert.equal(s.selected?.id, "copy");
+});
