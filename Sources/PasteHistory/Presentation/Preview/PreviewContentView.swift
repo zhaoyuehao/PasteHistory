@@ -154,35 +154,12 @@ struct PreviewContentView: View {
     }
 
     private func textContent(_ item: ClipItem) -> some View {
-        let text = item.text ?? ""
-        let isTruncated = text.count > Preview.maxTextLength
-        return PreviewTextView(text: String(text.prefix(Preview.maxTextLength)), identity: item.id)
-        .overlay(alignment: .bottom) {
-            if isTruncated { truncatedBar }
-        }
-    }
-
-    private var truncatedBar: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "info.circle")
-                .font(.system(size: Icon.action))
-            Text(L10n.previewTruncated)
-                .font(.system(size: Scale.meta))
-        }
-        .foregroundStyle(Palette.meta)
-        .padding(.horizontal, Rhythm.xl)
-        .padding(.vertical, Rhythm.l)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color(NSColor.controlBackgroundColor))
-                .shadow(color: .black.opacity(0.12), radius: 5, y: 1)
-        )
-        .padding(.bottom, Rhythm.xl)
+        PreviewTextView(text: item.text ?? "", identity: item.id)
     }
 
     private func imageContent(_ item: ClipItem) -> some View {
         PreviewImageDocument(image: fullImage ?? item.thumbnail,
-            details: String(ClipPresentation(item: item).imageDetails.prefix(Preview.maxTextLength)),
+            details: ClipPresentation(item: item).imageDetails,
             identity: item.id)
     }
 
@@ -237,14 +214,14 @@ struct PreviewContentView: View {
 }
 
 /// NSTextView lays out visible paragraphs on demand. A large clip no longer
-/// builds a 100,000-character SwiftUI selectable Text during every key repeat.
+/// builds the entire clip as SwiftUI selectable Text during every key repeat.
 private struct PreviewTextView: NSViewRepresentable {
     let text: String
     let identity: UUID
     final class Coordinator { var identity: UUID?; var text = "" }
     func makeCoordinator() -> Coordinator { Coordinator() }
-    func makeNSView(context: Context) -> NSScrollView {
-        let scroll = PreviewZoomScrollView()
+    func makeNSView(context: Context) -> PreviewTextScrollView {
+        let scroll = PreviewTextScrollView()
         scroll.hasVerticalScroller = true
         scroll.drawsBackground = false
         let view = NSTextView(frame: scroll.bounds)
@@ -263,7 +240,7 @@ private struct PreviewTextView: NSViewRepresentable {
         scroll.documentView = view
         return scroll
     }
-    func updateNSView(_ scroll: NSScrollView, context: Context) {
+    func updateNSView(_ scroll: PreviewTextScrollView, context: Context) {
         scroll.allowsMagnification = false
         if let view = scroll.documentView as? NSTextView {
             view.font = .systemFont(ofSize: 15)
@@ -272,11 +249,10 @@ private struct PreviewTextView: NSViewRepresentable {
         }
         guard context.coordinator.identity != identity || context.coordinator.text != text,
               let view = scroll.documentView as? NSTextView else { return }
-        if context.coordinator.identity != identity { (scroll as? PreviewZoomScrollView)?.resetViewport() }
         context.coordinator.identity = identity
         context.coordinator.text = text
         view.string = text
-        view.scrollToBeginningOfDocument(nil)
+        scroll.resetTextViewport()
     }
 }
 
