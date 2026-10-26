@@ -738,25 +738,36 @@ function deleteSelected() {
   toast("纸签已删除");
 }
 const statsSnapshot = `${import.meta.env.BASE_URL}github-stats.json`;
+// Set only by `npm run build:workbuddy`: the installer is bundled under the
+// site itself, so the download button links to it directly instead of waiting
+// for (mainland-unreachable) GitHub. Other builds leave both unset.
+const localDownload = import.meta.env.VITE_DOWNLOAD_URL
+  ? {
+      url: `${import.meta.env.BASE_URL}${import.meta.env.VITE_DOWNLOAD_URL}`,
+      version: (import.meta.env.VITE_DOWNLOAD_VERSION as string) ?? "",
+    }
+  : null;
 function renderDownload() {
   const link = $<HTMLAnchorElement>("#download-button");
   const stats = lastStats?.stats;
-  if (stats?.downloadUrl) link.href = stats.downloadUrl;
+  const url = localDownload?.url ?? stats?.downloadUrl;
+  if (url) link.href = url;
   else link.removeAttribute("href");
   link.setAttribute(
     "aria-disabled",
-    String(!stats?.downloadUrl || downloadPending),
+    String(!url || downloadPending),
   );
   link.setAttribute("aria-busy", String(downloadPending));
-  link.title = stats?.version ?? "";
+  link.title = localDownload?.version || stats?.version || "";
   $("#download-label").textContent = t(
     downloadPending ? "正在获取下载…" : "下载 Mac 版",
   );
   $("#download-state").textContent =
-    downloadPending || !lastStats || stats
+    downloadPending || !lastStats || stats || localDownload
       ? ""
       : t("下载暂不可用");
 }
+renderDownload();
 $("#download-button").onkeydown = (event) => {
   if (event.key === "Enter" && !$("#download-button").hasAttribute("href")) {
     event.preventDefault();
@@ -764,6 +775,9 @@ $("#download-button").onkeydown = (event) => {
   }
 };
 $("#download-button").onclick = async (event) => {
+  // Bundled-installer build: the link already points at the local asset —
+  // let the browser handle it and skip the (unreachable) GitHub refresh.
+  if (localDownload) return;
   // Preserve ordinary link behavior for a known attachment when opening a new tab.
   if (
     (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) &&
