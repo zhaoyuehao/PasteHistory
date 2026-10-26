@@ -67,6 +67,11 @@ does not recursively override their content scales. Compact face caches refresh
 only when content or logical layout changes. The tree updates the compact return
 pose while the preview owns the visible window geometry. Selecting another record
 transfers the live document and motion state to that card's existing window.
+Reading input becomes eligible before final settling once expansion, remaining
+position/size error and speed are sufficiently small; eligibility never activates
+the window. Closing revokes it immediately. The content dissolve spans 25–100%
+of expansion so the reading face continues appearing as the paper approaches its
+final size, rather than finishing at 85%.
 
 The numeric check needs no desktop:
 

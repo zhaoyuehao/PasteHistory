@@ -194,7 +194,7 @@ final class PaperPreviewFlight {
             if opening, let window { sheet.place(pose, in: window) }
         } else { fade = nil }
         flying = true
-        sheet.acceptsReadingInput = false
+        setReadingInput(false)
         startClock()
     }
     func retargetFlight(to pose: PaperPose, opening: Bool) {
@@ -221,6 +221,27 @@ final class PaperPreviewFlight {
         lastDirectTime = now
         sheet?.place(pose, in: panel)
     }
+    private func setReadingInput(_ enabled: Bool) {
+        sheet?.acceptsReadingInput = enabled
+        // Eligibility only: never make the preview key or steal search focus.
+        (window as? PaperPreviewPanel)?.acceptsKeyboardFocus = enabled
+    }
+
+    private var readyForReading: Bool {
+        guard let motion, let sheet, sheet.expansion >= Motion.paperReadingExpansion else { return false }
+        let target = PaperPose(channels: Array(motion.destination.prefix(7)))
+        // Absolute position bounds and relative size bounds avoid enabling
+        // selection while a redirected paper is still crossing the screen.
+        let errors: [CGFloat] = [4, 4, max(2, target.size.width * 0.01),
+            max(2, target.size.height * 0.01), 0.002, 0.1, 0.2]
+        let speeds: [CGFloat] = [60, 60, 100, 100, 0.02, 2, 4]
+        return errors.indices.allSatisfy { index in
+            let state = motion.states[index]
+            return abs(state.value - motion.destination[index]) <= errors[index]
+                && abs(state.velocity) <= speeds[index]
+        }
+    }
+
     private func step(_ frame: MotionClock.Frame) {
         guard let panel = window, panel.isVisible, let sheet, motion != nil else {
             stopClock(); return
@@ -238,6 +259,11 @@ final class PaperPreviewFlight {
         sheet.expansion = flying && reduced
             ? min(1, max(0, fade?.sample(fadeElapsed).value ?? values[7])) : values[7]
         sheet.place(flying && reduced && !finished ? sheet.pose : pose, in: panel)
+        // The small remaining settling motion must not delay native text/scroll
+        // input. Enable once near the target; do not flap during small retargets.
+        if opening, !sheet.acceptsReadingInput, finished || readyForReading {
+            setReadingInput(true)
+        }
         observeFrame?(FrameSample(delta: frame.delta, work: CACurrentMediaTime()-began,
             pose: sheet.pose, windowFrame: panel.frame, expansion: sheet.expansion, finished: finished))
         guard finished, generation == frameGeneration else { return }
@@ -245,7 +271,7 @@ final class PaperPreviewFlight {
         let done = completion
         completion = nil
         flying = false
-        sheet.acceptsReadingInput = opening
+        setReadingInput(opening)
         // No visibility, window ordering, image replacement or shadow handoff.
         // Clear state before calling out so a reentrant opening owns its completion.
         done?()
