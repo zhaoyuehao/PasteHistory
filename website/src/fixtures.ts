@@ -1,15 +1,14 @@
 import type { Clip } from "./store";
 const base = import.meta.env.BASE_URL;
-export const sampleImage = `${base}sample-postcard.svg`;
+export const sampleImage = `${base}sample-lake.jpg`;
 export function initialClips(): Clip[] {
   const now = Date.now();
   const records: Omit<Clip, "id" | "created" | "pinned">[] = [
     { kind: "text", text: "今天也有好灵感。", source: "备忘录" },
     {
       kind: "image",
-      text: "山野来信 · 秋日明信片",
+      text: "山野来信 · 布莱埃斯湖.jpg",
       image: sampleImage,
-      ocr: "山野来信 慢一点，灵感会追上来。",
       source: "照片",
     },
     {
