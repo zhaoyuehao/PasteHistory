@@ -176,13 +176,13 @@ final class PaperPreviewFlight {
     init(reduceMotion: @escaping () -> Bool = { Motion.reduceMotion }) { self.reduceMotion = reduceMotion }
     deinit { MainActor.assumeIsolated { clock.stop() } }
 
-    func bind(window: NSPanel, sheet: PaperFlightView, preservingMotion: Bool = false) {
+    func bind(window: NSPanel, sheet: PaperFlightView) {
         generation += 1
         stopClock()
         self.window = window
         self.sheet = sheet
         sheet.measuresRenderingWork = trace.enabled
-        if !preservingMotion { motion = nil }
+        motion = nil
         completion = nil
         flying = false
     }
