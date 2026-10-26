@@ -224,26 +224,25 @@ function placeNativeTree() {
     desktop.style.removeProperty("height");
     const viewportHeight = desktop.clientHeight;
     const availableHeight = viewportHeight - menuHeight;
-    // Reserve height for the root links, then give the tree the dominant column.
-    // Horizontal outer gutters : inter-column gaps = φ : 1 at every desktop width.
-    const idealWindow = Math.min(
-      230,
-      viewportWidth / (2 + PHI ** 2 + 2 / PHI ** 4 + 2 / PHI ** 3),
-    );
+    // Size the sculpture from available height, not from the small side windows.
+    // The exported 880 pt frame contains transparent side margins. Reserve its
+    // central 660 pt band (including every paper) when positioning adjacent UI.
+    const occupiedFraction = 660 / logicalWidth;
+    windowWidth = Math.min(230, Math.max(180, viewportWidth * 0.17));
+    gap = windowWidth / PHI ** 4;
+    const minimumOuter = gap * PHI;
     treeWidth = Math.min(
-      logicalWidth,
-      idealWindow * PHI ** 2,
+      (viewportWidth - 2 * windowWidth - 2 * gap - 2 * minimumOuter) /
+        occupiedFraction,
       ((availableHeight - rootHeight - 24) * logicalWidth) / logicalHeight,
     );
-    windowWidth = Math.min(idealWindow, Math.max(180, treeWidth / PHI ** 2));
-    gap = (viewportWidth - windowWidth * 2 - treeWidth) / (2 * (PHI + 1));
-    const outer = gap * PHI;
+    const occupiedWidth = treeWidth * occupiedFraction;
     const treeHeight = (treeWidth * logicalHeight) / logicalWidth;
     const groupHeight = treeHeight + 12 + rootHeight;
     treeTop = menuHeight + (availableHeight - groupHeight) / PHI ** 2;
-    samplesLeft = outer;
-    treeLeft = samplesLeft + windowWidth + gap;
-    notesLeft = treeLeft + treeWidth + gap;
+    treeLeft = (viewportWidth - treeWidth) / 2;
+    samplesLeft = (viewportWidth - occupiedWidth) / 2 - gap - windowWidth;
+    notesLeft = (viewportWidth + occupiedWidth) / 2 + gap;
     samplesTop = notesTop = treeTop + (treeHeight - windowWidth * PHI) / 2;
   }
   const windowHeight = windowWidth * PHI;
