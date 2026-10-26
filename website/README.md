@@ -1,6 +1,6 @@
 # PasteHistory desktop demo
 
-A static Vite + TypeScript + Three.js website, served at `/PasteHistory/`. The sculpture is rendered by SceneKit from the native `ivory_tree.scn`, with the camera, material, lighting, five birds and surface-snapped attachment points from native main `0765399`. Three.js projects the exported world-space anchors; accessible DOM papers remain interactive. There is no application backend, clipboard polling, or persistent demo history.
+A static Vite + TypeScript + Three.js website, served at `/PasteHistory/` on GitHub Pages or `/` on Cloudflare Pages. The sculpture is rendered by SceneKit from the native `ivory_tree.scn`, with the camera, material, lighting, five birds and surface-snapped attachment points from native main `0765399`. Three.js projects the exported world-space anchors; accessible DOM papers remain interactive. There is no application backend, clipboard polling, or persistent demo history.
 
 ```sh
 cd website
@@ -10,6 +10,20 @@ npm test
 npm run snapshot            # Refresh public GitHub statistics
 npm run build
 ```
+
+## Cloudflare Pages
+
+Build with root-relative asset URLs for Cloudflare while keeping the default GitHub Pages build under `/PasteHistory/`:
+
+```sh
+cd website
+npm ci
+npm run snapshot
+npm run build:cloudflare
+npx wrangler pages deploy dist --project-name pastehistory --branch main
+```
+
+Authenticate Wrangler with your own Cloudflare account before deploying. Upload only `dist`; credentials are never included in the site. This is a direct-upload deployment; the GitHub Pages workflow remains separate.
 
 ## Experience
 
@@ -47,7 +61,7 @@ Validation: TypeScript/Vite build, architecture and whitespace checks, plus focu
 
 ## Assets
 
-`public/sample-lake.jpg` is a real photograph by Luca Bravo, *Boathouse on a mountain lake*, taken at Lago di Braies. The 1280px JPEG comes from [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Boathouse_on_a_mountain_lake_(Unsplash).jpg), which records its pre-June-2017 Unsplash publication under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). The source photograph is unchanged. The thumbnail, preview and Notes all contain the complete image without cropping.
+`public/sample-lake.jpg` is a real photograph by Luca Bravo, *Boathouse on a mountain lake*, taken at Lago di Braies. The 1280px JPEG comes from [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Boathouse_on_a_mountain_lake_(Unsplash).jpg), which records its pre-June-2017 Unsplash publication under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). The source photograph is unchanged and is shared by the desktop wallpaper and copy sample. The wallpaper uses a centered cover crop to fill the viewport; the thumbnail, preview and Notes contain the complete image without cropping.
 
 `public/wallpaper-coast.jpg` is an original generated wallpaper, produced with the built-in imagegen tool and optimized as JPEG. Prompt: “Photorealistic 16:10 quiet coastal mountains at dawn, muted slate blue and warm gray, sea mist, pale granite foreground, quiet center for an ivory tree overlay; background only, no tree, birds, text, UI or logos.” The functional papers and controls are accessible HTML/DOM; only the decorative sculpture is rasterized.
 

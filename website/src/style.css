@@ -65,7 +65,7 @@ svg {
   position: absolute;
   inset: 0;
   z-index: -2;
-  background: #b6c5d2 url("/wallpaper-coast.jpg") center/cover;
+  background: #b6c5d2 url("/sample-lake.jpg") center/cover;
 }
 .wallpaper::after {
   content: "";
