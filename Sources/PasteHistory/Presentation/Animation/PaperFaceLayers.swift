@@ -8,6 +8,7 @@ final class PaperFaceLayers {
     private let paper = CALayer()
     private let compact = CALayer()
     private let reading = CALayer()
+    private let readingFace = CALayer()
     private let compactMask = CAShapeLayer()
     private let readingMask = CAShapeLayer()
     private let edge = CAShapeLayer()
@@ -17,7 +18,10 @@ final class PaperFaceLayers {
 
     init() {
         root.addSublayer(paper)
-        paper.addSublayer(compact); paper.addSublayer(reading)
+        paper.addSublayer(compact); paper.addSublayer(readingFace)
+        readingFace.addSublayer(reading)
+        readingFace.backgroundColor = IvoryPaperStyle.fill.cgColor
+        readingFace.allowsGroupOpacity = true
         paper.addSublayer(edge); paper.addSublayer(hole)
         paper.masksToBounds = true
         compact.mask = compactMask; reading.mask = readingMask
@@ -28,11 +32,15 @@ final class PaperFaceLayers {
     func images(compact nextCompact: NSImage?, reading nextReading: NSImage?) {
         if compactImage !== nextCompact {
             compactImage = nextCompact
-            compact.contents = nextCompact?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            let pixels = Self.pixels(nextCompact)
+            compact.contents = pixels
+            compact.contentsScale = CGFloat(pixels?.width ?? 1)/max(1,nextCompact?.size.width ?? 1)
         }
         if readingImage !== nextReading {
             readingImage = nextReading
-            reading.contents = nextReading?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            let pixels = Self.pixels(nextReading)
+            reading.contents = pixels
+            reading.contentsScale = CGFloat(pixels?.width ?? 1)/max(1,nextReading?.size.width ?? 1)
         }
     }
     func place(_ pose: PaperPose, canvas: NSRect, expansion: CGFloat,
@@ -49,7 +57,10 @@ final class PaperFaceLayers {
         let t = min(1, max(0, expansion))
         let blend = readingImage == nil && compactImage == nil ? t
             : readingImage == nil ? CGFloat(0) : compactImage == nil ? 1 : Self.blend(t)
-        paper.backgroundColor = (compactColor.blended(withFraction: blend, of: IvoryPaperStyle.fill) ?? IvoryPaperStyle.fill).cgColor
+        let shellColor = readingImage == nil
+            ? compactColor.blended(withFraction: blend, of: IvoryPaperStyle.fill) ?? IvoryPaperStyle.fill
+            : compactColor
+        paper.backgroundColor = shellColor.cgColor
         func placeFace(_ layer: CALayer, mask: CAShapeLayer, image: NSImage?, opacity: CGFloat) {
             guard let image else { layer.isHidden = true; return }
             layer.isHidden = false
@@ -59,13 +70,18 @@ final class PaperFaceLayers {
             layer.position = CGPoint(x: size.width/2, y: size.height-pose.inset)
             layer.setAffineTransform(CGAffineTransform(scaleX: fit, y: fit))
             layer.opacity = Float(opacity)
-            layer.contentsScale = backingScale
             // The shared shell owns the edge and suspension hole in every mode.
             mask.path = CGPath(rect: NSRect(x: 2, y: 2, width: max(0,image.size.width-4),
                                            height: max(0,image.size.height-12)), transform: nil)
         }
-        placeFace(compact, mask: compactMask, image: compactImage, opacity: 1-blend)
-        placeFace(reading, mask: readingMask, image: readingImage, opacity: blend)
+        // Both snapshots contain an opaque paper background. Fading both layers
+        // weights the compact ink by (1-blend)² and exposes the blank shell. Keep
+        // the base opaque and dissolve one full-paper reading group over it.
+        placeFace(compact, mask: compactMask, image: compactImage, opacity: 1)
+        readingFace.frame = paper.bounds
+        readingFace.isHidden = readingImage == nil
+        readingFace.opacity = Float(blend)
+        placeFace(reading, mask: readingMask, image: readingImage, opacity: 1)
         edge.frame = paper.bounds
         edge.path = CGPath(roundedRect: paper.bounds.insetBy(dx: 0.75*scale, dy: 0.75*scale),
                            cornerWidth: 3.25*scale, cornerHeight: 3.25*scale, transform: nil)
@@ -77,6 +93,14 @@ final class PaperFaceLayers {
                                            width: radius*2, height: radius*2), transform: nil)
         edge.contentsScale = backingScale; hole.contentsScale = backingScale
         CATransaction.commit()
+    }
+    private static func pixels(_ image: NSImage?) -> CGImage? {
+        guard let image else { return nil }
+        // cacheDisplay already produced backing-resolution pixels. Do not send
+        // them through NSImage's representation selection/resampling a second time.
+        if let bitmap = image.representations.compactMap({ $0 as? NSBitmapImageRep })
+            .max(by: { $0.pixelsWide < $1.pixelsWide }) { return bitmap.cgImage }
+        return image.cgImage(forProposedRect: nil, context: nil, hints: nil)
     }
     private static func blend(_ t: CGFloat) -> CGFloat {
         let u = min(1, max(0, (t-0.15)/0.7))

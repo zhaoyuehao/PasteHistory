@@ -27,6 +27,7 @@ final class PreviewPanelController: NSObject {
     private weak var owner: PanelController?
     private var panel: NSPanel?
     private var hosting: NSHostingController<AnyView>?
+    private var viewportSession = UUID()
     /// 淡出进行中：窗口还没 orderOut，但逻辑上已经算关了
     private var isClosing = false
     private var sink: Any?
@@ -70,7 +71,10 @@ final class PreviewPanelController: NSObject {
         isClosing = false
         panel.ignoresMouseEvents = false
         let resuming = paperFlight.visiblePose != nil && previewedID == selectionID
-        if !resuming { configureAppearance() }
+        if !resuming {
+            viewportSession = UUID()
+            configureAppearance()
+        }
         openFromPaper(panel, continuing: resuming)
     }
 
@@ -88,7 +92,7 @@ final class PreviewPanelController: NSObject {
         if presentation.phoneSyncSelected {
             return AnyView(PairPanelView(model: pairing, onRefresh: { [pairing] in pairing.renew() }, paperStyle: true))
         }
-        return AnyView(PreviewContentView(model: model, mediaLoader: mediaLoader))
+        return AnyView(PreviewContentView(model: model, mediaLoader: mediaLoader, viewportSession: viewportSession))
     }
 
     func close() {
@@ -181,7 +185,9 @@ final class PreviewPanelController: NSObject {
     }
 
     private func snapshot(_ view: NSView?) -> NSImage? {
-        guard let view, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }
+        guard let view else { return nil }
+        view.layoutSubtreeIfNeeded()
+        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }
         view.cacheDisplay(in: view.bounds, to: rep)
         let image = NSImage(size: view.bounds.size)
         image.addRepresentation(rep)

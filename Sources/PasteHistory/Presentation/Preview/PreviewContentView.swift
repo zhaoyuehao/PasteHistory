@@ -6,13 +6,13 @@ import SwiftUI
 struct PreviewContentView: View {
     @ObservedObject var model: HistoryViewModel
     let mediaLoader: PreviewMediaLoader
-    private let viewportSession = UUID()
-    private struct ViewportID: Hashable { let record: UUID?; let session: UUID }
+    let viewportSession: UUID
+    private struct ViewportID: Hashable { let record: UUID; let session: UUID }
 
     @State private var contentOpacity: Double = 1
-    /// 驱动切换动画的内容身份。model 的变化不经过我们的事务，
-    /// 切换动画必须由这里的 withAnimation 挂上去
-    @State private var displayedID: UUID?
+    /// Asset identity is separate from the synchronous document identity. Loading
+    /// media must never replace the text view after the flight snapshot is captured.
+    @State private var mediaID: UUID?
     /// 边界橡皮筋：到达边界时下沉再弹回
     @State private var bounceOffset: CGFloat = 0
     /// 原图（后台降采样解码完）；解码期间先用 DB 缩略图顶着，到了原位替换
@@ -25,22 +25,15 @@ struct PreviewContentView: View {
     /// 现在只在切换条目时解析一次
     @State private var imageURL: URL?
 
-    /// 正在展示的条目：按 displayedID 找回，而不是直接读 model.current——
-    /// 后者在切换的那一拍已经指向新条目，会跳过过渡直接换内容
-    private var displayedItem: ClipItem? {
-        guard let displayedID else { return model.current }
-        return model.results.first { $0.id == displayedID } ?? model.current
-    }
-
     var body: some View {
-        if let item = displayedItem {
+        if let item = model.current {
             VStack(spacing: 0) {
                 paperHeader(item)
                 ZStack {
                     content(item)
                         // 切换记录重置阅读视口，整张纸的移动由预览控制器负责。
-                        .id(ViewportID(record: displayedID, session: viewportSession))
-                        .opacity(contentOpacity)
+                        .id(ViewportID(record: item.id, session: viewportSession))
+                        .opacity(mediaID == item.id ? contentOpacity : 1)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
@@ -74,31 +67,21 @@ struct PreviewContentView: View {
         }
     }
 
-    /// 条目变化 = 切换动画 + 原图加载，两个动作挂在同一次身份变化上
+    /// Reading content follows selection immediately. Only asset loading and the
+    /// Reduce Motion fade are asynchronous; neither changes the document's ID.
     private func step(to item: ClipItem?) async {
-        guard let item else { return }
-        // 预览图路径一次解析：里面有 fileExists，别再让 body 反复查
+        guard let item, !Task.isCancelled, model.current?.id == item.id else { return }
+        let changesRecord = mediaID != nil && mediaID != item.id
+        mediaID = item.id
         imageURL = mediaLoader.url(for: item)
-        if displayedID == nil {
-            // 首次呈现：直接就位，不做切换动画
-            displayedID = item.id
-        } else if displayedID != item.id {
-            // 连按压短弹簧，不是关掉——连续移动恰恰最需要阻尼
-            // Replace the old view immediately: rapid navigation must not retain several
-            // expensive text layouts in an outgoing transition.
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
-                displayedID = item.id
-                // The whole paper already travels between branches.
-                // A second inner slide would make the contents appear to jerk.
-                contentOpacity = Motion.reduceMotion ? 0.6 : 1
-            }
+        fullImage = imageURL.flatMap { mediaLoader.cachedImage(at: $0) }
+        originalPixels = nil
+        fileBytes = nil
+        contentOpacity = changesRecord && Motion.reduceMotion ? 0.6 : 1
+        if contentOpacity < 1 {
             await Task.yield()
-            guard !Task.isCancelled else { return }
-            withAnimation(Motion.selectionFast) {
-                contentOpacity = 1
-            }
+            guard !Task.isCancelled, model.current?.id == item.id else { return }
+            withAnimation(Motion.selectionFast) { contentOpacity = 1 }
         }
         await loadPreviewImage(item)
     }
@@ -106,12 +89,9 @@ struct PreviewContentView: View {
     // MARK: - 图片加载
 
     private func loadPreviewImage(_ item: ClipItem) async {
-        fullImage = imageURL.flatMap { mediaLoader.cachedImage(at: $0) }
-        originalPixels = nil
-        fileBytes = nil
         guard let url = imageURL,
               let asset = await mediaLoader.load(url, maxPixel: Preview.maxImagePixel),
-              !Task.isCancelled, displayedID == item.id else { return }
+              !Task.isCancelled, mediaID == item.id, model.current?.id == item.id else { return }
         fullImage = asset.image
         originalPixels = asset.pixels
         fileBytes = asset.bytes
@@ -158,7 +138,7 @@ struct PreviewContentView: View {
     }
 
     private func imageContent(_ item: ClipItem) -> some View {
-        PreviewImageDocument(image: fullImage ?? item.thumbnail,
+        PreviewImageDocument(image: (mediaID == item.id ? fullImage : nil) ?? item.thumbnail,
             details: ClipPresentation(item: item).imageDetails,
             identity: item.id)
     }
@@ -167,7 +147,7 @@ struct PreviewContentView: View {
         let paths = item.filePaths ?? []
         return VStack(spacing: 0) {
             // 首个图片文件升格为预览主体（面板行已是这条判断，大窗沿用）
-            if imageURL != nil {
+            if mediaID == item.id && imageURL != nil {
                 imageStage
                     .overlay(alignment: .bottom) {
                         if let meta = fileImageMeta(item) {
@@ -192,8 +172,8 @@ struct PreviewContentView: View {
 
     @ViewBuilder
     private var imageStage: some View {
-        if let item = displayedItem {
-            PreviewImageDocument(image: fullImage ?? item.thumbnail, details: "",
+        if let item = model.current {
+            PreviewImageDocument(image: (mediaID == item.id ? fullImage : nil) ?? item.thumbnail, details: "",
                                  identity: item.id)
         }
     }
@@ -201,7 +181,7 @@ struct PreviewContentView: View {
     /// 文件形态里首个图片文件的元信息：名称 · 像素尺寸 · 大小。
     /// 像素尺寸 / 字节数都来自后台回填的 state，不在 body 里碰磁盘
     private func fileImageMeta(_ item: ClipItem) -> String? {
-        guard let url = imageURL else { return nil }
+        guard mediaID == item.id, let url = imageURL else { return nil }
         var parts: [String] = [url.lastPathComponent]
         if let pixels = originalPixels {
             parts.append(L10n.pixelSize(Int(pixels.width), Int(pixels.height)))
@@ -242,11 +222,8 @@ private struct PreviewTextView: NSViewRepresentable {
     }
     func updateNSView(_ scroll: PreviewTextScrollView, context: Context) {
         scroll.allowsMagnification = false
-        if let view = scroll.documentView as? NSTextView {
-            view.font = .systemFont(ofSize: 15)
-            view.textColor = IvoryPaperStyle.ink
-            view.textContainerInset = NSSize(width: Rhythm.xxl, height: Rhythm.l)
-        }
+        // Constant typography is installed once in makeNSView. Unrelated media
+        // state updates must not invalidate the text storage and lay it out again.
         guard context.coordinator.identity != identity || context.coordinator.text != text,
               let view = scroll.documentView as? NSTextView else { return }
         context.coordinator.identity = identity
