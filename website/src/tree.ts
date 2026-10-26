@@ -147,7 +147,9 @@ export class TreeStage {
   conceal(id: string | null) {
     if (this.hiddenPaper === id) return;
     this.hiddenPaper = id;
-    this.wake();
+    // Preview completion runs in its own RAF. Restore the paper and outline now,
+    // before that frame is painted, rather than leaving a gap until our next RAF.
+    this.paintVisibility();
   }
   render(
     entries: Clip[],
@@ -405,9 +407,7 @@ export class TreeStage {
         width: `${width}px`,
         height: `${c.height}px`,
         transform: `rotate(${c.tilt}deg) scaleX(${c.fold})`,
-        opacity: String(this.hiddenPaper === c.clip.id ? 0 : c.opacity),
       });
-      c.el.inert = this.hiddenPaper === c.clip.id;
       c.el.disabled = !phone && elapsed < N.pageDuration;
       c.cord.setAttribute(
         "d",
@@ -451,12 +451,21 @@ export class TreeStage {
         transform: `rotate(${r.angle}deg)`,
       });
     }
+    this.paintVisibility();
+    this.onLayout();
+    if (elapsed < N.pageDuration || unsettled > 0.05)
+      this.frame = requestAnimationFrame((t) => this.tick(t));
+  }
+  private paintVisibility() {
+    for (const c of this.cards.values()) {
+      const concealed = this.hiddenPaper === c.clip.id;
+      c.el.style.opacity = String(concealed ? 0 : c.opacity);
+      c.el.inert = concealed;
+    }
+    const elapsed = performance.now() / 1000 - this.turnStart;
     this.ring.style.opacity =
       this.selected && this.selected !== this.hiddenPaper && this.visible
         ? String(clamp(elapsed / N.incoming, 0, 1) * this.selectionFade)
         : "0";
-    this.onLayout();
-    if (elapsed < N.pageDuration || unsettled > 0.05)
-      this.frame = requestAnimationFrame((t) => this.tick(t));
   }
 }
