@@ -785,9 +785,63 @@ kbd {
   color: #9b4942;
   font-size: 9px;
 }
-#tree-stage .paper .paper-text, .preview-compact .paper-text {
-  bottom:auto;
-  height:calc(var(--body-lines, 2) * 15.5px);
-  max-height:calc(100% - 37px);
+#tree-stage .paper .paper-text,
+.preview-compact .paper-text {
+  bottom: auto;
+  height: calc(var(--body-lines, 2) * 15.5px);
+  max-height: calc(100% - 37px);
 }
-#tree-stage .paper.is-selected .paper-text, .preview-compact .is-selected .paper-text { bottom:auto; max-height:calc(100% - 52px); }
+#tree-stage .paper.is-selected .paper-text,
+.preview-compact .is-selected .paper-text {
+  bottom: auto;
+  max-height: calc(100% - 52px);
+}
+
+/* Download remains the primary action, directly below the root search tag. */
+.native-desktop #desktop-main {
+  top: 0;
+  bottom: 188px;
+}
+.root-links {
+  position: absolute;
+  z-index: 20;
+  width: 240px;
+  transform: translateX(-50%);
+  display: grid;
+  justify-items: center;
+  gap: 9px;
+}
+.native-desktop .root-links .download-area {
+  text-align: center;
+}
+.native-desktop .root-links .download-button {
+  height: 40px;
+  min-width: 190px;
+  font-size: 15px;
+}
+.native-desktop .root-links .download-area p {
+  font-size: 10px;
+  margin: 5px 0 2px;
+}
+.native-desktop .root-links .download-area small {
+  font-size: 9px;
+}
+.native-desktop .root-links .site-footer {
+  margin: 0;
+  gap: 3px;
+}
+.native-desktop .root-links .github-link {
+  font-size: 12px;
+}
+.native-desktop .root-links .stats {
+  font-size: 9px;
+  gap: 14px;
+}
+@media (max-width: 799px) {
+  .native-desktop #desktop-main {
+    bottom: 188px;
+  }
+  .native-desktop:not([data-mobile-view="tree"]) .root-links {
+    visibility: hidden;
+  }
+}

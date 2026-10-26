@@ -53,18 +53,33 @@ let store = new HistoryStore(initialClips());
 // Site navigation stays outside the simulated screen. Product actions never
 // resize the tree or reveal a second layout.
 const screen = $("#desktop-main");
-screen.prepend($(".wallpaper"), $(".menubar"));
-const siteHeader = document.createElement("header");
-siteHeader.className = "site-header";
-const identity = document.createElement("div");
-identity.className = "site-identity";
-const name = document.createElement("strong");
-name.textContent = "PasteHistory";
-const statement = document.createElement("span");
-statement.textContent = "复制过的，随时找回。";
-identity.append(name, statement);
-siteHeader.append(identity, $(".site-footer"), $(".download-area"));
-$(".desktop").prepend(siteHeader);
+$(".desktop").prepend($(".wallpaper"));
+screen.prepend($(".menubar"));
+const rootLinks = document.createElement("section");
+rootLinks.className = "root-links";
+rootLinks.setAttribute("aria-label", "下载与 GitHub");
+rootLinks.append($(".download-area"), $(".site-footer"));
+$(".desktop").append(rootLinks);
+function placeRootLinks() {
+  const tag = $(".tree-controls").getBoundingClientRect();
+  const desktop = $(".desktop").getBoundingClientRect();
+  const toolbar = $(".experience-tools").getBoundingClientRect();
+  const width = rootLinks.offsetWidth;
+  const x = Math.max(
+    width / 2 + 12,
+    Math.min(
+      desktop.width - width / 2 - 12,
+      tag.left + tag.width / 2 - desktop.left,
+    ),
+  );
+  const y = Math.min(
+    tag.bottom - desktop.top + 12,
+    toolbar.top - desktop.top - rootLinks.offsetHeight - 8,
+  );
+  rootLinks.style.left = `${x}px`;
+  rootLinks.style.top = `${Math.max(42, y)}px`;
+}
+new ResizeObserver(placeRootLinks).observe(rootLinks);
 $(".hero-heading").remove();
 $(".tree-hint").remove();
 $(".experience-tools").inert = false;
@@ -127,7 +142,10 @@ const nativePreview = new NativePreview(preview, () => {
   return { left: r.left, top: r.top + 30, right: r.right, bottom: r.bottom };
 });
 const treeEntrance = new TreeEntrance($("#tree-area"));
-treeEntrance.onLayout = updatePreview;
+treeEntrance.onLayout = () => {
+  updatePreview();
+  placeRootLinks();
+};
 nativePreview.onClosed = () => {
   tree.conceal(null);
   previewId = null;
@@ -452,7 +470,10 @@ function updatePreview() {
     () => (id ? tree.compact(id) : undefined),
   );
 }
-tree.onLayout = updatePreview;
+tree.onLayout = () => {
+  updatePreview();
+  placeRootLinks();
+};
 function rememberSelection() {
   const s = getSelection();
   if (s?.rangeCount && note.contains(s.anchorNode))

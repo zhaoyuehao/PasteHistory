@@ -13,7 +13,7 @@ npm run build
 
 ## Experience
 
-The first visit opens the native default tree layout with eight history records, a permanent Phone Sync card and the root search tag. The same centered frame and point sizes remain in use when selecting, searching and previewing: there is no separate three-record hero, whole-tree zoom or layout transition. The header contains the download button and centered GitHub statistics; web-only sample, target and accessibility controls sit outside the simulated screen.
+The first visit opens the native default tree layout with eight history records, a permanent Phone Sync card and the root search tag. The same centered frame and point sizes remain in use when selecting, searching and previewing: there is no separate three-record hero, whole-tree zoom or layout transition. The download button is centered below the root search tag, followed by a quiet GitHub link and statistics. Web-only sample, target and accessibility controls sit outside the simulated screen.
 
 The sample editor and Notes are stand-ins for other applications. ⇧⌘V can open the tree while either editor is focused. Return pastes into the captured editor selection; the tree closes and returns focus. If no editor has been used, Notes is the default target. Dragging does not open another window: open the destination first, then drag the paper onto it. Clicking the simulated desktop outside the tree's input surfaces dismisses the tree. Reset restores all twelve fixture records and clears Notes.
 
