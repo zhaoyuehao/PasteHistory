@@ -21,10 +21,29 @@ export function browserLocale(): Locale {
   }
   return "en";
 }
-export let locale: Locale = browserLocale();
+const localeStorageKey = "pastehistory-locale";
+function isLocale(value: unknown): value is Locale {
+  return locales.some(([code]) => code === value);
+}
+export function preferredLocale(): Locale {
+  try {
+    const saved = localStorage.getItem(localeStorageKey);
+    if (isLocale(saved)) return saved;
+  } catch {
+    // Storage can be unavailable; browser detection still works.
+  }
+  return browserLocale();
+}
+export let locale: Locale = preferredLocale();
 export function setLocale(value: string) {
-  if (locales.some(([code]) => code === value)) locale = value as Locale;
+  if (!isLocale(value)) return;
+  locale = value;
   document.documentElement.lang = locale;
+  try {
+    localStorage.setItem(localeStorageKey, locale);
+  } catch {
+    // Keep the current page usable when persistence is denied.
+  }
 }
 // Simplified Chinese keys, followed by English, Traditional Chinese, Japanese and Korean.
 const messages: Record<string, readonly [string, string, string, string]> = {
