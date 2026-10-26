@@ -269,8 +269,8 @@ struct TreeUISmoke {
         }
         func settlePreview() {
             let deadline = Date().addingTimeInterval(1.2)
-            while NSApp.windows.contains(where: { $0.isVisible && $0.title == "纸签预览过渡" }), Date() < deadline { run(0.01) }
-            precondition(!NSApp.windows.contains { $0.isVisible && $0.title == "纸签预览过渡" },
+            while controller.isPreviewAnimating, Date() < deadline { run(0.01) }
+            precondition(!controller.isPreviewAnimating,
                          "Preview must settle within its bounded physical response")
         }
         store.query = "设计"
@@ -279,7 +279,7 @@ struct TreeUISmoke {
         precondition(key(49, chars: " ") == nil)
         run(0.3); settlePreview()
         precondition(controller.isPreviewVisible, "Space must preview immediately after search")
-        let followingPreview = NSApp.windows.first { $0.isVisible && $0.title == L10n.previewTitle }!
+        var followingPreview: NSPanel { controller.previewWindow! }
         let previousPreviewFrame = followingPreview.frame
         _ = key(125)
         run(0.04)
@@ -330,8 +330,8 @@ struct TreeUISmoke {
         run(0.04)
         _ = key(125) // redirect an unfinished unfold, not a stationary full-size popup
         run(0.04)
-        precondition(followingPreview.alphaValue == 0,
-                     "Interrupting the unfold must keep the real window hidden until the moving sheet arrives")
+        precondition(followingPreview.alphaValue == 1,
+                     "Interrupting the unfold keeps the same paper opaque")
         run(0.4); settlePreview()
         assertPreviewFollowsSelection()
         _ = key(49, chars: " ")
@@ -391,14 +391,14 @@ struct TreeUISmoke {
         run(0.3); settlePreview()
         _ = key(49, chars: " ")
         let returnDeadline = Date().addingTimeInterval(1.5)
-        while NSApp.windows.contains(where: { $0.isVisible && $0.title == "纸签预览过渡" }) && Date() < returnDeadline {
+        while controller.isPreviewAnimating && Date() < returnDeadline {
             run(0.02)
         }
-        precondition(!NSApp.windows.contains { $0.isVisible && $0.title == "纸签预览过渡" },
+        precondition(!controller.isPreviewAnimating,
                      "Return flight must complete before testing a fresh opening")
         let sourcePaper = controller.previewPaper!.frame
         _ = key(49, chars: " ")
-        let openingSheet = NSApp.windows.first { $0.isVisible && $0.title == "纸签预览过渡" }!
+        let openingSheet = controller.previewWindow!
         precondition(abs(openingSheet.frame.minX-sourcePaper.minX) <= 1 && abs(openingSheet.frame.minY-sourcePaper.minY) <= 1
                      && abs(openingSheet.frame.width-sourcePaper.width) <= 2 && abs(openingSheet.frame.height-sourcePaper.height) <= 2,
                      "The flight canvas must tightly enclose the selected paper, allowing only outward pixel rounding")
@@ -409,7 +409,7 @@ struct TreeUISmoke {
         _ = key(49, chars: " ") // reopen during return flight
         run(0.3); settlePreview()
         precondition(controller.isPreviewVisible)
-        precondition(!NSApp.windows.contains { $0.isVisible && $0.title == "纸签预览过渡" }, "No stale flight may survive rapid toggling")
+        precondition(!controller.isPreviewAnimating, "No stale flight may survive rapid toggling")
         let expanded = NSApp.windows.first { $0.isVisible && $0.title == L10n.previewTitle }!
         let paperPin = controller.previewPaper!.paperPin!
         let screen = NSScreen.screens.first { $0.frame.contains(paperPin) }!
@@ -417,8 +417,8 @@ struct TreeUISmoke {
             size: PreviewPanelController.paperSize(for: controller.panelModel.current))
         precondition(abs(expanded.frame.midX-expected.midX) < 2 && abs(expanded.frame.maxY-expected.maxY) < 2,
                      "Expanded paper stays at its hanging hole, subject only to screen-edge clamping")
-        precondition(controller.previewPaper?.alphaValue == 0 && controller.previewPaper?.ignoresMouseEvents == true,
-                     "The source paper must not remain as a second interactive copy")
+        precondition(controller.previewPaper === expanded && controller.previewPaper?.alphaValue == 1,
+                     "The source paper itself becomes the reading window")
         precondition(abs(expanded.frame.width / expanded.frame.height - 1.61803398875) < 0.004,
                      "Expanded paper retains a golden rectangle")
         precondition(!expanded.styleMask.contains(.titled) && !expanded.isMovable,
@@ -457,25 +457,25 @@ struct TreeUISmoke {
         }
         // Open and close share one opaque paper, the same geometry endpoints,
         // and a reversible content phase. Neither direction disappears in place.
-        let liveSurface = expanded.contentView as! PaperPreviewSurface
+        let liveSurface = (expanded.contentView as! TreePaperSurface).visual!.readingSurface!
         let logicalReadingBounds = liveSurface.bounds
         let readingFrameBeforeClose = expanded.frame
         let compactFrameBeforeClose = controller.previewPaper!.paperPose!.frame
         _ = key(49, chars: " ")
-        let closingSheet = NSApp.windows.first { $0.isVisible && $0.title == "纸签预览过渡" }!
+        let closingSheet = controller.previewWindow!
         precondition(abs(closingSheet.frame.width-readingFrameBeforeClose.width) <= 2)
         run(0.07)
-        precondition(closingSheet.alphaValue == 1 && expanded.alphaValue == 0,
+        precondition(closingSheet === expanded && expanded.alphaValue == 1,
                      "Closing must remain a visible paper returning to its branch, not fade out in place")
         precondition(closingSheet.frame.width < readingFrameBeforeClose.width
                      && closingSheet.frame.width > compactFrameBeforeClose.width)
         precondition(liveSurface.bounds == logicalReadingBounds,
                      "The captured reading layout must remain stable throughout the return")
         let reverseFrame = closingSheet.frame
-        let reversePhase = (closingSheet.contentView as! PaperFlightView).expansion
+        let reversePhase = (closingSheet.contentView as! TreePaperSurface).visual!.expansion
         _ = key(49, chars: " ")
         precondition(closingSheet.frame == reverseFrame
-                     && (closingSheet.contentView as! PaperFlightView).expansion == reversePhase,
+                     && (closingSheet.contentView as! TreePaperSurface).visual!.expansion == reversePhase,
                      "Mid-return reopening must preserve the presented geometry and content phase")
         run(0.3); settlePreview()
         precondition(controller.isPreviewVisible && expanded.frame == readingFrameBeforeClose)
@@ -485,8 +485,8 @@ struct TreeUISmoke {
         var closingTimeline = "elapsed_ms,width,height,phase\n"
         var previousClosingWidth = readingFrameBeforeClose.width + 2
         var priorPhase: CGFloat = -1
-        while closingSheet.isVisible && ProcessInfo.processInfo.systemUptime-returnStarted < 1.2 {
-            if closingSheet.isVisible, let face = closingSheet.contentView as? PaperFlightView,
+        while controller.isPreviewAnimating && ProcessInfo.processInfo.systemUptime-returnStarted < 1.2 {
+            if controller.isPreviewAnimating, let face = (closingSheet.contentView as? TreePaperSurface)?.visual,
                face.expansion != priorPhase {
                 precondition(closingSheet.frame.width <= previousClosingWidth+1, "A resting paper must shrink continuously back to its branch")
                 precondition(closingSheet.alphaValue == 1)
@@ -509,7 +509,7 @@ struct TreeUISmoke {
                 withAttributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.white])
         }
         closingStrip.unlockFocus()
-        precondition(!controller.isPreviewVisible && !closingSheet.isVisible)
+        precondition(!controller.isPreviewVisible && closingSheet.isVisible && !(closingSheet as! TreeInteractionPanel).previewOwnsGeometry)
         precondition(controller.previewPaper?.alphaValue == treeWindow.treeOpacity)
         try closingTimeline.write(toFile: ".build/preview-return-timeline.csv", atomically: true, encoding: .utf8)
         try NSBitmapImageRep(data: closingStrip.tiffRepresentation!)!.representation(using: .png, properties: [:])!
@@ -520,7 +520,7 @@ struct TreeUISmoke {
         _ = key(49, chars: " ")
         run(0.3); settlePreview()
         _ = key(49, chars: " ")
-        let settlingPaper = NSApp.windows.first { $0.isVisible && $0.title == "纸签预览过渡" }!
+        let settlingPaper = controller.previewWindow!
         var widest: CGFloat = 0
         var priorWidth: CGFloat = 0
         var motionFrames: [(NSImage, NSSize)] = []
@@ -537,7 +537,7 @@ struct TreeUISmoke {
                     motionFrames.append((NSImage(cgImage: bitmap.cgImage!, size: view.bounds.size), view.bounds.size))
                 }
                 if sample >= 5 && !Motion.reduceMotion {
-                    precondition(settlingPaper.alphaValue == 1 && expanded.alphaValue == 0,
+                    precondition(settlingPaper === expanded && expanded.alphaValue == 1,
                                  "The moving paper stays opaque; no delayed full-size preview fades in behind it")
                 }
             }
@@ -553,7 +553,7 @@ struct TreeUISmoke {
         precondition(widest > expected.width * 0.95 && widest <= expected.width + 1,
                      "Paper must travel to its reading size without ornamental overshoot")
         settlePreview()
-        precondition(!settlingPaper.isVisible && abs(expanded.frame.width-expected.width) < 1)
+        precondition(settlingPaper === expanded && abs(expanded.frame.width-expected.width) < 1)
         let textZoom = zoomViews(in: expanded.contentView!).first!
         let textWidth = textZoom.documentVisibleRect.width
         let zoomPanel = expanded as! PaperPreviewPanel
@@ -892,8 +892,8 @@ struct TreeUISmoke {
         phoneSurface.mouseUp(with: mouse(.leftMouseUp, view: phoneSurface, point: phoneCenter))
         run(0.8)
         precondition(controller.isPreviewVisible && controller.previewSelectionID == phoneID && pairingStarts == 1)
-        let phonePreview = NSApp.windows.first { $0 is PaperPreviewPanel && $0.isVisible } as! PaperPreviewPanel
-        precondition(phoneIsland.alphaValue == 0 && phoneIsland.ignoresMouseEvents && phonePreview.handlesPaperPinch)
+        let phonePreview = controller.previewWindow as! PaperPreviewPanel
+        precondition(phonePreview === phoneIsland && phoneIsland.alphaValue == 1 && !phoneIsland.ignoresMouseEvents && phonePreview.handlesPaperPinch)
         precondition(!phonePreview.isKeyWindow, "QR preview leaves keyboard focus in search")
         _ = key(51)
         _ = key(35, chars: "p", mods: [.command])

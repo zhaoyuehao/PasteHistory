@@ -14,7 +14,7 @@ func checkPaperMotion() {
     for size in [NSSize(width: 180, height: 120), NSSize(width: 300, height: 210), image.size] {
         let view = PaperFlightView(frame: NSRect(origin: .zero, size: size))
         view.pose = PaperPose(frame: view.bounds)
-        view.readingImage = image
+        view.compactImage = image
         let bitmap = NSBitmapImageRep(data: view.faceImage().tiffRepresentation!)!
         var left = bitmap.pixelsWide, right = -1, top = bitmap.pixelsHigh, bottom = -1
         for y in 0..<bitmap.pixelsHigh {
@@ -38,25 +38,23 @@ func checkPaperMotion() {
     IvoryPaperStyle.fill.setFill(); NSRect(origin: .zero, size: compact.size).fill()
     NSColor.red.setFill(); NSRect(x: 20, y: 25, width: 80, height: 45).fill()
     compactImage.unlockFocus()
-    // Native handoff: the original stays visible until the transition surface
-    // has its initial geometry and content. This covers the controller contract,
-    // rather than only comparing ideal forward/reverse trajectories.
+    // The motion driver borrows a visible card; it never owns window visibility.
     let original = NSPanel(contentRect: reading.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     original.isReleasedWhenClosed = false
+    let originalFace = PaperFlightView(frame: NSRect(origin: .zero, size: reading.size))
+    original.contentView = originalFace
+    originalFace.compactImage = compactImage
+    originalFace.expansion = 1
+    originalFace.place(reading, in: original)
     original.orderFrontRegardless()
     let flight = PaperPreviewFlight()
-    var handedOff = false
-    flight.animate(from: reading, to: compact, readingImage: image, compactImage: compactImage,
-                   opening: false, onReady: {
-        precondition(original.isVisible && original.alphaValue == 1)
-        let transition = NSApp.windows.first { $0.isVisible && $0.title == "纸签预览过渡" }!
-        let surface = transition.contentView as! PaperFlightView
-        precondition(surface.pose.channels == reading.channels && surface.expansion == 1)
-        original.alphaValue = 0
-        handedOff = true
-    }, completion: {})
-    precondition(handedOff && flight.visiblePose?.channels == reading.channels)
-    flight.cancel(); original.orderOut(nil)
+    flight.bind(window: original, sheet: originalFace)
+    flight.animate(to: compact, opening: false, completion: {})
+    precondition(original.isVisible && original.alphaValue == 1)
+    precondition(flight.visiblePose?.channels == reading.channels)
+    flight.cancel()
+    precondition(original.isVisible && original.contentView === originalFace)
+    original.orderOut(nil)
 
     // Render into a real native window: integer window placement must not move
     // the fractional screen-space hanging hole as the sheet grows and straightens.
@@ -96,5 +94,5 @@ func checkPaperMotion() {
     }
     panel.orderOut(nil)
 
-    print("PASS: uniform face scaling, native handoff ordering, subpixel pin stability")
+    print("PASS: uniform face scaling, persistent window ownership, subpixel pin stability")
 }

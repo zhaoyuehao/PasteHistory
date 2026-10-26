@@ -5,9 +5,7 @@ import AppKit
 /// or reflowing paragraphs on every pinch event.
 final class PaperPreviewSurface: NSView {
     let document: NSView
-    private let chrome = PaperFaceLayers()
     private let documentMask = CAShapeLayer()
-    private var drawingScale: CGFloat = 0
     var readingSize: NSSize? { didSet { needsLayout = true } }
 
     init(document: NSView) {
@@ -17,7 +15,6 @@ final class PaperPreviewSurface: NSView {
         wantsLayer = true
         document.wantsLayer = true
         addSubview(document)
-        layer?.insertSublayer(chrome.root, at: 0)
         document.layer?.mask = documentMask
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -30,34 +27,18 @@ final class PaperPreviewSurface: NSView {
         if document.frame != bounds { document.frame = bounds }
         super.layout()
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        chrome.place(PaperPose(frame: bounds), canvas: bounds, expansion: 1,
-                     backingScale: window?.backingScaleFactor ?? 2)
-        // The live document and the two cached faces expose the same shell.
+        // Only the retained parent renderer draws the edge and hanging hole.
         // Keep text selection native inside the fixed logical reading layout.
         documentMask.path = CGPath(rect: NSRect(x: 2, y: document.isFlipped ? 10 : 2,
             width: max(0,bounds.width-4), height: max(0,bounds.height-12)), transform: nil)
         CATransaction.commit()
-        let scale = (window?.backingScaleFactor ?? 2) * frame.width / max(1, bounds.width)
-        if abs(scale - drawingScale) > 0.001 {
-            drawingScale = scale
-            // SwiftUI's cached header/footer layers otherwise stretch their old
-            // pixels while the native text view redraws sharply. Refresh both at
-            // the physical reading resolution, including non-integer magnification.
-            func redraw(_ layer: CALayer) {
-                layer.contentsScale = scale
-                layer.setNeedsDisplay()
-                layer.sublayers?.forEach(redraw)
-            }
-            if let layer = document.layer { redraw(layer) }
-            document.needsDisplay = true
-        }
     }
 }
 
 /// AppKit receives magnify events for a non-key preview but does not begin its
 /// view recognizers until a click makes it key. Route only this window's events
 /// before that focus gate; the search editor remains the keyboard destination.
-final class PaperPreviewPanel: NSPanel {
+class PaperPreviewPanel: NSPanel {
     var acceptsKeyboardFocus = true
     var onCollapse: (() -> Void)?
     private var clickOrigin: NSPoint?

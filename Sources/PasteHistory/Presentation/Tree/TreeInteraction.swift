@@ -3,24 +3,26 @@ import SwiftUI
 
 /// The sculpture window never receives mouse events. Only these small, visible
 /// paper/control windows participate in macOS hit testing; no event replay/tap.
-final class TreeInteractionPanel: NSPanel {
+final class TreeInteractionPanel: PaperPreviewPanel {
     enum Role { case paper, search, layout }
     let role: Role
     weak var owner: HistoryPanel?
-    private var localPin: NSPoint?
+    // Compact layout is independent of the window's expanded screen position.
+    private var ownerPin: NSPoint?
     var paperPin: NSPoint? {
-        get { localPin.map { convertPoint(toScreen: $0) } }
-        set { localPin = newValue.map { convertPoint(fromScreen: $0) } }
+        get { ownerPin.flatMap { owner?.convertPoint(toScreen: $0) } }
+        set { ownerPin = newValue.flatMap { owner?.convertPoint(fromScreen: $0) } }
     }
+    var onReleasePreview: (() -> Void)?
+    var previewOwnsGeometry = false
     var paperSize: NSSize = .zero
     var paperAngle: CGFloat = 0
     var paperColor = IvoryPaperStyle.fill
-    var paperSnapshot: (() -> NSImage?)?
     var paperPose: PaperPose? {
         paperPin.map { PaperPose(pin: $0, size: paperSize, angle: paperAngle, padding: 3) }
     }
     var enabled = true { didSet { ignoresMouseEvents = !enabled } }
-    override var canBecomeKey: Bool { role != .paper }
+    override var canBecomeKey: Bool { role != .paper || (previewOwnsGeometry && acceptsKeyboardFocus) }
     override var canBecomeMain: Bool { false }
     init(owner: HistoryPanel, role: Role) {
         self.owner = owner

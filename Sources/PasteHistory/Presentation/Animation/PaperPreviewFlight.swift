@@ -35,18 +35,34 @@ struct PaperPose {
     }
 }
 
-/// The same retained layer renderer as the source paper. The native window is
-/// bounded to the visible paper for click-through; resizing it does not redraw faces.
+/// Retained card renderer with an optional live reading document. Its window
+/// remains bounded to the paper; content keeps fixed logical reading coordinates.
 final class PaperFlightView: NSView {
     var pose = PaperPose(frame: .zero)
-    var readingImage: NSImage?
     var compactImage: NSImage?
     var compactColor = IvoryPaperStyle.fill
     var expansion: CGFloat = 1
     private let faces = PaperFaceLayers()
     private var canvas = NSRect.zero
+    private(set) var readingSurface: PaperPreviewSurface?
+    var acceptsReadingInput = false
+
+    func attachReading(_ surface: PaperPreviewSurface) {
+        guard readingSurface !== surface else { return }
+        readingSurface?.removeFromSuperview()
+        readingSurface = surface
+        addSubview(surface)
+        updateFaces()
+    }
+    func detachReading() {
+        readingSurface?.removeFromSuperview()
+        readingSurface = nil
+    }
     override var isOpaque: Bool { false }
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard acceptsReadingInput else { return nil }
+        return super.hitTest(point)
+    }
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
@@ -66,9 +82,23 @@ final class PaperFlightView: NSView {
     }
     private func updateFaces() {
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        faces.images(compact: compactImage, reading: readingImage)
+        faces.image(compactImage)
         faces.place(pose, canvas: canvas, expansion: expansion, compactColor: compactColor,
-                    backingScale: window?.backingScaleFactor ?? 2)
+                    backingScale: window?.backingScaleFactor ?? 2, liveReading: readingSurface != nil)
+        if let surface = readingSurface {
+            let logical = surface.readingSize ?? pose.size
+            let scale = min(pose.size.width / logical.width, pose.size.height / logical.height)
+            surface.frameRotation = 0
+            surface.setFrameSize(NSSize(width: logical.width * scale, height: logical.height * scale))
+            surface.setBoundsSize(logical)
+            surface.frameRotation = pose.angle * 180 / .pi
+            let pin = surface.convert(NSPoint(x: logical.width / 2,
+                y: logical.height - IvoryPaperStyle.pinInset), to: self)
+            surface.setFrameOrigin(NSPoint(x: surface.frame.origin.x + pose.pin.x - canvas.minX - pin.x,
+                y: surface.frame.origin.y + pose.pin.y - canvas.minY - pin.y))
+            surface.alphaValue = PaperFaceLayers.blend(expansion)
+            surface.layoutSubtreeIfNeeded()
+        }
         CATransaction.commit()
     }
     func faceImage() -> NSImage {
@@ -85,9 +115,8 @@ final class PaperFlightView: NSView {
     }
 }
 
-/// One state and display clock own flight, live following and gesture release.
-/// The native windows remain tightly bounded input surfaces. Their contents are
-/// retained layers; geometry changes never capture or redraw the paper faces.
+/// Drives the existing card window. Opening/closing never creates a window,
+/// captures the live document, or exchanges surfaces at the settling boundary.
 @MainActor
 final class PaperPreviewFlight {
     struct FrameSample {
@@ -99,184 +128,126 @@ final class PaperPreviewFlight {
         let finished: Bool
     }
     var observeFrame: ((FrameSample) -> Void)?
-    var onToggle: (() -> Void)?
-    var onMagnify: ((CGFloat, NSEvent.Phase) -> Bool)?
-    private var window: PaperPreviewPanel?
-    private var sheet: PaperFlightView?
-    private weak var liveWindow: NSPanel?
+    private weak var window: NSPanel?
+    private weak var sheet: PaperFlightView?
     private let clock = MotionClock()
-    private let reduceMotion: () -> Bool
     private var clockRunning = false
+    private let reduceMotion: () -> Bool
     private var motion: DampedMotion?
     private var completion: (() -> Void)?
     private var generation = 0
-    private var recordID: UUID?
     private var flying = false
+    private var opening = true
     private var reduced = false
     private var fade: SettlingTrack?
     private var fadeElapsed = 0.0
     private var lastDirectTime = 0.0
-    private let tolerances: [CGFloat] = [0.2, 0.2, 0.2, 0.2, 0.0002, 0.002, 0.05, 0.0005, 0.001]
+    private let tolerances: [CGFloat] = [0.2, 0.2, 0.2, 0.2, 0.0002, 0.002, 0.05, 0.0005]
     var visibleFrame: NSRect? { flying && window?.isVisible == true ? window?.frame : nil }
     var visiblePose: PaperPose? { visibleFrame == nil ? nil : sheet?.pose }
+    var currentPose: PaperPose? { sheet?.pose }
 
     init(reduceMotion: @escaping () -> Bool = { Motion.reduceMotion }) { self.reduceMotion = reduceMotion }
-    deinit { MainActor.assumeIsolated { clock.stop(); window?.endPaperInteraction() } }
+    deinit { MainActor.assumeIsolated { clock.stop() } }
 
-    func isAnimating(recordID: UUID?) -> Bool { visiblePose != nil && self.recordID == recordID }
+    func bind(window: NSPanel, sheet: PaperFlightView, preservingMotion: Bool = false) {
+        generation += 1
+        stopClock()
+        self.window = window
+        self.sheet = sheet
+        if !preservingMotion { motion = nil }
+        completion = nil
+        flying = false
+    }
     func cancel() {
         generation += 1
         stopClock()
-        window?.endPaperInteraction()
-        window?.orderOut(nil)
-        liveWindow = nil; motion = nil; completion = nil; flying = false
-    }
-    private func stopClock() { clock.stop(); clockRunning = false }
-    private func startClock(on panel: NSWindow) {
-        guard !clockRunning else { return }
-        clockRunning = true
-        clock.start(on: panel) { [weak self] frame in self?.step(frame) }
+        completion = nil
+        flying = false
+        motion = nil
+        window = nil
+        sheet = nil
     }
     private func newMotion(_ values: [CGFloat]) -> DampedMotion {
-        DampedMotion(values: values,
-                     frequency: Motion.paperFrequency, anchorTime: Motion.paperAnchorTime)
+        DampedMotion(values: values, frequency: Motion.paperFrequency, anchorTime: Motion.paperAnchorTime)
     }
-
-    func animate(from: PaperPose, to: PaperPose, readingImage: NSImage?, compactImage: NSImage? = nil,
-                 compactColor: NSColor? = nil, recordID: UUID? = nil, opening: Bool,
-                 onReady: () -> Void = {}, completion: @escaping () -> Void) {
+    private func stopClock() { clock.stop(); clockRunning = false }
+    private func startClock() {
+        guard !clockRunning, let window else { return }
+        clockRunning = true
+        clock.start(on: window) { [weak self] frame in self?.step(frame) }
+    }
+    func animate(to pose: PaperPose, opening: Bool, completion: @escaping () -> Void) {
+        guard let sheet else { return }
         generation += 1
-        let wasFlying = visiblePose != nil
-        let retainFace = wasFlying && self.recordID == recordID
-        let inheritLive = !wasFlying && liveWindow?.isVisible == true && motion != nil
-        let reduce = reduceMotion()
-        let target = to.channels + [opening ? 1 : 0, reduce && !opening ? 0 : 1]
-        if !wasFlying {
-            let initial = from.channels + [opening ? 0 : 1, reduce && opening ? 0 : 1]
-            if inheritLive { motion?.align(to: initial) }
-            else { motion = newMotion(initial) }
-        }
-        motion?.retarget(target)
+        self.opening = opening
         self.completion = completion
-        self.recordID = recordID
-        reduced = reduce
-        if reduce {
-            fade = SettlingTrack(start: window?.alphaValue ?? (opening ? 0 : 1), end: opening ? 1 : 0,
+        reduced = reduceMotion()
+        if motion == nil { motion = newMotion(sheet.pose.channels + [sheet.expansion]) }
+        motion?.retarget(pose.channels + [opening ? 1 : 0])
+        if reduced {
+            fade = SettlingTrack(start: sheet.expansion, end: opening ? 1 : 0,
                                  duration: Motion.paperFadeDuration, symmetric: true)
-            if !wasFlying { fade?.start = opening ? 0 : 1 }
             fadeElapsed = 0
+            // Reduce Motion changes geometry once and dissolves content within
+            // the same opaque paper, without fading the entire window away.
+            if opening, let window { sheet.place(pose, in: window) }
         } else { fade = nil }
-        let panel: PaperPreviewPanel
-        let face: PaperFlightView
-        if let window, let sheet { panel = window; face = sheet }
-        else {
-            panel = PaperPreviewPanel(contentRect: from.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-            panel.acceptsKeyboardFocus = false
-            panel.isReleasedWhenClosed = false
-            panel.title = "纸签预览过渡"
-            panel.backgroundColor = .clear; panel.isOpaque = false; panel.hasShadow = true
-            panel.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 2)
-            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-            panel.hidesOnDeactivate = false
-            panel.onCollapse = { [weak self] in self?.onToggle?() }
-            panel.onMagnify = { [weak self] delta, phase in self?.onMagnify?(delta, phase) ?? false }
-            face = PaperFlightView(frame: NSRect(origin: .zero, size: from.frame.size))
-            face.autoresizingMask = [.width, .height]
-            panel.contentView = face
-            window = panel; sheet = face
-        }
-        if !retainFace {
-            face.readingImage = readingImage; face.compactImage = compactImage
-            face.compactColor = compactColor ?? IvoryPaperStyle.fill
-        }
-        PaperWindowHandoff.perform {
-            if !wasFlying {
-                face.expansion = reduce ? 1 : (opening ? 0 : 1)
-                face.place(reduce && opening ? to : from, in: panel)
-                panel.alphaValue = reduce && opening ? 0 : 1
-                panel.orderFrontRegardless()
-            }
-            flying = true
-            liveWindow = nil
-            panel.ignoresMouseEvents = false
-            panel.beginPaperInteraction()
-            PaperWindowHandoff.prepare(panel)
-            onReady()
-        }
-        startClock(on: panel)
+        flying = true
+        sheet.acceptsReadingInput = false
+        startClock()
     }
-
-    /// Layout and magnification retarget the same flight without capturing faces.
-    func retargetFlight(to pose: PaperPose, opening: Bool, compactImage: NSImage? = nil, compactColor: NSColor? = nil) {
+    func retargetFlight(to pose: PaperPose, opening: Bool) {
         guard flying else { return }
-        // A departing source may change selection/height while we return to it.
-        // Reuse its cached face so the last frame still matches that actual card.
-        if !opening {
-            if let compactImage { sheet?.compactImage = compactImage }
-            if let compactColor { sheet?.compactColor = compactColor }
-        }
-        motion?.retarget(pose.channels + [opening ? 1 : 0, reduced && !opening ? 0 : 1])
+        motion?.retarget(pose.channels + [opening ? 1 : 0])
     }
-
     func moveLive(_ panel: NSPanel, to pose: PaperPose) {
-        guard !flying else { return }
-        fade = nil
-        liveWindow = panel
-        let target = pose.channels + [1, 1]
-        if motion == nil { motion = newMotion(PaperPose(frame: panel.frame, inset: pose.inset).channels + [1, 1]) }
+        guard !flying, let sheet else { return }
+        let target = pose.channels + [1]
+        if motion == nil { motion = newMotion(sheet.pose.channels + [1]) }
         motion?.retarget(target)
         if reduceMotion() {
             motion?.finish()
-            panel.setFrame(pose.frame, display: false)
+            sheet.place(pose, in: panel)
             stopClock()
-        } else if motion?.isSettled(tolerances: tolerances) == false { startClock(on: panel) }
+        } else if motion?.isSettled(tolerances: tolerances) == false { startClock() }
     }
     func trackLive(_ panel: NSPanel, pose: PaperPose) {
         guard !flying else { retargetFlight(to: pose, opening: true); return }
         stopClock()
-        liveWindow = panel
         let now = CACurrentMediaTime()
-        if motion == nil { motion = newMotion(pose.channels + [1, 1]) }
-        motion?.track(pose.channels + [1, 1], delta: now-lastDirectTime)
+        if motion == nil { motion = newMotion(pose.channels + [1]) }
+        motion?.track(pose.channels + [1], delta: now-lastDirectTime)
         lastDirectTime = now
-        panel.setFrame(pose.frame, display: false)
-        panel.contentView?.layoutSubtreeIfNeeded()
+        sheet?.place(pose, in: panel)
     }
-
     private func step(_ frame: MotionClock.Frame) {
-        guard motion != nil else { stopClock(); return }
+        guard let panel = window, panel.isVisible, let sheet, motion != nil else {
+            stopClock(); return
+        }
+        let frameGeneration = generation
         let began = observeFrame == nil ? 0 : CACurrentMediaTime()
         motion?.advance(by: frame.delta)
         fadeElapsed += frame.delta
-        let finished = fade.map { fadeElapsed >= $0.duration } ?? (motion?.isSettled(tolerances: tolerances) == true)
+        let finished = flying && reduced
+            ? fadeElapsed >= (fade?.duration ?? 0)
+            : motion?.isSettled(tolerances: tolerances) == true
         if finished { motion?.finish() }
         guard let values = motion?.values else { return }
         let pose = PaperPose(channels: Array(values.prefix(7)))
-        if flying, let panel = window, let face = sheet {
-            face.expansion = reduced ? 1 : values[7]
-            if !reduced { face.place(pose, in: panel) }
-            panel.alphaValue = fade.map { min(1,max(0,$0.sample(fadeElapsed).value)) } ?? 1
-            observeFrame?(FrameSample(delta: frame.delta, work: CACurrentMediaTime()-began,
-                pose: face.pose, windowFrame: panel.frame, expansion: face.expansion, finished: finished))
-            if finished {
-                stopClock()
-                flying = false
-                panel.endPaperInteraction()
-                let completedGeneration = generation
-                let done = completion; completion = nil
-                PaperWindowHandoff.perform {
-                    // The completion reveals and draws the destination before the
-                    // old window leaves. Both changes commit in this display group.
-                    done?()
-                    if generation == completedGeneration { panel.orderOut(nil) }
-                }
-            }
-        } else if let panel = liveWindow, panel.isVisible {
-            panel.setFrame(pose.frame, display: false)
-            panel.contentView?.layoutSubtreeIfNeeded()
-            observeFrame?(FrameSample(delta: frame.delta, work: CACurrentMediaTime()-began,
-                pose: pose, windowFrame: panel.frame, expansion: 1, finished: finished))
-            if finished { stopClock() }
-        } else { stopClock() }
+        sheet.expansion = flying && reduced
+            ? min(1, max(0, fade?.sample(fadeElapsed).value ?? values[7])) : values[7]
+        sheet.place(flying && reduced && !finished ? sheet.pose : pose, in: panel)
+        observeFrame?(FrameSample(delta: frame.delta, work: CACurrentMediaTime()-began,
+            pose: sheet.pose, windowFrame: panel.frame, expansion: sheet.expansion, finished: finished))
+        guard finished, generation == frameGeneration else { return }
+        stopClock()
+        let done = completion
+        completion = nil
+        flying = false
+        sheet.acceptsReadingInput = opening
+        // No visibility, window ordering, image replacement or shadow handoff.
+        // Clear state before calling out so a reentrant opening owns its completion.
+        done?()
     }
 }

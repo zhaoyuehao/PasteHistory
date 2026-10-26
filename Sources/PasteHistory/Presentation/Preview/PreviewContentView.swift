@@ -47,13 +47,6 @@ struct PreviewContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .ignoresSafeArea()
-            .background(Color(IvoryPaperStyle.fill))
-            .clipShape(RoundedRectangle(cornerRadius: IvoryPaperStyle.radius))
-            .overlay {
-                RoundedRectangle(cornerRadius: IvoryPaperStyle.radius)
-                    .strokeBorder(Color(IvoryPaperStyle.edge), lineWidth: 1.5)
-                    .allowsHitTesting(false)
-            }
             .task(id: model.current?.id) {
                 await step(to: model.current)
             }

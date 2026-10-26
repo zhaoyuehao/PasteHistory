@@ -9,9 +9,7 @@ final class HistoryPanel: NSPanel {
         didSet {
             alphaValue = treeOpacity
             for island in islands {
-                let expanded = island.role == .paper && expandedPaperID != nil
-                    && (island.contentView as? TreePaperSurface)?.recordID == expandedPaperID
-                island.alphaValue = expanded ? 0 : treeOpacity
+                island.alphaValue = treeOpacity
             }
         }
     }
@@ -23,11 +21,6 @@ final class HistoryPanel: NSPanel {
     var dragInProgress = false
     var expandedPaperID: UUID? {
         didSet {
-            for island in islands where island.role == .paper {
-                let expanded = (island.contentView as? TreePaperSurface)?.recordID == expandedPaperID && expandedPaperID != nil
-                island.alphaValue = expanded ? 0 : treeOpacity
-                island.enabled = !expanded
-            }
             onPaperAppearanceChanged?()
         }
     }
@@ -53,9 +46,7 @@ final class HistoryPanel: NSPanel {
     }
     func showIslandIfNeeded(_ island: TreeInteractionPanel) {
         guard isVisible, presentsIslands else { return }
-        let expanded = island.role == .paper && expandedPaperID != nil
-            && (island.contentView as? TreePaperSurface)?.recordID == expandedPaperID
-        island.alphaValue = expanded ? 0 : treeOpacity
+        island.alphaValue = treeOpacity
         if island.parent == nil { addChildWindow(island, ordered: .above) }
         if !island.isVisible { island.orderFrontRegardless() }
     }

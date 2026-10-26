@@ -445,6 +445,8 @@ final class PanelController: NSObject, NSWindowDelegate {
     // MARK: - 冒烟钩子（--smoke-preview 用）
 
     var isPreviewVisible: Bool { preview.isVisible }
+    var isPreviewAnimating: Bool { previewStorage?.isAnimating ?? false }
+    var previewWindow: NSPanel? { previewStorage?.window }
     /// 与按空格完全同一条路径
     func togglePreview() { preview.toggle() }
 

@@ -59,10 +59,14 @@ Paper motion uses one state `(x, v, r)` for flight, following and gesture releas
 changing the goal preserves position, velocity and acceleration. Settling uses
 position/velocity tolerances rather than a fixed playback deadline. Normal motion
 reaches 95% in about 262 ms; the low-speed tail remains interruptible. Reduce Motion
-retains the short fade. Source and flight faces use retained layers and shared
-paper chrome; flight snapshots are refreshed on record changes, not animation frames.
-Compact face caches are refreshed when their content or logical layout changes.
-The live reading document keeps its logical layout and selectable text.
+retains a short in-place content dissolve. Each card keeps its original window,
+renderer, shell and shadow through expansion, reading and collapse. A live reading
+NSView scales and rotates in fixed logical coordinates; there is no reading bitmap
+or endpoint window handoff. AppKit owns native document backing layers; the renderer
+does not recursively override their content scales. Compact face caches refresh
+only when content or logical layout changes. The tree updates the compact return
+pose while the preview owns the visible window geometry. Selecting another record
+transfers the live document and motion state to that card's existing window.
 
 The numeric check needs no desktop:
 
@@ -72,7 +76,8 @@ swiftc Sources/PasteHistory/Presentation/Animation/DampedMotion.swift scripts/te
 ```
 
 When animation regression is requested, `./scripts/test_tree_ui.sh --paper-motion`
-checks native handoffs, continuous reversal, gesture routing and bounded windows.
+checks persistent window/document identity, continuous reversal, gesture routing,
+native pin coordinate conversion and bounded windows.
 Its `.build/paper-motion-frames.csv` measures display callback intervals and CPU
 work, not compositor presentation or physical input latency. Use
 `./scripts/test_tree_ui.sh --preview-text` for full-text/reading-position checks.

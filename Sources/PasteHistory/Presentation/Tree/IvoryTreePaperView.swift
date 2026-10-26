@@ -55,7 +55,7 @@ final class IvoryTreePaperView: NSView {
         }
         let current = visuals()
         let ids = Set(current.map { $0.entry.id })
-        for id in Array(islands.keys) where !ids.contains(id) {
+        for id in Array(islands.keys) where !ids.contains(id) && islands[id]?.previewOwnsGeometry != true {
             islands.removeValue(forKey: id)?.detach()
         }
         for card in current {
@@ -89,7 +89,9 @@ final class IvoryTreePaperView: NSView {
             let frame = NSRect(x: left-3, y: top-3,
                                width: points.map(\.x).max()!-left+6,
                                height: points.map(\.y).max()!-top+6)
-            panel.setFrame(owner.convertToScreen(convert(frame, to: nil)), display: false)
+            if !panel.previewOwnsGeometry {
+                panel.setFrame(owner.convertToScreen(convert(frame, to: nil)), display: false)
+            }
             panel.paperPin = owner.convertPoint(toScreen: convert(center, to: nil))
             panel.paperSize = NSSize(width: card.rect.width * card.fold, height: card.rect.height)
             panel.paperAngle = -a
@@ -107,15 +109,15 @@ final class IvoryTreePaperView: NSView {
                 image.unlockFocus()
                 faceCache[id] = (card.entry, card.rect.size, selected, image)
             }
+            panel.onReleasePreview = { [weak self] in self?.syncIslands() }
             panel.paperColor = color
-            panel.paperSnapshot = { image }
             if let pose = panel.paperPose {
                 surface.present(image: image, pose: pose, canvas: panel.frame, color: color, opacity: card.opacity)
             }
             // Visible transitional papers consume a click without activating a new
             // record or accidentally clicking the app beneath the departing paper.
-            panel.alphaValue = owner.expandedPaperID == id ? 0 : owner.treeOpacity
-            panel.enabled = card.opacity > 0.01 && owner.expandedPaperID != id
+            panel.alphaValue = owner.treeOpacity
+            panel.enabled = card.opacity > 0.01
             surface.enabled = !layoutEditing && (card.entry.isPermanent || !isTurningPage) && card.opacity > 0.9
                 && cards.contains { $0.entry.id == id }
             surface.recordID = id
@@ -432,7 +434,7 @@ final class TreePaperSurface: NSView, NSDraggingSource {
     var recordID: UUID?
     var draggable = true
     var paint: (() -> Void)?
-    private var visual: PaperFlightView?
+    private(set) var visual: PaperFlightView?
     func present(image: NSImage, pose: PaperPose, canvas: NSRect, color: NSColor, opacity: CGFloat) {
         let view: PaperFlightView
         if let visual { view = visual }
@@ -444,9 +446,11 @@ final class TreePaperSurface: NSView, NSDraggingSource {
         }
         view.compactImage = image
         view.compactColor = color
-        view.expansion = 0
-        view.alphaValue = opacity
-        view.place(pose, canvas: canvas)
+        if (window as? TreeInteractionPanel)?.previewOwnsGeometry != true {
+            view.expansion = 0
+            view.alphaValue = opacity
+            view.place(pose, canvas: canvas)
+        }
     }
     var onSelect: (() -> Void)?
     var onPreview: (() -> Void)?
@@ -462,12 +466,17 @@ final class TreePaperSurface: NSView, NSDraggingSource {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func draw(_ dirtyRect: NSRect) { if visual == nil { paint?() } }
     override func accessibilityRole() -> NSAccessibility.Role? { .button }
-    override func isAccessibilityElement() -> Bool { true }
+    override func isAccessibilityElement() -> Bool {
+        (window as? TreeInteractionPanel)?.previewOwnsGeometry != true
+    }
     override func accessibilityPerformPress() -> Bool {
-        guard enabled else { return false }; onPreview?(); return true
+        guard enabled else { return false }
+        if let panel = window as? TreeInteractionPanel, panel.previewOwnsGeometry { panel.onCollapse?() }
+        else { onPreview?() }
+        return true
     }
     override func mouseDown(with event: NSEvent) {
-        guard enabled else { return }
+        guard enabled, (window as? TreeInteractionPanel)?.previewOwnsGeometry != true else { return }
         guard let owner = (window as? TreeInteractionPanel)?.owner, !owner.layoutEditing else { return }
         downEvent = event
         dragPayload = recordID.flatMap { owner.prepareDrag?($0) }
@@ -477,7 +486,8 @@ final class TreePaperSurface: NSView, NSDraggingSource {
         (window as? TreeInteractionPanel)?.owner?.focusSearch()
     }
     override func mouseDragged(with event: NSEvent) {
-        guard draggable, enabled, window?.isVisible == true, !dragged, let downEvent,
+        guard (window as? TreeInteractionPanel)?.previewOwnsGeometry != true,
+              draggable, enabled, window?.isVisible == true, !dragged, let downEvent,
               let owner = (window as? TreeInteractionPanel)?.owner, !owner.layoutEditing,
               hypot(event.locationInWindow.x-down.x, event.locationInWindow.y-down.y) > 5 else { return }
         dragged = true
@@ -513,7 +523,8 @@ final class TreePaperSurface: NSView, NSDraggingSource {
     }
     override func mouseUp(with event: NSEvent) {
         defer { previewAtDown = nil; downEvent = nil; dragPayload = nil }
-        guard enabled, window?.isVisible == true, !dragged, bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
+        guard (window as? TreeInteractionPanel)?.previewOwnsGeometry != true,
+              enabled, window?.isVisible == true, !dragged, bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
         previewAtDown?()
     }
 }

@@ -274,15 +274,9 @@ struct PairPanelView: View {
         }
         // 高度 320：卡区 198 : 320 ≈ φ⁻¹（黄金分割纵向命中）；warning 出现时 352
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(paperStyle ? IvoryPaperStyle.fill : NSColor.windowBackgroundColor))
+        .background(paperStyle ? Color.clear : Color(NSColor.windowBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: paperStyle ? IvoryPaperStyle.radius : 0))
-        .overlay {
-            if paperStyle {
-                RoundedRectangle(cornerRadius: IvoryPaperStyle.radius)
-                    .strokeBorder(Color(IvoryPaperStyle.edge), lineWidth: 1.5)
-                    .allowsHitTesting(false)
-            }
-        }
+
     }
 }
 

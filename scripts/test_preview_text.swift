@@ -34,7 +34,7 @@ struct PreviewTextSmoke {
         run(0.6)
         controller.togglePreview()
         run(0.6)
-        let panel = NSApp.windows.first { $0.isVisible && $0.title == L10n.previewTitle }!
+        var panel: NSPanel { controller.previewWindow! }
         func checkText(_ expected: String, _ context: String) {
             let scroll = scrolls(panel.contentView!).first!
             let view = scroll.documentView as! NSTextView

@@ -1,5 +1,6 @@
 import AppKit
 import QuartzCore
+import SwiftUI
 
 /// Opt-in native smoke test. Uses fixture windows, never the user's history.
 @main
@@ -21,26 +22,48 @@ struct PaperMotionSmoke {
             result.unlockFocus()
             return result
         }
-        let small = image(compact.size), large = image(reading.size)
+        let small = image(compact.size)
+        let panel = PaperPreviewPanel(contentRect: compact.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.isReleasedWhenClosed = false
+        panel.acceptsKeyboardFocus = false
+        let face = PaperFlightView(frame: NSRect(origin: .zero, size: compact.frame.size))
+        face.autoresizingMask = [.width, .height]
+        face.compactImage = small
+        face.expansion = 0
+        panel.contentView = face
+        face.place(compact, in: panel)
+        let document = NSHostingView(rootView: Text("Live document — 同一内容视图"))
+        let readingSurface = PaperPreviewSurface(document: document)
+        readingSurface.readingSize = reading.size
+        face.attachReading(readingSurface)
+        panel.orderFrontRegardless()
+        panel.beginPaperInteraction()
         let flight = PaperPreviewFlight()
+        flight.bind(window: panel, sheet: face)
         var samples: [PaperPreviewFlight.FrameSample] = []
-        flight.observeFrame = { samples.append($0) }
+        flight.observeFrame = {
+            samples.append($0)
+            precondition(panel.alphaValue == 1 && panel.contentView === face)
+            precondition(face.readingSurface?.document === document)
+            // Native coordinate conversion, not a second hand-written transform,
+            // must keep the document's logical pin on the physical hanging point.
+            let localPin = readingSurface.convert(NSPoint(x: reading.size.width / 2,
+                y: reading.size.height - IvoryPaperStyle.pinInset), to: nil)
+            let pin = panel.convertPoint(toScreen: localPin)
+            precondition(hypot(pin.x-$0.pose.pin.x, pin.y-$0.pose.pin.y) < 0.01)
+        }
         var completions = 0
-        let id = UUID()
         func animate(_ opening: Bool) {
-            flight.animate(from: opening ? compact : reading, to: opening ? reading : compact,
-                readingImage: large, compactImage: small, recordID: id,
-                opening: opening) { completions += 1 }
+            flight.animate(to: opening ? reading : compact, opening: opening) { completions += 1 }
         }
         animate(true)
-        let panel = NSApp.windows.first { $0.isVisible && $0.title == "纸签预览过渡" } as! PaperPreviewPanel
         precondition(!panel.canBecomeKey)
         var pinches = 0
-        flight.onMagnify = { _, _ in pinches += 1; return true }
+        panel.onMagnify = { _, _ in pinches += 1; return true }
         precondition(panel.routeMagnification(from: panel, at: NSPoint(x: 20,y: 20), delta: 0.1, phase: .began))
         precondition(!panel.routeMagnification(from: nil, at: NSPoint(x: 20,y: 20), delta: 0.1, phase: .began))
         precondition(!panel.routeMagnification(from: panel, at: NSPoint(x: -1,y: 20), delta: 0.1, phase: .began))
-        precondition(pinches == 1, "Only the moving paper may consume the gesture, once")
+        precondition(pinches == 1)
         for index in 0..<8 {
             run(0.055)
             let before = flight.visiblePose!.channels
@@ -51,7 +74,7 @@ struct PaperMotionSmoke {
         while flight.visiblePose != nil && Date() < deadline { run(0.01) }
         precondition(flight.visiblePose == nil && completions == 1,
                      "Only the latest request may complete, within the settling bound")
-        precondition(!panel.handlesPaperPinch, "A hidden flight must remove its input monitor")
+        precondition(panel.handlesPaperPinch && panel.isVisible, "The same paper remains interactive after settling")
         precondition(samples.count > 15)
         for sample in samples {
             precondition(sample.windowFrame.width <= sample.pose.frame.width+2 && sample.windowFrame.height <= sample.pose.frame.height+2,
@@ -59,8 +82,7 @@ struct PaperMotionSmoke {
         }
         // A completion may immediately open a new animation. The old completion
         // must not hide the reused window or cancel its display clock.
-        flight.animate(from: reading, to: compact, readingImage: large, compactImage: small,
-                       recordID: id, opening: false) { animate(true) }
+        flight.animate(to: compact, opening: false) { animate(true) }
         run(0.65)
         precondition(flight.visiblePose != nil && panel.isVisible)
         run(0.7)
@@ -75,14 +97,18 @@ struct PaperMotionSmoke {
         flight.cancel()
         let reduced = PaperPreviewFlight(reduceMotion: { true })
         var reducedDone = false
-        reduced.animate(from: compact, to: reading, readingImage: large, compactImage: small,
-                        opening: true) { reducedDone = true }
+        face.expansion = 0
+        face.place(compact, in: panel)
+        reduced.bind(window: panel, sheet: face)
+        reduced.animate(to: reading, opening: true) { reducedDone = true }
         precondition(reduced.visiblePose?.channels == reading.channels)
         run(0.05)
         precondition(reduced.visiblePose?.channels == reading.channels && !reducedDone)
         run(0.15)
         precondition(reducedDone && reduced.visiblePose == nil)
         reduced.cancel()
+        panel.endPaperInteraction()
+        panel.orderOut(nil)
         print("PASS: Reduce Motion keeps geometry fixed and finishes its short fade")
 
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("motion-ui-"+UUID().uuidString)
@@ -95,53 +121,34 @@ struct PaperMotionSmoke {
         let controller = PanelController(store: store, observesDesktopFocus: false, pairing: pairing)
         func settle() {
             let deadline = Date().addingTimeInterval(1.2)
-            repeat { run(0.01) } while NSApp.windows.contains { $0.isVisible && $0.title == "纸签预览过渡" } && Date() < deadline
-            precondition(!NSApp.windows.contains { $0.isVisible && $0.title == "纸签预览过渡" })
-        }
-        func bitmap(_ image: NSImage) -> NSBitmapImageRep { NSBitmapImageRep(data: image.tiffRepresentation!)! }
-        func save(_ rep: NSBitmapImageRep, _ name: String) throws {
-            try rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: ".build/"+name+".png"))
-        }
-        func compare(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep, limit: Double, context: String) {
-            precondition(a.pixelsWide == b.pixelsWide && a.pixelsHigh == b.pixelsHigh, context)
-            var difference = 0.0
-            for y in 0..<a.pixelsHigh { for x in 0..<a.pixelsWide {
-                let ca = a.colorAt(x:x,y:y)!.usingColorSpace(.deviceRGB)!
-                let cb = b.colorAt(x:x,y:y)!.usingColorSpace(.deviceRGB)!
-                difference += abs(ca.redComponent-cb.redComponent)+abs(ca.greenComponent-cb.greenComponent)+abs(ca.blueComponent-cb.blueComponent)
-            } }
-            let mean = difference/Double(a.pixelsWide*a.pixelsHigh*3)
-            print("\(context): mean RGB error \(mean)")
-            precondition(mean < limit, context)
+            while controller.isPreviewAnimating && Date() < deadline { run(0.01) }
+            precondition(!controller.isPreviewAnimating)
         }
         controller.show(); run(0.9)
-        let source = controller.previewPaper!.contentView as! TreePaperSurface
-        let sourcePixels = bitmap(source.paperImage())
+        let source = controller.previewPaper!
+        let sourceSurface = source.contentView as! TreePaperSurface
+        let sourceRenderer = sourceSurface.visual!
+        let windowNumber = source.windowNumber
         controller.togglePreview()
-        let moving = NSApp.windows.first { $0.isVisible && $0.title == "纸签预览过渡" }!
-        let movingFace = moving.contentView as! PaperFlightView
-        let firstPixels = bitmap(movingFace.faceImage())
-        try save(sourcePixels, "motion-source"); try save(firstPixels, "motion-first-flight")
-        compare(sourcePixels, firstPixels, limit: 0.001, context: "Compact-to-flight handoff")
-        // Magnification during travel must change this same paper's destination.
-        let movingPanel = moving as! PaperPreviewPanel
-        precondition(movingPanel.routeMagnification(from: movingPanel, at: NSPoint(x: 30,y: 30), delta: 0.2, phase: .began))
-        _ = movingPanel.routeMagnification(from: movingPanel, at: NSPoint(x: 30,y: 30), delta: 0, phase: .ended)
+        precondition(controller.previewWindow === source && source.windowNumber == windowNumber)
+        precondition(sourceSurface.visual === sourceRenderer)
+        let liveDocument = sourceRenderer.readingSurface!.document
+        precondition(source.routeMagnification(from: source, at: NSPoint(x: 30,y: 30), delta: 0.2, phase: .began))
+        _ = source.routeMagnification(from: source, at: NSPoint(x: 30,y: 30), delta: 0, phase: .ended)
         settle()
-        let live = NSApp.windows.first { $0.isVisible && $0.title == L10n.previewTitle }!
-        precondition(live.alphaValue == 1 && live.frame.width > PreviewPanelController.paperSize(for: entry).width*1.15)
-        let liveView = live.contentView!
-        let livePixels = liveView.bitmapImageRepForCachingDisplay(in: liveView.bounds)!
-        liveView.cacheDisplay(in: liveView.bounds, to: livePixels)
-        // Compare at the physical size because the live document has logical bounds.
-        let liveImage = NSImage(size: live.frame.size); liveImage.addRepresentation(livePixels)
+        precondition(source.alphaValue == 1 && source.frame.width > PreviewPanelController.paperSize(for: entry).width*1.15)
+        precondition(sourceRenderer.readingSurface?.document === liveDocument && sourceRenderer.acceptsReadingInput)
         controller.togglePreview()
-        let closingFace = moving.contentView as! PaperFlightView
-        try save(bitmap(liveImage), "motion-live"); try save(bitmap(closingFace.faceImage()), "motion-close-start")
-        compare(bitmap(liveImage), bitmap(closingFace.faceImage()), limit: 0.005, context: "Magnified live-to-flight handoff")
+        run(0.06)
+        controller.togglePreview()
+        precondition(sourceRenderer.readingSurface?.document === liveDocument)
         settle()
-        precondition(controller.previewPaper?.alphaValue == 1)
+        controller.togglePreview()
+        settle()
+        precondition(source.isVisible && source.alphaValue == 1 && source.windowNumber == windowNumber)
+        precondition(sourceSurface.visual === sourceRenderer && sourceRenderer.expansion == 0)
+        precondition(sourceRenderer.readingSurface == nil && !source.handlesPaperPinch)
         controller.hide(restoreFocus: false); run(0.25)
-        print("PASS: actual tree source handoff, magnify during flight, close restores source")
+        print("PASS: one window/renderer/document through opening, magnification and reversal; same card after close")
     }
 }
