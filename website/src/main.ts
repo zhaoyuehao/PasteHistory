@@ -11,7 +11,6 @@ import {
   t,
   locale,
   setLocale,
-  browserLocale,
   locales,
   bindLabels,
   refreshLabels,
@@ -119,13 +118,13 @@ function enterExperience() {
 }
 const sampleDrafts = new Map<string, string>();
 const languageSelect = $<HTMLSelectElement>("#site-language");
-for (const [code, label] of [["auto", "跟随浏览器"], ...locales]) {
+for (const [code, label] of locales) {
   const option = document.createElement("option");
   option.value = code;
   option.textContent = label;
   languageSelect.append(option);
 }
-languageSelect.value = "auto";
+languageSelect.value = locale;
 function updateLanguageName() {
   $("#language-name").textContent = locales.find(
     ([code]) => code === locale,
@@ -134,15 +133,10 @@ function updateLanguageName() {
 updateLanguageName();
 let lastStats: { stats: Stats | null; stale: boolean } | null = null;
 languageSelect.onchange = () => applyLanguage();
-window.addEventListener("languagechange", () => {
-  if (languageSelect.value === "auto") applyLanguage();
-});
 function applyLanguage() {
   const editor = $<HTMLTextAreaElement>("#sample-text");
   if (editor) sampleDrafts.set(locale, editor.value);
-  setLocale(
-    languageSelect.value === "auto" ? browserLocale() : languageSelect.value,
-  );
+  setLocale(languageSelect.value);
   refreshLabels();
   updateLanguageName();
   document.title = `PasteHistory — ${t("复制过的，随时找回。")}`;

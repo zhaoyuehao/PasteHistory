@@ -73,12 +73,6 @@ const messages: Record<string, readonly [string, string, string, string]> = {
     "복사한 내용을 언제든 다시 찾아보세요.",
   ],
   语言: ["Language", "語言", "言語", "언어"],
-  跟随浏览器: [
-    "Browser language",
-    "跟隨瀏覽器",
-    "ブラウザに合わせる",
-    "브라우저 언어",
-  ],
   许愿树剪贴板: [
     "Clipboard tree",
     "許願樹剪貼簿",
