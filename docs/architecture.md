@@ -14,11 +14,11 @@ PasteHistory 使用一个 SwiftPM executable target。目录分层约束依赖�
 | `Domain/` | `Models.swift`：记录、内容指纹与检索字段；不依赖界面框架 |
 | `Application/` | `ClipStore` 管理记录和分页；`Settings` 管理偏好；`HistoryViewModel` 管理选择和操作；`HistoryKeyboardState` 管理输入规则 |
 | `Infrastructure/Persistence/` | `HistoryDatabase`：SQLite3 C API、WAL、查询、去重与迁移 |
-| `Infrastructure/Clipboard/` | 捕获剪贴板、全局热键、AX 焦点恢复、粘贴与循环粘贴、原生拖放载荷 |
+| `Infrastructure/Clipboard/` | 捕获剪贴板、全局热键、AX 焦点恢复、粘贴、原生拖放载荷 |
 | `Infrastructure/Media/` | Vision OCR、文件元数据、预览图片读取 / 降采样 / 缓存 |
 | `Infrastructure/Sync/` | iCloud 文件同步与局域网 HTTP 服务 |
 | `Infrastructure/Diagnostics/` | `AnchorTrace`：定位与预览手势日志 |
-| `Presentation/History/` | 搜索与列表、树 / 列表切换、临时布局状态 |
+| `Presentation/History/` | 树的搜索与操作、临时布局状态 |
 | `Presentation/Tree/` | SceneKit 树体、纸签、挂点和受限交互窗口 |
 | `Presentation/Windows/` | 窗口生命周期、定位、焦点和键盘路由 |
 | `Presentation/Preview/` | 预览窗口、内容、整张纸面缩放与滚动 |
@@ -43,7 +43,7 @@ PasteHistory 使用一个 SwiftPM executable target。目录分层约束依赖�
 ```
 
 - 监视器每 0.4 秒检查 `NSPasteboard.changeCount`，按类型和忽略规则捕获；自写剪贴板会同步计数，避免重复入库。轮询不是完整的系统复制事件日志。
-- `ClipStore` 每批加载 60 条，搜索防抖 250ms 后执行 SQL。树视图在结果序列上每组展示 8 条，列表与树共用搜索、排序和选中项。
+- `ClipStore` 每批加载 60 条，搜索防抖 250ms 后执行 SQL。树视图在结果序列上每组展示 8 条，树与预览共用搜索结果、排序和选中项。
 - 图片原图存文件，数据库保存文件名与缩略图。`PreviewMediaLoader` 接收注入的图片目录，负责读取、降采样和缓存；视图不自行读取文件，也不引用 `ClipStore.shared` 获取预览资源。
 - 数据服务发出 `UserFeedback`，由入口接到 Toast；HTTP 服务接收注入的网页内容，不依赖页面实现。
 - iCloud 与手机 HTTP 是两条独立同步路径，手机配对密钥不会用于本地数据库或 iCloud 文件，详见[同步协议](sync.md)。

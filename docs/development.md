@@ -61,10 +61,8 @@ PasteHistory.app/Contents/MacOS/PasteHistory --show
 
 | 参数 | 行为与前提 |
 | --- | --- |
-| `--show` | 启动即打开历史面板，沿用保存的树 / 列表偏好 |
+| `--show` | 启动即打开许愿树 |
 | `--show --trace-anchor` | 打开面板，并将默认落盘的定位日志同时写到 NSLog |
-| `--show --fake-field 100,470,300,60` | 用 AX 坐标系的假输入框测试列表定位；先用 ⌘L 切到列表 |
-| `--show --panel-size 520,540` | 临时覆盖列表外框用于 A/B；未保存尺寸时默认 400×647 |
 | `--show-pair` | 打开手机配对面板 |
 | `--print-ax` | 写出辅助功能状态；未授权会请求权限 |
 | `--paste-latest` | 将最近记录走完整粘贴流程；需预先聚焦测试输入框 |
@@ -73,7 +71,7 @@ PasteHistory.app/Contents/MacOS/PasteHistory --show
 | `--purge-ids "uuid1,uuid2"` | 删除指定真实记录，并在 iCloud 同步处于活动状态时删除远端记录文件、写墓碑；使用有效 UUID |
 | `--restore-images` | 从活动的 iCloud 同步目录恢复本地缺失原图 |
 
-当前版本没有 `--view tags` 参数，树 / 列表使用 ⌘L 切换并记忆。维护命令执行后应用仍常驻；不要把启动成功等同于维护已成功完成，应检查日志和数据结果。
+当前只保留许愿树，没有视图切换参数；旧列表尺寸和输入框定位参数已移除。维护命令执行后应用仍常驻；不要把启动成功等同于维护已成功完成，应检查日志和数据结果。
 
 ## 日志与常见问题
 
@@ -82,13 +80,12 @@ PasteHistory.app/Contents/MacOS/PasteHistory --show
 | 症状 | 先检查 |
 | --- | --- |
 | 回车只复制、不自动粘贴 | 辅助功能授权、签名身份和菜单中的自动粘贴开关 |
-| 列表遮挡输入框或离输入框很远 | `anchor_trace.log`：区分没捕获输入框与捕获后位置计算错误 |
-| 预览双指缩放无反应 | 是否为树模式、指针是否在预览内；查看 `preview-pinch` 行，并用真实触控板复现 |
+| 预览双指缩放无反应 | 指针是否在预览内；查看 `preview-pinch` 行，并用真实触控板复现 |
 | 手机连不上 / 配对失效 | [手机同步排障](sync.md#连接排障) |
 | 图片原图缺失 | 先确认 iCloud 文件已经到达，再使用 `--restore-images` |
 | 面板关闭后立刻重开又消失 | 检查窗口代际号与延迟焦点恢复，参见 [维护记忆](../MEMORY.md) |
 
-`anchor_trace.log` 默认写入，超过 200,000 字节后整体重写。列表定位结论包括 `below-input`、`above-input`、`below-input/shrunk-to-N` 和 `fallback-center`；树模式有独立布局，不能用列表结论判断树的位置。`preview-pinch` 记录手势阶段、倍率与窗口信息，不记录剪贴板正文。
+`anchor_trace.log` 默认写入，超过 200,000 字节后整体重写。旧版本的列表定位日志已停用，树的位置由布局设置决定。`preview-pinch` 记录手势阶段、倍率与窗口信息，不记录剪贴板正文。
 
 `--print-ax` 写出同目录下的 `ax_status.txt`，内容为 `trusted` 或 `not-trusted`。
 
