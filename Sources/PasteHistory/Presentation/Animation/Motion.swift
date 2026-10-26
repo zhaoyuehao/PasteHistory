@@ -23,18 +23,9 @@ enum Motion {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 
-    static let paperOpenDuration: TimeInterval = 0.24
-    // Both directions use the same path, duration and symmetric timing curve.
-    static let paperCloseDuration = paperOpenDuration
-    static let paperFollowFrequency: CGFloat = 46
-    static let paperFollowDamping: CGFloat = 0.86
-    static let paperScaleReturnDuration: TimeInterval = 0.15
-
-    /// Monotone settle: a clear acceleration followed by a long deceleration,
-    /// with zero endpoint velocity/acceleration rather than an ornamental bounce.
-    static func paperProgress(_ fraction: CGFloat, opening: Bool) -> CGFloat {
-        SettlingTrack.progress(fraction)
-    }
+    static let paperFadeDuration: TimeInterval = 0.12
+    static let paperFrequency: CGFloat = 20
+    static let paperAnchorTime: CGFloat = 0.020
 
     /// 选中态与跟随滚动：dampingFraction 0.78 有约 4% 过冲，滑过头再回来
     static var selection: Animation {

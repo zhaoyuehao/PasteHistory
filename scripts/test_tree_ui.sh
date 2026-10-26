@@ -9,7 +9,10 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 SOURCES=(Sources/PasteHistory/**/*.swift)
 SOURCES=("${(@)SOURCES:#Sources/PasteHistory/main.swift}")
 HARNESS=scripts/test_tree_ui.swift
-if [[ "${1:-}" == "--preview-text" ]]; then
+if [[ "${1:-}" == "--paper-motion" ]]; then
+  HARNESS=scripts/test_motion_ui.swift
+  shift
+elif [[ "${1:-}" == "--preview-text" ]]; then
   HARNESS=scripts/test_preview_text.swift
   shift
 fi

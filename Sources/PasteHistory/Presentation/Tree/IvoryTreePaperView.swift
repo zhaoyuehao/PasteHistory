@@ -21,6 +21,7 @@ final class IvoryTreePaperView: NSView {
     private var outgoing: [Card] = []
     private var selectedID: UUID?
     private var images: [UUID: NSImage] = [:]
+    private var faceCache: [UUID: (entry: IvoryTreeEntry, size: NSSize, selected: Bool, image: NSImage)] = [:]
     private var turnStart: CFTimeInterval = 0
     private var turnDirection: CGFloat = 1
     private var selectionRect = NSRect.zero
@@ -46,10 +47,15 @@ final class IvoryTreePaperView: NSView {
             owner.resumePaperUpdates = { [weak self] in self?.syncIslands() }
             return
         }
-        owner.onPaperAppearanceChanged = { [weak self] in self?.needsDisplay = true }
+        owner.onPaperAppearanceChanged = { [weak self] in
+            // The selection outline belongs to the decorative tree window. Draw
+            // it inside the same handoff group as the paper windows, not one frame later.
+            self?.needsDisplay = true
+            self?.displayIfNeeded()
+        }
         let current = visuals()
         let ids = Set(current.map { $0.entry.id })
-        for id in Array(islands.keys) where !ids.contains(id) {
+        for id in Array(islands.keys) where !ids.contains(id) && islands[id]?.previewOwnsGeometry != true {
             islands.removeValue(forKey: id)?.detach()
         }
         for card in current {
@@ -83,23 +89,35 @@ final class IvoryTreePaperView: NSView {
             let frame = NSRect(x: left-3, y: top-3,
                                width: points.map(\.x).max()!-left+6,
                                height: points.map(\.y).max()!-top+6)
-            panel.setFrame(owner.convertToScreen(convert(frame, to: nil)), display: false)
+            if !panel.previewOwnsGeometry {
+                panel.setFrame(owner.convertToScreen(convert(frame, to: nil)), display: false)
+            }
             panel.paperPin = owner.convertPoint(toScreen: convert(center, to: nil))
             panel.paperSize = NSSize(width: card.rect.width * card.fold, height: card.rect.height)
             panel.paperAngle = -a
-            panel.paperSnapshot = { [weak self] in
-                guard let self else { return nil }
-                let image = NSImage(size: card.rect.size)
+            let selected = card.entry.id == selectedID
+            let color = selected ? IvoryPaperStyle.fill : NSColor(red: 0.79, green: 0.77, blue: 0.71, alpha: 1)
+            let cached = faceCache[id]
+            let image: NSImage
+            if let cached, cached.entry == card.entry, cached.size == card.rect.size, cached.selected == selected {
+                image = cached.image
+            } else {
+                image = NSImage(size: card.rect.size)
                 image.lockFocusFlipped(true)
                 NSGraphicsContext.current?.cgContext.translateBy(x: -card.rect.minX, y: -card.rect.minY)
-                self.drawPaper(card)
+                drawPaper(card)
                 image.unlockFocus()
-                return image
+                faceCache[id] = (card.entry, card.rect.size, selected, image)
+            }
+            panel.onReleasePreview = { [weak self] in self?.syncIslands() }
+            panel.paperColor = color
+            if let pose = panel.paperPose {
+                surface.present(image: image, pose: pose, canvas: panel.frame, color: color, opacity: card.opacity)
             }
             // Visible transitional papers consume a click without activating a new
             // record or accidentally clicking the app beneath the departing paper.
-            panel.alphaValue = owner.expandedPaperID == id ? 0 : owner.treeOpacity
-            panel.enabled = card.opacity > 0.01 && owner.expandedPaperID != id
+            panel.alphaValue = owner.treeOpacity
+            panel.enabled = card.opacity > 0.01
             surface.enabled = !layoutEditing && (card.entry.isPermanent || !isTurningPage) && card.opacity > 0.9
                 && cards.contains { $0.entry.id == id }
             surface.recordID = id
@@ -143,6 +161,7 @@ final class IvoryTreePaperView: NSView {
             heights = heights.filter { key, _ in entries.contains { $0.id == key } }
             let ids = Set((entries + outgoing.map(\.entry)).map(\.id))
             images = images.filter { ids.contains($0.key) }
+            faceCache = faceCache.filter { ids.contains($0.key) }
             for entry in entries {
                 if let data = entry.thumbnail { images[entry.id] = NSImage(data: data) }
             }
@@ -290,11 +309,6 @@ final class IvoryTreePaperView: NSView {
         let rect = card.rect
         let selected = card.entry.id == selectedID
         NSGraphicsContext.saveGraphicsState()
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor(white: 0, alpha: 0.24)
-        shadow.shadowBlurRadius = selected ? 9 : 5
-        shadow.shadowOffset = NSSize(width: 1, height: 3)
-        shadow.set()
         (selected
             ? IvoryPaperStyle.fill
             : NSColor(red: 0.79, green: 0.77, blue: 0.71, alpha: 1)).setFill()
@@ -420,6 +434,24 @@ final class TreePaperSurface: NSView, NSDraggingSource {
     var recordID: UUID?
     var draggable = true
     var paint: (() -> Void)?
+    private(set) var visual: PaperFlightView?
+    func present(image: NSImage, pose: PaperPose, canvas: NSRect, color: NSColor, opacity: CGFloat) {
+        let view: PaperFlightView
+        if let visual { view = visual }
+        else {
+            view = PaperFlightView(frame: bounds)
+            view.autoresizingMask = [.width, .height]
+            addSubview(view)
+            visual = view
+        }
+        view.compactImage = image
+        view.compactColor = color
+        if (window as? TreeInteractionPanel)?.previewOwnsGeometry != true {
+            view.expansion = 0
+            view.alphaValue = opacity
+            view.place(pose, canvas: canvas)
+        }
+    }
     var onSelect: (() -> Void)?
     var onPreview: (() -> Void)?
     var enabled = true { didSet { setAccessibilityEnabled(enabled) } }
@@ -432,14 +464,19 @@ final class TreePaperSurface: NSView, NSDraggingSource {
     override var isFlipped: Bool { true }
     override var isOpaque: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override func draw(_ dirtyRect: NSRect) { paint?() }
+    override func draw(_ dirtyRect: NSRect) { if visual == nil { paint?() } }
     override func accessibilityRole() -> NSAccessibility.Role? { .button }
-    override func isAccessibilityElement() -> Bool { true }
+    override func isAccessibilityElement() -> Bool {
+        (window as? TreeInteractionPanel)?.previewOwnsGeometry != true
+    }
     override func accessibilityPerformPress() -> Bool {
-        guard enabled else { return false }; onPreview?(); return true
+        guard enabled else { return false }
+        if let panel = window as? TreeInteractionPanel, panel.previewOwnsGeometry { panel.onCollapse?() }
+        else { onPreview?() }
+        return true
     }
     override func mouseDown(with event: NSEvent) {
-        guard enabled else { return }
+        guard enabled, (window as? TreeInteractionPanel)?.previewOwnsGeometry != true else { return }
         guard let owner = (window as? TreeInteractionPanel)?.owner, !owner.layoutEditing else { return }
         downEvent = event
         dragPayload = recordID.flatMap { owner.prepareDrag?($0) }
@@ -449,7 +486,8 @@ final class TreePaperSurface: NSView, NSDraggingSource {
         (window as? TreeInteractionPanel)?.owner?.focusSearch()
     }
     override func mouseDragged(with event: NSEvent) {
-        guard draggable, enabled, window?.isVisible == true, !dragged, let downEvent,
+        guard (window as? TreeInteractionPanel)?.previewOwnsGeometry != true,
+              draggable, enabled, window?.isVisible == true, !dragged, let downEvent,
               let owner = (window as? TreeInteractionPanel)?.owner, !owner.layoutEditing,
               hypot(event.locationInWindow.x-down.x, event.locationInWindow.y-down.y) > 5 else { return }
         dragged = true
@@ -468,6 +506,7 @@ final class TreePaperSurface: NSView, NSDraggingSource {
         session.draggingFormation = .none
     }
     func paperImage() -> NSImage {
+        if let visual { return visual.faceImage() }
         let image = NSImage(size: bounds.size)
         image.lockFocusFlipped(true)
         paint?()
@@ -484,7 +523,8 @@ final class TreePaperSurface: NSView, NSDraggingSource {
     }
     override func mouseUp(with event: NSEvent) {
         defer { previewAtDown = nil; downEvent = nil; dragPayload = nil }
-        guard enabled, window?.isVisible == true, !dragged, bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
+        guard (window as? TreeInteractionPanel)?.previewOwnsGeometry != true,
+              enabled, window?.isVisible == true, !dragged, bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
         previewAtDown?()
     }
 }

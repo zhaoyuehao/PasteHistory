@@ -53,6 +53,35 @@ mkdir -p .build
 
 Native tests require a logged-in macOS graphical session. UI tests use synthetic data and temporary SQLite, not user history or the general clipboard. Build/compile logs are `.build/tree-ui-build.log` and `.build/tree-ui-compile.log`.
 
+Paper motion uses one state `(x, v, r)` for flight, following and gesture release:
+`r' = (goal-r)/τ`, `x' = v`, `v' = ω²(r-x)-2ωv`, with `ω = 20 s⁻¹` and
+`τ = 20 ms`. The exact exponential solution advances by display timestamps;
+changing the goal preserves position, velocity and acceleration. Settling uses
+position/velocity tolerances rather than a fixed playback deadline. Normal motion
+reaches 95% in about 262 ms; the low-speed tail remains interruptible. Reduce Motion
+retains a short in-place content dissolve. Each card keeps its original window,
+renderer, shell and shadow through expansion, reading and collapse. A live reading
+NSView scales and rotates in fixed logical coordinates; there is no reading bitmap
+or endpoint window handoff. AppKit owns native document backing layers; the renderer
+does not recursively override their content scales. Compact face caches refresh
+only when content or logical layout changes. The tree updates the compact return
+pose while the preview owns the visible window geometry. Selecting another record
+transfers the live document and motion state to that card's existing window.
+
+The numeric check needs no desktop:
+
+```sh
+swiftc Sources/PasteHistory/Presentation/Animation/DampedMotion.swift scripts/test_damped_motion.swift -o .build/test-damped-motion
+.build/test-damped-motion
+```
+
+When animation regression is requested, `./scripts/test_tree_ui.sh --paper-motion`
+checks persistent window/document identity, continuous reversal, gesture routing,
+native pin coordinate conversion and bounded windows.
+Its `.build/paper-motion-frames.csv` measures display callback intervals and CPU
+work, not compositor presentation or physical input latency. Use
+`./scripts/test_tree_ui.sh --preview-text` for full-text/reading-position checks.
+
 | Change | Additional validation |
 | --- | --- |
 | Documentation | Relative links, paths, command syntax and `git diff --check` |
