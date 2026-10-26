@@ -4,6 +4,7 @@
 
 [Try the desktop demo](https://zhaoyuehao.github.io/PasteHistory/) · [Download the macOS preview](https://github.com/zhaoyuehao/PasteHistory/releases)
 
+The web demo follows the Swift tree layout and keyboard dispatch, with a uniformly scaled welcome scene. Browser-reserved shortcuts and system integrations remain subject to browser limits; see the [website notes](website/README.md#native-interaction-reference).
 
 A macOS menu bar clipboard history app. Press **⇧⌘V** to search text, images and file paths on a desktop tree, then press Return to paste into the original app. Includes on-device OCR, iCloud sync between Macs and local-network phone access.
 

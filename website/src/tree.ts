@@ -1,124 +1,67 @@
-import * as THREE from "three";
-import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { Spring } from "./motion";
+import { PerspectiveCamera, Vector3 } from "three";
+import reference from "../public/native-tree.json";
+import { NATIVE as N, PHONE_ID, clamp, dateLabel, type Pose } from "./native";
 import type { Clip } from "./store";
 export type Anchor = { x: number; y: number };
-const seeds = [
-  [-0.78, 7.75],
-  [1.37, 7.02],
-  [1.92, 6.05],
-  [-2.04, 5.58],
-  [2.03, 3.6],
-  [-2.32, 2.77],
-  [2.16, 1.98],
-  [-1.7, 1.25],
-];
+type Card = {
+  el: HTMLButtonElement;
+  cord: SVGPathElement;
+  clip: Clip;
+  slot: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  tilt: number;
+  fold: number;
+  opacity: number;
+};
 export class TreeStage {
-  private scene = new THREE.Scene();
-  private camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
-  private fallbackCamera = new THREE.PerspectiveCamera(
-    38,
-    800 / 1100,
-    0.1,
-    100,
-  );
-  private renderer?: THREE.WebGLRenderer;
-  private group = new THREE.Group();
-  private anchors = seeds.map(([x, y]) => new THREE.Vector3(x, y, 0));
-  private cards = new Map<
-    string,
-    {
-      el: HTMLButtonElement;
-      clip: Clip;
-      slot: number;
-      life: Spring;
-      scale: Spring;
-      x: Spring;
-      y: Spring;
-    }
-  >();
+  private camera = new PerspectiveCamera(38, 1, 0.1, 100);
+  private image = document.createElement("img");
+  private cords = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   private ring = document.createElement("div");
-  private rx = new Spring(0);
-  private ry = new Spring(0);
-  private rw = new Spring(150);
-  private rh = new Spring(90);
+  private cards = new Map<string, Card>();
+  private outgoing: {
+    el: HTMLElement;
+    x: number;
+    y: number;
+    tilt: number;
+    fold: number;
+    opacity: number;
+  }[] = [];
   private selected: string | null = null;
-  private preview = false;
+  private hiddenPaper: string | null = null;
   private visible = true;
+  private width = 880;
+  private height = 920;
   private frame = 0;
   private last = 0;
+  private turnStart = -1000;
+  private direction = 1;
+  private selectionFade = 1;
+  private startIndex = 0;
+  private signature = "";
+  private ringPose: Pose | null = null;
   private reduced = matchMedia("(prefers-reduced-motion: reduce)");
-  private width = 700;
-  private height = 700;
-  private paperWidth = 150;
-  private sparse = true;
-  private dirty = true;
-  private fallback: HTMLImageElement;
+  layoutEditing = false;
   onSelect: (id: string) => void = () => {};
   onDrag: (id: string) => void = () => {};
+  onDragEnd: () => void = () => {};
   onLayout: () => void = () => {};
   constructor(private host: HTMLElement) {
-    this.fallback = document.createElement("img");
-    this.fallback.src = `${import.meta.env.BASE_URL}tree-fallback.png`;
-    this.fallback.className = "tree-fallback";
-    this.fallback.alt = "象牙白许愿树";
-    host.append(this.fallback);
-    this.group.rotation.y = -0.24;
-    this.scene.add(this.group);
-    this.camera.position.set(0, 4.15, 16);
-    this.fallbackCamera.position.set(0, 4.15, 16.5);
-    this.fallbackCamera.updateMatrixWorld();
-    this.scene.add(new THREE.HemisphereLight(0xfff9ec, 0x708878, 2.1));
-    const key = new THREE.DirectionalLight(0xfff7df, 3.4);
-    key.position.set(-5, 10, 8);
-    this.scene.add(key);
-    const fill = new THREE.DirectionalLight(0xb9d5ce, 1.5);
-    fill.position.set(5, 5, -3);
-    this.scene.add(fill);
+    this.image.src = `${import.meta.env.BASE_URL}tree-native.png`;
+    this.image.alt = "原生 SceneKit 许愿树与五只小鸟";
+    this.image.className = "native-sculpture";
+    this.image.onerror = () => {
+      this.image.src = `${import.meta.env.BASE_URL}tree-fallback.png`;
+      this.image.onerror = null;
+    };
+    this.cords.classList.add("native-cords");
+    this.cords.setAttribute("aria-hidden", "true");
     this.ring.className = "selection-ring";
     this.ring.setAttribute("aria-hidden", "true");
-    host.append(this.ring);
-    try {
-      if (new URLSearchParams(location.search).has("fallback"))
-        throw new Error("Fallback preview");
-      this.renderer = new THREE.WebGLRenderer({
-        alpha: true,
-        // Retain the settled sculpture while the render loop sleeps.
-        preserveDrawingBuffer: true,
-        antialias: true,
-        powerPreference: "low-power",
-      });
-      this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.8));
-      this.renderer.setClearColor(0x000000, 0);
-      this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-      this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      host.prepend(this.renderer.domElement);
-      this.renderer.domElement.addEventListener("webglcontextlost", (e) => {
-        e.preventDefault();
-        this.fallback.hidden = false;
-        this.renderer?.domElement.setAttribute("hidden", "");
-        this.wake();
-      });
-      new GLTFLoader().load(
-        `${import.meta.env.BASE_URL}tree.glb`,
-        (gltf) => {
-          this.group.add(gltf.scene);
-          this.group.updateMatrixWorld(true);
-          this.snapAnchors(gltf.scene);
-          this.fallback.hidden = true;
-          this.dirty = true;
-          this.wake();
-        },
-        undefined,
-        () => {
-          this.renderer?.domElement.setAttribute("hidden", "");
-          this.fallback.hidden = false;
-        },
-      );
-    } catch {
-      this.renderer?.dispose();
-      this.renderer = undefined;
-    }
+    host.append(this.image, this.cords, this.ring);
     new ResizeObserver(() => this.resize()).observe(host);
     document.addEventListener("visibilitychange", () => {
       if (document.hidden) {
@@ -129,170 +72,260 @@ export class TreeStage {
     this.reduced.addEventListener("change", () => this.wake());
     this.resize();
   }
-  private snapAnchors(root: THREE.Object3D) {
-    const distance = seeds.map(() => Infinity);
-    root.updateMatrixWorld(true);
-    root.traverse((o) => {
-      if (!(o instanceof THREE.Mesh) || !o.name.toLowerCase().includes("tree"))
-        return;
-      const p = o.geometry.getAttribute("position");
-      for (let i = 0; i < p.count; i++) {
-        const v = new THREE.Vector3().fromBufferAttribute(p, i); // Exported vertices are already in the native scene's world coordinates.
-        seeds.forEach(([x, y], j) => {
-          const z = -(
-            0.42 * x * Math.sin(y * 1.1) +
-            0.35 * (Math.sin(x * 1.7 + y * 0.2) - Math.sin(y * 0.2))
-          );
-          const d = v.distanceToSquared(new THREE.Vector3(x, y, z));
-          if (d < distance[j]) {
-            distance[j] = d;
-            this.anchors[j] = v.clone();
-          }
-        });
-      }
-    });
-  }
   private resize() {
     this.width = this.host.clientWidth;
     this.height = this.host.clientHeight;
     if (!this.width || !this.height) return;
-    this.paperWidth = Math.max(86, Math.min(118, this.width * 0.19));
-    this.host.style.setProperty("--paper-width", `${this.paperWidth}px`);
     this.camera.aspect = this.width / this.height;
-    this.camera.position.z = Math.max(
-      4.55 / Math.tan((19 * Math.PI) / 180),
-      3.3 / (Math.tan((19 * Math.PI) / 180) * this.camera.aspect),
+    this.camera.position.set(
+      0,
+      4.15,
+      Math.max(
+        5.25 / Math.tan((19 * Math.PI) / 180),
+        4.1 / (Math.tan((19 * Math.PI) / 180) * this.camera.aspect),
+      ),
     );
     this.camera.updateProjectionMatrix();
     this.camera.updateMatrixWorld();
-    this.renderer?.setSize(this.width, this.height);
-    this.dirty = true;
+    // SceneKit and its projected anchors share the same vertical FOV and distance.
+    const scale =
+      ((this.height / 920) * reference.cameraZ) / this.camera.position.z;
+    this.image.style.width = `${880 * scale}px`;
+    this.image.style.height = `${920 * scale}px`;
+    this.image.style.left = `${(this.width - 880 * scale) / 2}px`;
+    this.image.style.top = `${(this.height - 920 * scale) / 2}px`;
+    this.cords.setAttribute("viewBox", `0 0 ${this.width} ${this.height}`);
+    const root = this.project(reference.root);
+    this.host.parentElement!.style.setProperty("--root-x", `${root.x}px`);
+    this.host.parentElement!.style.setProperty(
+      "--root-y",
+      `${Math.min(this.height - 92, root.y + 18)}px`,
+    );
     this.wake();
-    this.onLayout();
   }
-  anchor(slot: number): Anchor {
-    const p = this.anchors[slot].clone();
-    if (!this.fallback.hidden) {
-      p.project(this.fallbackCamera);
-      const w = Math.min(this.width, (this.height * 800) / 1100);
-      const h = (w * 1100) / 800;
-      return {
-        x: (this.width - w) / 2 + ((p.x + 1) * w) / 2,
-        y: (this.height - h) / 2 + ((1 - p.y) * h) / 2,
-      };
-    }
-    p.applyMatrix4(this.group.matrixWorld);
-    p.project(this.camera);
+  private project(xyz: number[]): Anchor {
+    const p = new Vector3(...(xyz as [number, number, number])).project(
+      this.camera,
+    );
     return {
       x: ((p.x + 1) * this.width) / 2,
       y: ((1 - p.y) * this.height) / 2,
     };
   }
+  anchor(slot: number) {
+    return this.project(reference.anchors[slot]);
+  }
   rect(id: string) {
+    return this.cards.get(id)?.el.getBoundingClientRect();
+  }
+  pose(id: string): Pose | undefined {
     const c = this.cards.get(id);
-    return c?.el.getBoundingClientRect();
+    if (!c) return;
+    const r = this.host.getBoundingClientRect();
+    const scale = r.width / this.width;
+    return {
+      x: r.left + (c.x + c.width / 2) * scale,
+      y: r.top + (c.y + N.pin) * scale,
+      width: c.width * c.fold * scale,
+      height: c.height * scale,
+      angle: c.tilt,
+      inset: N.pin * scale,
+    };
+  }
+  compact(id: string) {
+    const c = this.cards.get(id);
+    return c?.el.cloneNode(true) as HTMLElement | undefined;
+  }
+  conceal(id: string | null) {
+    if (this.hiddenPaper === id) return;
+    this.hiddenPaper = id;
+    this.wake();
   }
   render(
     entries: Clip[],
     selected: string | null,
     preview: boolean,
     visible: boolean,
+    startIndex = 0,
   ) {
-    this.sparse = entries.length <= 3;
-    this.host.classList.toggle("sparse-tree", this.sparse);
+    if (this.selected !== selected && this.reduced.matches)
+      this.selectionFade = 0;
     this.selected = selected;
-    this.preview = preview;
     this.visible = visible;
+    if (!preview) this.hiddenPaper = null;
+    else this.hiddenPaper = selected;
     this.host.classList.toggle("tree-hidden", !visible);
     this.host.inert = !visible;
-    const ids = new Set(entries.map((c) => c.id));
-    this.cards.forEach((c, id) => {
-      if (!ids.has(id)) {
-        c.life.target = 0;
-        c.el.inert = true;
-        c.el.setAttribute("aria-hidden", "true");
+    const phone: Clip = {
+      id: PHONE_ID,
+      kind: "text",
+      text: "手机同步",
+      source: "",
+      created: 0,
+      pinned: false,
+    };
+    const all = [...entries, phone];
+    const signature = all.map((c) => `${c.id}:${c.pinned}:${c.text}`).join("|");
+    if (signature !== this.signature) {
+      const oldFirst = this.startIndex;
+      this.startIndex = startIndex;
+      this.direction = startIndex >= oldFirst ? 1 : -1;
+      // Match visuals().suffix(16): retain the presented incoming AND outgoing
+      // papers when a new page interrupts the current turn.
+      const previous = this.outgoing;
+      const snapshots: {
+        el: HTMLElement;
+        x: number;
+        y: number;
+        tilt: number;
+        fold: number;
+        opacity: number;
+      }[] = [];
+      if (this.signature) {
+        const candidates = [
+          ...previous,
+          ...[...this.cards.values()].filter((c) => c.clip.id !== PHONE_ID),
+        ];
+        for (const c of candidates.slice(-16)) {
+          const opacity = Number(c.el.style.opacity);
+          if (opacity <= 0.01) continue;
+          const matrix = new DOMMatrixReadOnly(c.el.style.transform);
+          const fold = Math.hypot(matrix.a, matrix.b);
+          const tilt = (Math.atan2(matrix.b, matrix.a) * 180) / Math.PI;
+          const el = c.el.cloneNode(true) as HTMLElement;
+          el.removeAttribute("id");
+          el.inert = false;
+          (el as HTMLButtonElement).disabled = true;
+          el.tabIndex = -1;
+          el.setAttribute("aria-hidden", "true");
+          el.classList.add("departing-paper");
+          this.host.append(el);
+          const x = c.x + matrix.e;
+          el.style.left = `${x}px`;
+          snapshots.push({ el, x, y: c.y, tilt, fold, opacity });
+        }
+        this.turnStart = performance.now() / 1000;
       }
-    });
-    entries.forEach((clip, index) => {
-      const slot = this.sparse ? [3, 1, 4][index] : index;
-      let c = this.cards.get(clip.id);
-      if (!c) {
-        const el = document.createElement("button");
-        el.type = "button";
-        el.className = "paper";
-        el.draggable = true;
-        el.dataset.clipId = clip.id;
-        el.addEventListener("click", () => this.onSelect(clip.id));
-        el.addEventListener("dragstart", (e) => {
-          e.dataTransfer?.setData("application/x-pastehistory", clip.id);
-          e.dataTransfer?.setData("text/plain", clip.text);
-          if (e.dataTransfer) e.dataTransfer.effectAllowed = "copy";
-          this.onDrag(clip.id);
-        });
-        c = {
-          el,
-          clip,
-          slot,
-          life: new Spring(0),
-          scale: new Spring(1),
-          x: new Spring(this.anchor(slot).x - this.paperWidth / 2),
-          y: new Spring(this.anchor(slot).y + 12),
-        };
-        this.cards.set(clip.id, c);
-        this.host.append(el);
-      }
-      c.el.inert = false;
-      c.el.removeAttribute("aria-hidden");
-      c.clip = clip;
-      c.slot = slot;
-      c.life.target = 1;
-      c.scale.target = clip.id === selected ? 1.075 : 1;
-      c.el.setAttribute("aria-label", `${clip.source}：${clip.text}`);
-      c.el.setAttribute("aria-pressed", String(clip.id === selected));
-      c.el.classList.toggle("is-selected", clip.id === selected);
-      c.el.classList.toggle("image-paper", clip.kind === "image");
-      c.el.classList.toggle("file-paper", clip.kind === "file");
-      c.el.replaceChildren();
-      const meta = document.createElement("span");
-      meta.className = "paper-meta";
-      meta.textContent = `${clip.source}${clip.pinned ? " · 已置顶" : ""}`;
-      c.el.append(meta);
-      if (clip.image) {
-        const img = document.createElement("img");
-        img.src = clip.image;
-        img.alt = clip.text;
-        c.el.append(img);
-      } else {
-        const text = document.createElement("span");
-        text.className = "paper-text";
-        text.textContent = clip.text;
-        c.el.append(text);
-      }
-    });
-    this.wake();
-  }
-  private cardHeight(clip: Clip) {
-    const base = this.sparse
-      ? Math.max(95, Math.min(132, this.height * 0.25))
-      : Math.max(55, Math.min(92, (this.height - 70) / 6));
-    return base + (clip.kind === "image" ? 12 : 0);
-  }
-  private layoutCards() {
-    const ys = this.anchors.map((_, i) => this.anchor(i).y + 12);
-    const active = [...this.cards.values()].filter((c) => c.life.target === 1);
-    for (const lane of [
-      [0, 3, 5, 7],
-      [1, 2, 4, 6],
-    ]) {
-      let bottom = 0;
-      for (const slot of lane) {
-        const c = active.find((c) => c.slot === slot);
-        if (!c) continue;
-        ys[slot] = Math.max(ys[slot], bottom + 10);
-        bottom = ys[slot] + this.cardHeight(c.clip) * 1.08;
-      }
+      previous.forEach((c) => c.el.remove());
+      this.outgoing = snapshots;
+      this.signature = signature;
+      for (const [id, c] of this.cards)
+        if (!all.some((e) => e.id === id)) {
+          c.el.remove();
+          c.cord.remove();
+          this.cards.delete(id);
+        }
+      all.forEach((clip, index) => {
+        let c = this.cards.get(clip.id);
+        if (!c) {
+          const el = document.createElement("button");
+          el.className = "paper";
+          el.type = "button";
+          el.dataset.clipId = clip.id;
+          const cord = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "path",
+          );
+          this.cords.append(cord);
+          c = {
+            el,
+            cord,
+            clip,
+            slot: index,
+            x: 0,
+            y: 0,
+            width: 158,
+            height:
+              clip.id === PHONE_ID
+                ? 72 * 1.61803398875
+                : clip.kind === "image"
+                  ? clip.id === selected
+                    ? 128
+                    : 98
+                  : clip.id === selected
+                    ? 112
+                    : 74,
+            tilt: 0,
+            fold: 1,
+            opacity: 1,
+          };
+          this.cards.set(clip.id, c);
+          this.host.append(el);
+          let dragged = false,
+            down: { x: number; y: number } | null = null;
+          el.addEventListener("pointerdown", (e) => {
+            down = { x: e.clientX, y: e.clientY };
+            dragged = false;
+          });
+          el.addEventListener("pointermove", (e) => {
+            if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5)
+              dragged = true;
+          });
+          el.addEventListener("click", () => {
+            if (
+              !dragged &&
+              !this.layoutEditing &&
+              performance.now() / 1000 - this.turnStart >= N.outgoing
+            )
+              this.onSelect(clip.id);
+          });
+          el.addEventListener("dragstart", (e) => {
+            if (this.layoutEditing || clip.id === PHONE_ID) {
+              e.preventDefault();
+              return;
+            }
+            dragged = true;
+            e.dataTransfer?.setData("application/x-pastehistory", clip.id);
+            e.dataTransfer?.setData("text/plain", clip.text);
+            if (e.dataTransfer) e.dataTransfer.effectAllowed = "copy";
+            this.onDrag(clip.id);
+          });
+          el.addEventListener("dragend", () => {
+            down = null;
+            this.onDragEnd();
+          });
+        }
+        c.clip = clip;
+        c.slot = clip.id === PHONE_ID ? 8 : index;
+        c.el.draggable = clip.id !== PHONE_ID;
+        c.el.classList.toggle("phone-paper", clip.id === PHONE_ID);
+        c.el.classList.toggle("image-paper", !!clip.image);
+        c.el.setAttribute(
+          "aria-label",
+          clip.id === PHONE_ID ? "手机同步" : `${clip.source}：${clip.text}`,
+        );
+        c.el.replaceChildren();
+        if (clip.id === PHONE_ID) {
+          const glyph = document.createElement("span");
+          glyph.className = "phone-glyph";
+          glyph.textContent = "▦";
+          const label = document.createElement("span");
+          label.className = "phone-label";
+          label.textContent = "手机同步";
+          c.el.append(glyph, label);
+        } else {
+          const meta = document.createElement("span");
+          meta.className = "paper-meta";
+          meta.textContent = `${String(startIndex + index + 1).padStart(2, "0")}${clip.pinned ? " · ↟ " : " · "}${clip.source || "—"}`;
+          const body = document.createElement("span");
+          body.className = "paper-body";
+          if (clip.image) {
+            const img = document.createElement("img");
+            img.src = clip.image;
+            img.alt = clip.text;
+            body.append(img);
+          } else {
+            body.classList.add("paper-text");
+            body.textContent = clip.text.slice(0, 500);
+          }
+          const date = document.createElement("span");
+          date.className = "paper-date";
+          date.textContent = dateLabel(clip.created);
+          c.el.append(meta, body, date);
+        }
+      });
     }
-    return ys;
+    this.wake();
   }
   wake() {
     if (!this.frame && !document.hidden) {
@@ -302,65 +335,115 @@ export class TreeStage {
   }
   private tick(now: number) {
     this.frame = 0;
-    const dt = Math.min((now - this.last) / 1000, 0.04);
+    const dt = clamp((now - this.last) / 1000, 1 / 240, 1 / 30);
     this.last = now;
-    let active = false;
-    const step = (s: Spring) => {
-      if (this.reduced.matches) {
-        s.value = s.target;
-        s.velocity = 0;
-      } else s.step(dt);
-      if (!s.settled) active = true;
-      return s.value;
-    };
-    const positions = this.layoutCards();
-    this.cards.forEach((c, id) => {
-      const life = step(c.life),
-        scale = step(c.scale);
-      if (c.life.target === 0 && c.life.settled) {
-        c.el.remove();
-        this.cards.delete(id);
-        return;
-      }
-      const a = this.anchor(c.slot);
-      const h = this.cardHeight(c.clip);
-      c.x.target = a.x - this.paperWidth / 2;
-      c.y.target = positions[c.slot] ?? a.y + 12;
-      const x = step(c.x),
-        y = step(c.y);
-      c.el.style.height = `${h}px`;
-      c.el.style.left = `${x}px`;
-      c.el.style.top = `${y}px`;
-      c.el.style.transform = `translateY(${(1 - life) * 16}px) rotate(${(c.slot % 2 ? 1.5 : -1.5) * (1 - life * 0.6)}deg) scale(${scale * (0.85 + 0.15 * life)})`;
-      c.el.style.opacity = String(
-        this.preview && id === this.selected ? 0 : life,
+    const elapsed = now / 1000 - this.turnStart,
+      blend = N.followBlend(dt),
+      reduced = this.reduced.matches;
+    this.selectionFade = Math.min(1, this.selectionFade + dt / N.fade);
+    let unsettled = this.selectionFade < 1 ? 1 : 0;
+    const placed: Card[] = [];
+    const ordered = [...this.cards.values()].sort(
+      (a, b) => Number(b.clip.id === PHONE_ID) - Number(a.clip.id === PHONE_ID),
+    );
+    for (const c of ordered) {
+      const phone = c.clip.id === PHONE_ID,
+        selected = c.clip.id === this.selected;
+      const a = this.anchor(c.slot),
+        width = phone ? 72 : Math.min(158, Math.max(130, this.width * 0.32));
+      const target = phone
+        ? 72 * 1.61803398875
+        : c.clip.kind === "image"
+          ? selected
+            ? 128
+            : 98
+          : selected
+            ? 112
+            : 74;
+      c.height = reduced ? target : c.height + (target - c.height) * blend;
+      unsettled += Math.abs(target - c.height);
+      c.width = width;
+      c.x = clamp(a.x - width / 2, 8, this.width - width - 8);
+      c.y = a.y + N.drops[c.slot % 8];
+      for (const prior of placed)
+        if (
+          c.x - 6 < prior.x + prior.width &&
+          c.x + width + 6 > prior.x &&
+          c.y - 6 < prior.y + prior.height &&
+          c.y + c.height + 6 > prior.y
+        )
+          c.y = prior.y + prior.height + 9;
+      c.y = clamp(c.y, 8, this.height - c.height - 8);
+      placed.push(c);
+      const p = clamp((elapsed - c.slot * N.stagger) / N.incoming, 0, 1);
+      c.fold =
+        phone || reduced ? 1 : Math.max(0.025, Math.sin((p * Math.PI) / 2));
+      c.tilt = reduced
+        ? 0
+        : N.tilts[c.slot % 8] +
+          (phone ? 0 : this.direction * 5 * Math.sin(p * Math.PI));
+      c.opacity = phone ? 1 : reduced ? clamp(elapsed / N.fade, 0, 1) : p;
+      c.el.classList.toggle("is-selected", selected);
+      c.el.setAttribute("aria-pressed", String(selected));
+      Object.assign(c.el.style, {
+        left: `${c.x}px`,
+        top: `${c.y}px`,
+        width: `${width}px`,
+        height: `${c.height}px`,
+        transform: `rotate(${c.tilt}deg) scaleX(${c.fold})`,
+        opacity: String(this.hiddenPaper === c.clip.id ? 0 : c.opacity),
+      });
+      c.el.inert = this.hiddenPaper === c.clip.id;
+      c.el.disabled =
+        this.layoutEditing || (!phone && elapsed < N.pageDuration);
+      c.cord.setAttribute(
+        "d",
+        `M ${a.x} ${a.y} C ${a.x} ${(a.y + c.y + 7) / 2} ${c.x + width / 2} ${c.y - 3} ${c.x + width / 2} ${c.y + 7} M ${a.x - 2} ${a.y} a 2 2 0 1 0 4 0 a 2 2 0 1 0 -4 0`,
       );
-      c.el.style.pointerEvents =
-        c.life.target === 0 || (this.preview && id === this.selected)
-          ? "none"
-          : "";
-      c.el.tabIndex = c.life.target === 0 ? -1 : 0;
-      c.el.style.setProperty("--cord", `${Math.max(2, y - a.y) / scale}px`);
-      if (id === this.selected) {
-        this.rx.target = x - ((scale - 1) * this.paperWidth) / 2;
-        this.ry.target = y - ((scale - 1) * h) / 2;
-        this.rw.target = this.paperWidth * scale;
-        this.rh.target = h * scale;
+      c.cord.style.opacity = String(c.opacity);
+      if (selected) {
+        const targetPose = {
+          x: c.x - 2,
+          y: c.y - 2,
+          width: width + 4,
+          height: c.height + 4,
+          angle: c.tilt,
+          inset: 7,
+        };
+        if (!this.ringPose || reduced) this.ringPose = targetPose;
+        else
+          for (const key of ["x", "y", "width", "height", "angle"] as const) {
+            const old = this.ringPose[key];
+            this.ringPose[key] += (targetPose[key] - old) * blend;
+            unsettled += Math.abs(old - targetPose[key]);
+          }
       }
-    });
-    const x = step(this.rx),
-      y = step(this.ry),
-      w = step(this.rw),
-      h = step(this.rh);
-    this.ring.style.transform = `translate(${x}px,${y}px)`;
-    this.ring.style.width = `${w + 6}px`;
-    this.ring.style.height = `${h + 6}px`;
-    this.ring.style.opacity =
-      this.selected && !this.preview && this.visible ? "1" : "0";
-    if (this.dirty && this.renderer) {
-      this.renderer.render(this.scene, this.camera);
-      this.dirty = false;
     }
-    if (active) this.frame = requestAnimationFrame((t) => this.tick(t));
+    for (const c of this.outgoing) {
+      const p = clamp(elapsed / N.outgoing, 0, 1);
+      c.el.style.opacity = String(c.opacity * (1 - p));
+      c.el.style.transform = `translateX(${-this.direction * 8 * p}px) rotate(${c.tilt}deg) scaleX(${reduced ? 1 : c.fold * Math.max(0.02, Math.cos((p * Math.PI) / 2))})`;
+    }
+    if (elapsed >= N.outgoing && this.outgoing.length) {
+      this.outgoing.forEach((c) => c.el.remove());
+      this.outgoing = [];
+    }
+    if (this.ringPose) {
+      const r = this.ringPose;
+      Object.assign(this.ring.style, {
+        left: `${r.x}px`,
+        top: `${r.y}px`,
+        width: `${r.width}px`,
+        height: `${r.height}px`,
+        transform: `rotate(${r.angle}deg)`,
+      });
+    }
+    this.ring.style.opacity =
+      this.selected && this.selected !== this.hiddenPaper && this.visible
+        ? String(clamp(elapsed / N.incoming, 0, 1) * this.selectionFade)
+        : "0";
+    this.onLayout();
+    if (elapsed < N.pageDuration || unsettled > 0.05)
+      this.frame = requestAnimationFrame((t) => this.tick(t));
   }
 }
