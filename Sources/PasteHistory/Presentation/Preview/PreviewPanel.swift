@@ -71,10 +71,10 @@ final class PreviewPanelController: NSObject {
         }
         guard let paper = owner?.previewPaper,
               let visual = (paper.contentView as? TreePaperSurface)?.visual else { return }
-        let previousPose = paperFlight.currentPose
         let continuing = previewedID != nil
-        let previousExpansion = (panel?.contentView as? TreePaperSurface)?.visual?.expansion ?? 0
-        releasePaper(cancelMotion: !continuing)
+        // A different card starts at its own tree pose with no inherited motion.
+        // Reversing this same card's close is handled above without resetting it.
+        releasePaper()
         if continuing && showingPhone != presentation.phoneSyncSelected { paperSessionSize = selectedPaperSize }
         if !continuing {
             viewportSession = UUID()
@@ -94,15 +94,13 @@ final class PreviewPanelController: NSObject {
         paper.onCollapse = { [weak self] in self?.toggle() }
         paper.onMagnify = { [weak self] delta, phase in self?.magnifyPaper(by: delta, phase: phase) ?? false }
         configureAppearance()
+        visual.expansion = 0
+        if let pose = paper.paperPose { visual.place(pose, in: paper) }
         if let readingSurface {
             readingSurface.readingSize = paperSessionSize
             visual.attachReading(readingSurface)
         }
-        if continuing, let previousPose {
-            visual.expansion = previousExpansion
-            visual.place(previousPose, in: paper)
-        }
-        paperFlight.bind(window: paper, sheet: visual, preservingMotion: continuing)
+        paperFlight.bind(window: paper, sheet: visual)
         owner?.setExpandedPaper(id)
         // The paper still receives pinch/click events while its tree drag handler
         // is disabled. Native reading input opens near the target, before the
@@ -153,8 +151,8 @@ final class PreviewPanelController: NSObject {
 
     /// The collapsed card remains visible in its original window. At expansion
     /// zero removing the transparent reading child cannot exchange the paper.
-    private func releasePaper(cancelMotion: Bool = true) {
-        if cancelMotion { paperFlight.cancel() }
+    private func releasePaper() {
+        paperFlight.cancel()
         let released = panel
         if let panel {
             panel.endPaperInteraction()
@@ -313,8 +311,8 @@ final class PreviewPanelController: NSObject {
         guard isVisible else { return }
         guard selectionID != nil else { close(); return }
         if previewedID != selectionID {
-            // Reuse the live document and physical motion state on the next
-            // card. Each card retains its own window and compact renderer.
+            // Reuse the live document, but start motion from the next card's
+            // own collapsed pose. Keep the session's reading size and zoom.
             open()
         } else {
             followPaper()
