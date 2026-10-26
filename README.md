@@ -6,6 +6,8 @@
 
 The web demo follows the Swift tree layout and keyboard dispatch, with the full eight-record layout from the first visit. Browser-reserved shortcuts and system integrations remain subject to browser limits; see the [website notes](website/README.md#native-interaction-reference).
 
+Notes stays visible beside the tree and accepts text and images; an inline shortcut guide replaces Help. Samples cover English, Simplified Chinese, Traditional Chinese, Japanese and Korean.
+
 A macOS menu bar clipboard history app. Press **⇧⌘V** to search text, images and file paths on a desktop tree, then press Return to paste into the original app. Includes on-device OCR, iCloud sync between Macs and local-network phone access.
 
 ## Build and run

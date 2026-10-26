@@ -289,6 +289,7 @@ export class TreeStage {
           });
         }
         c.clip = clip;
+        c.el.lang = clip.lang ?? "zh-Hans";
         c.slot = clip.id === PHONE_ID ? 8 : index;
         c.el.draggable = clip.id !== PHONE_ID;
         c.el.classList.toggle("phone-paper", clip.id === PHONE_ID);

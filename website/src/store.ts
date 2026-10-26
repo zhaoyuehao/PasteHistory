@@ -8,6 +8,7 @@ export type Clip = {
   image?: string;
   ocr?: string;
   paths?: string[];
+  lang?: string;
 };
 export const PAGE_SIZE = 8;
 export class HistoryStore {
@@ -21,10 +22,11 @@ export class HistoryStore {
     this.selectedId = this.results[0]?.id ?? null;
   }
   get results() {
-    const q = this.query.toLocaleLowerCase().trim();
+    const q = this.query.normalize("NFC").toLocaleLowerCase().trim();
     return this.clips
       .filter((c) =>
         `${c.text} ${c.source} ${c.ocr ?? ""} ${c.paths?.join(" ") ?? ""}`
+          .normalize("NFC")
           .toLocaleLowerCase()
           .includes(q),
       )

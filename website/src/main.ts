@@ -1,7 +1,12 @@
 import "./style.css";
 import "./native.css";
 import { HistoryStore, type Clip } from "./store";
-import { initialClips, sampleImage } from "./fixtures";
+import {
+  initialClips,
+  sampleImage,
+  sampleLanguages,
+  type SampleLanguage,
+} from "./fixtures";
 import { TreeStage } from "./tree";
 import { TreeEntrance } from "./entrance";
 import { NativePreview } from "./preview";
@@ -33,13 +38,13 @@ const lights = (name: string) =>
 $("#app").innerHTML = `
 <div class="desktop native-desktop exploring" data-mobile-view="tree">
  <div class="wallpaper" aria-hidden="true"></div>
- <header class="menubar"><button class="brand" id="menu-tree">${icon("tree")}<b>PasteHistory</b></button><button data-open="browser">复制样例</button><button id="about-button">帮助</button><div class="menu-spacer"></div><span class="system-status" aria-hidden="true">⌁ &nbsp; ▰</span><time id="clock"></time></header>
+ <header class="menubar"><button class="brand" id="menu-tree">${icon("tree")}<b>PasteHistory</b></button><button data-open="browser">复制样例</button><div class="menu-spacer"></div><span class="system-status" aria-hidden="true">⌁ &nbsp; ▰</span><time id="clock"></time></header>
  <main id="desktop-main">
   <section class="hero-heading"><p>PasteHistory</p><h1>复制过的，随时找回。</h1></section>
   <section id="tree-area" aria-label="许愿树剪贴板"><div id="tree-stage"></div><div id="empty" hidden>枝头暂时空了。<br><small>换个关键词，或复制一条新灵感。</small></div><p class="tree-hint">点一张纸签，试试看。</p><div class="tree-controls"><span class="search-cord"></span><div class="search-tag"><span class="search-hole"></span>${icon("search")}<input id="search" aria-label="搜索剪贴板" autocomplete="off" spellcheck="false"><span id="page-label"></span></div></div><div id="layout-controls" hidden><button id="layout-drag">移动</button><button data-size=".82">小</button><button data-size="1">标准</button><button data-size="1.14">大</button><button id="layout-done">完成</button></div></section>
   <section class="download-area" aria-label="下载 PasteHistory"><button id="download-button" class="download-button">${icon("download")} 下载 Mac 版</button><p>Apple Silicon · macOS 14+</p><small>预览版 · 未经 Apple 公证</small></section>
-  <section id="browser" class="window browser-window minimized" inert aria-label="素材浏览器"><div class="titlebar" data-drag-window="browser">${lights("browser")}<span>${icon("compass")} 复制一点灵感</span></div><div class="browser-body"><h2>从这里，挂上枝头。</h2><div class="sample-tabs" role="tablist" aria-label="素材类型"><button role="tab" aria-selected="true" data-sample="text">文字</button><button role="tab" aria-selected="false" data-sample="image">图片</button><button role="tab" aria-selected="false" data-sample="file">文件</button></div><div id="sample-content"></div><button id="collect" class="collect-button">${icon("copy")} 复制到许愿树</button><button id="more-samples" class="text-link">载入更多示例</button><small>仅在本页演示，不读取系统剪贴板。</small></div></section>
-  <section id="notes" class="window notes-window minimized" inert aria-label="备忘录"><div class="titlebar" data-drag-window="notes">${lights("notes")}<span>备忘录</span><button id="clear-note" aria-label="清空备忘录">${icon("trash")}</button></div><div class="notes-body"><div class="notes-date">今天 · 我的灵感</div><h2>先记下来。</h2><div id="note-editor" role="textbox" aria-label="备忘录内容" contenteditable="true" aria-multiline="true" data-placeholder="在这里写点什么…&#10;也可以把纸签拖进来。"></div></div><footer><span id="note-status">粘贴目标 · 保留光标位置</span><span>仅本次体验</span></footer></section>
+  <section id="browser" class="window browser-window minimized" inert aria-label="素材浏览器"><div class="titlebar" data-drag-window="browser">${lights("browser")}<span>${icon("compass")} 复制一点灵感</span></div><div class="browser-body"><h2>从这里，挂上枝头。</h2><div class="sample-tabs" role="tablist" aria-label="素材类型"><button role="tab" aria-selected="true" data-sample="text">文字</button><button role="tab" aria-selected="false" data-sample="image">图片</button><button role="tab" aria-selected="false" data-sample="file">文件</button></div><label class="sample-language">示例语言<select id="sample-language" aria-label="示例语言"></select></label><div id="sample-content"></div><button id="collect" class="collect-button">${icon("copy")} 复制到许愿树</button><button id="more-samples" class="text-link">载入更多示例</button><small>仅在本页演示，不读取系统剪贴板。</small></div></section>
+  <section id="notes" class="window notes-window" aria-label="备忘录"><div class="titlebar"><div class="traffic" aria-hidden="true"><span class="red"></span><span class="yellow"></span><span class="green"></span></div><span>备忘录</span><button id="clear-note" aria-label="清空备忘录">${icon("trash")}</button></div><div class="notes-body"><div class="notes-date">今天 · 我的灵感</div><h2>备忘录</h2><p class="note-drop-hint">把文字、图片纸签拖到这里，也可以直接粘贴图片。</p><div id="note-editor" role="textbox" aria-label="备忘录内容" contenteditable="true" aria-multiline="true" data-placeholder="写点什么，或把纸签拖进来…"></div></div><footer><span id="note-status">粘贴目标 · 保留光标位置</span><span>仅本次体验</span></footer></section>
  </main>
  <footer class="site-footer"><a href="${REPO}" target="_blank" rel="noopener" class="github-link">${icon("github")} GitHub</a><a href="${REPO}" target="_blank" rel="noopener" class="repo-url">github.com/zhaoyuehao/PasteHistory</a><div class="stats"><a id="stars" href="${REPO}/stargazers" target="_blank" rel="noopener">Star <span>—</span></a><span id="downloads">下载次数 <span>—</span></span></div></footer>
  <nav class="experience-tools" aria-label="体验工具" inert><button data-open="browser" aria-label="打开素材浏览器">${icon("copy")}<span>复制样例</span></button><button data-open="notes" aria-label="打开备忘录">${icon("note")}<span>备忘录</span></button><button data-open="tree" title="⇧⌘V">${icon("tree")}<span>许愿树</span></button><button id="actions-button" aria-expanded="false">网页辅助操作</button><button id="reset" aria-label="重置演示">${icon("reset")}<span>重置</span></button></nav>
@@ -83,6 +88,14 @@ new ResizeObserver(placeRootLinks).observe(rootLinks);
 $(".hero-heading").remove();
 $(".tree-hint").remove();
 $(".experience-tools").inert = false;
+const notesRail = document.createElement("aside");
+notesRail.className = "notes-rail";
+const shortcuts = document.createElement("section");
+shortcuts.className = "shortcut-guide";
+shortcuts.setAttribute("aria-label", "常用快捷键");
+shortcuts.innerHTML = `<h2>随手试一试</h2><p>拖一张纸签到备忘录，文字和图片都能留下。</p><dl><div><dt>↑ / ↓</dt><dd>选择纸签</dd></div><div><dt>空格</dt><dd>展开 / 收起预览</dd></div><div><dt>↵</dt><dd>粘贴到输入位置</dd></div><div><dt>⌘P</dt><dd>置顶 / 取消置顶</dd></div><div><dt>Delete</dt><dd>删除选中的记录</dd></div><div><dt>⇧⌘V</dt><dd>唤起 / 收起许愿树</dd></div></dl><small>直接输入可搜索 · ⇧空格输入空格<br>Esc 逐层关闭 · 中文组词时优先交给输入法</small>`;
+notesRail.append($("#notes"), shortcuts);
+$(".desktop").append(notesRail);
 let layoutScale = 1;
 function enterExperience() {
   $(".desktop").classList.add("exploring");
@@ -90,6 +103,21 @@ function enterExperience() {
   $(".experience-tools").inert = false;
 }
 let sampleKind: Clip["kind"] = "text";
+let sampleLanguage: SampleLanguage = "zh-Hans";
+const sampleDrafts = new Map<string, string>();
+const languageSelect = $<HTMLSelectElement>("#sample-language");
+for (const language of sampleLanguages) {
+  const option = document.createElement("option");
+  option.value = language.code;
+  option.textContent = language.label;
+  languageSelect.append(option);
+}
+languageSelect.onchange = () => {
+  const editor = $<HTMLTextAreaElement>("#sample-text");
+  if (editor) sampleDrafts.set(sampleLanguage, editor.value);
+  sampleLanguage = languageSelect.value as SampleLanguage;
+  displaySample();
+};
 let composing = false;
 let keyboardCards = false;
 let draggingCard = false;
@@ -111,22 +139,34 @@ let toastTimer: ReturnType<typeof setTimeout>;
 let downloadUrl: string | null = null;
 let latestVersion: string | null = null;
 function placeNativeTree() {
-  // PanelController.centeredTreeFrame: same point-space viewport on every visit.
-  const availableHeight = Math.max(1, screen.clientHeight - 30);
-  const height = Math.min(920 * layoutScale, availableHeight * 0.94);
-  const width = Math.min(
-    880 * layoutScale,
-    screen.clientWidth * 0.94,
-    height * 1.04,
+  const stacked = screen.clientWidth < 900;
+  const railWidth = stacked
+    ? 0
+    : Math.min(300, Math.max(250, screen.clientWidth * 0.24));
+  notesRail.style.width = stacked ? "calc(100% - 32px)" : `${railWidth}px`;
+  const availableWidth = screen.clientWidth - (stacked ? 0 : railWidth + 40);
+  const availableHeight = Math.max(
+    1,
+    screen.clientHeight - 30 - (stacked ? 650 : 0),
+  );
+  const height = 920 * layoutScale;
+  const width = 880 * layoutScale;
+  const scale = Math.min(
+    1,
+    (availableWidth - 24) / width,
+    availableHeight / height,
   );
   Object.assign($("#tree-area").style, {
     width: `${width}px`,
     height: `${height}px`,
-    left: `${(screen.clientWidth - width) / 2}px`,
-    top: `${30 + (availableHeight - height) / 2}px`,
-    transform: "none",
+    left: `${(availableWidth - width * scale) / 2}px`,
+    top: `${30 + (availableHeight - height * scale) / 2}px`,
+    transform: `scale(${scale})`,
+    transformOrigin: "0 0",
   });
+  notesRail.style.top = stacked ? `${availableHeight + 180}px` : "76px";
 }
+
 placeNativeTree();
 window.addEventListener("resize", placeNativeTree);
 const tree = new TreeStage($("#tree-stage"));
@@ -221,24 +261,28 @@ function toast(message: string) {
 }
 function displaySample() {
   const host = $("#sample-content");
+  const language = sampleLanguages.find((l) => l.code === sampleLanguage)!;
   host.replaceChildren();
   if (sampleKind === "text") {
     const t = document.createElement("textarea");
     t.id = "sample-text";
     t.setAttribute("aria-label", "可复制的示例文字");
-    t.value = "慢一点，灵感会追上来。\n给生活留一点空白。";
+    t.value = sampleDrafts.get(sampleLanguage) ?? language.text;
+    t.lang = sampleLanguage;
+    t.oninput = () => sampleDrafts.set(sampleLanguage, t.value);
     host.append(t);
   } else if (sampleKind === "image") {
     const img = document.createElement("img");
     img.src = sampleImage;
-    img.alt = "布莱埃斯湖的湖水、木屋与山峰，Luca Bravo 摄影";
+    img.alt = language.image;
     host.append(img);
   } else {
     const p = document.createElement("div");
     p.className = "file-sample";
-    p.textContent = "▤  秋日灵感.fig";
+    p.textContent = `▤  ${language.file}`;
+    p.lang = sampleLanguage;
     const small = document.createElement("small");
-    small.textContent = "设计灵感 / 秋日色板.fig · 示例文件路径";
+    small.textContent = `/Users/demo/Documents/${language.file} · 示例文件路径`;
     p.append(small);
     host.append(p);
   }
@@ -251,9 +295,9 @@ function displaySample() {
 function syncInteraction() {
   const mobile = innerWidth < 800;
   const view = $(".desktop").dataset.mobileView;
-  $(".download-area").inert = mobile && view !== "tree";
-  $("#tree-area").inert = !store.visible || (mobile && view !== "tree");
-  for (const name of ["browser", "notes"]) {
+  $(".download-area").inert = false;
+  $("#tree-area").inert = !store.visible;
+  for (const name of ["browser"]) {
     const window = $(`#${name}`);
     window.inert =
       window.classList.contains("minimized") || (mobile && view !== name);
@@ -269,13 +313,27 @@ function showWindow(name: string) {
     if (store.visible) closeTree();
     const w = $(`#${name}`);
     w.classList.remove("minimized");
-    w.classList.add("window-pop");
-    setTimeout(() => w.classList.remove("window-pop"), 350);
+    if (name !== "notes") {
+      w.classList.add("window-pop");
+      setTimeout(() => w.classList.remove("window-pop"), 350);
+    }
     syncInteraction();
-    if (name === "notes") note.focus();
+    if (name === "notes") {
+      pasteTarget = note;
+      note.focus({ preventScroll: true });
+      if (innerWidth < 900) {
+        window.scrollTo({
+          top: notesRail.getBoundingClientRect().top + scrollY - 16,
+          behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
+            ? "instant"
+            : "smooth",
+        });
+      }
+    }
   }
 }
 function collect() {
+  const language = sampleLanguages.find((l) => l.code === sampleLanguage)!;
   const clip: Clip = {
     id: crypto.randomUUID(),
     kind: sampleKind,
@@ -283,8 +341,12 @@ function collect() {
       sampleKind === "text"
         ? $<HTMLTextAreaElement>("#sample-text").value
         : sampleKind === "image"
-          ? "山野来信 · 布莱埃斯湖.jpg"
-          : "设计灵感 / 秋日色板.fig",
+          ? language.image
+          : language.file,
+    lang: sampleLanguage,
+    ...(sampleKind === "file"
+      ? { paths: [`/Users/demo/Documents/${language.file}`] }
+      : {}),
     source: sampleKind === "file" ? "访达" : "Safari",
     created: Date.now(),
     pinned: false,
@@ -382,6 +444,7 @@ function updatePreview() {
       : "网页演示 · 未连接设备";
     const content = $("#preview-content");
     content.replaceChildren();
+    content.lang = clip?.lang ?? "zh-Hans";
     content.classList.toggle("image-content", !!clip?.image);
     if (phoneSelected) {
       const p = document.createElement("p");
@@ -486,11 +549,7 @@ function clipboardText(clip: Clip) {
 function paste(clip = phoneSelected ? undefined : store.selected) {
   if (!clip) return;
   const target = pasteTarget?.isConnected ? pasteTarget : note;
-  if (target instanceof HTMLTextAreaElement) {
-    if (clip.image) {
-      toast("当前文本框不接收图片；可选择备忘录作为粘贴目标");
-      return;
-    }
+  if (target instanceof HTMLTextAreaElement && !clip.image) {
     showWindow("browser");
     target.focus();
     target.setRangeText(
@@ -506,45 +565,80 @@ function paste(clip = phoneSelected ? undefined : store.selected) {
     toast("已粘贴到原输入位置");
     return;
   }
-  showWindow("notes");
+  insertIntoNotes([clip]);
+}
+const noteObjectURLs = new Set<string>();
+function clearNotes() {
+  note.replaceChildren();
+  noteRange = null;
+  for (const url of noteObjectURLs) URL.revokeObjectURL(url);
+  noteObjectURLs.clear();
+}
+function imageFiles(files: File[]): Clip[] {
+  return files
+    .filter((file) => /^image\/(png|jpeg|gif|webp|avif|bmp)$/.test(file.type))
+    .map((file) => {
+      const image = URL.createObjectURL(file);
+      noteObjectURLs.add(image);
+      return {
+        id: crypto.randomUUID(),
+        kind: "image",
+        text: file.name || "粘贴的图片",
+        image,
+        source: "本次粘贴",
+        created: Date.now(),
+        pinned: false,
+      };
+    });
+}
+function insertIntoNotes(clips: Clip[], position: Range | null = noteRange) {
+  if (!clips.length) return;
+  // Capture the insertion point before focus restoration changes the selection.
   let range: Range;
-  if (noteRange && note.contains(noteRange.commonAncestorContainer)) {
-    range = noteRange;
-  } else {
+  if (position && note.contains(position.commonAncestorContainer))
+    range = position.cloneRange();
+  else {
     range = document.createRange();
     range.selectNodeContents(note);
     range.collapse(false);
   }
+  showWindow("notes");
+  pasteTarget = note;
   range.deleteContents();
   const fragment = document.createDocumentFragment();
-  if (clip.image) {
-    const img = document.createElement("img");
-    img.src = clip.image;
-    img.alt = clip.text;
-    img.className = "note-image";
-    fragment.append(img);
-  } else fragment.append(document.createTextNode(clipboardText(clip)));
+  for (const clip of clips) {
+    if (clip.image) {
+      const img = document.createElement("img");
+      img.src = clip.image;
+      img.alt = clip.text;
+      img.className = "note-image";
+      img.draggable = false;
+      img.addEventListener("error", () => {
+        img.replaceWith(
+          document.createTextNode(`[图片无法显示：${clip.text}]`),
+        );
+      });
+      fragment.append(img, document.createElement("br"));
+    } else fragment.append(document.createTextNode(clipboardText(clip)));
+  }
   const end = document.createTextNode("");
   fragment.append(end);
   range.insertNode(fragment);
   range.setStartAfter(end);
   range.collapse(true);
+  note.focus({ preventScroll: true });
   const selection = getSelection();
   selection?.removeAllRanges();
   selection?.addRange(range);
   noteRange = range;
-  note.focus();
-  $("#note-status").textContent =
-    "已粘贴 · " +
-    new Date().toLocaleTimeString("zh-CN", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+  $("#note-status").textContent = clips.some((clip) => clip.image)
+    ? "图片已放入备忘录"
+    : "已粘贴到备忘录";
   store.preview = false;
   store.visible = false;
   render();
-  toast("已粘贴到备忘录");
 }
+
 async function realCopy() {
   const clip = store.selected;
   if (!clip || phoneSelected) return;
@@ -590,11 +684,6 @@ function deleteSelected() {
 function modal(html: string) {
   $("#info-content").innerHTML = html;
   $<HTMLDialogElement>("#info-dialog").showModal();
-}
-function help() {
-  modal(
-    `<span class="eyebrow">A QUIETER PLACE FOR IDEAS</span><h2>像使用 Mac 版一样操作。</h2><p>这是浏览器中的可操作演示。首次显示完整的 8 条记录，点击纸签只展开该纸签，不改变树的大小。文字、图片与文件路径均为示例，你输入的内容只保留在当前页面中。</p><dl><dt>打开许愿树</dt><dd>菜单栏图标 / 许愿树按钮 / ⇧⌘V</dd><dt>选择与预览</dt><dd>↑ ↓ 选择 · 单击 / 空格 / ⌘Y 展开 · ⇧空格输入空格</dd><dt>粘贴与整理</dt><dd>回车粘贴回原输入位置 · Delete 删除 · ⌘P 置顶 · ⌘C 复制</dd><dt>翻组</dt><dd>Page Up / Page Down，保留当前组内位置</dd><dt>关闭</dt><dd>Esc 先关闭预览，再收起许愿树</dd></dl><p class="muted">浏览器占用的快捷键请使用按钮。⌘1–9 粘贴搜索结果前九项；⇧⌘M 调整布局，⌘R 还原布局，Esc 完成。浏览器可能优先处理 ⌘W、⌘R、⌘1–9、⌘Y 和系统快捷键；网页无法注册全局热键。macOS App 另支持本地 Vision OCR、iCloud 和局域网手机同步；本网页不连接这些服务。</p><a href="${REPO}" target="_blank" rel="noopener" class="dialog-link">查看 GitHub 与完整说明 ↗</a>`,
-  );
 }
 $("#download-button").onclick = () => {
   modal(
@@ -719,15 +808,13 @@ $("#layout-drag").onpointermove = (e) => {
 $("#layout-drag").onpointerup = $("#layout-drag").onpointercancel = () => {
   layoutDrag = null;
 };
-$("#about-button").onclick = help;
 $(".dialog-close").onclick = () => $<HTMLDialogElement>("#info-dialog").close();
 $("#info-dialog").onclick = (e) => {
   if (e.target === $("#info-dialog"))
     $<HTMLDialogElement>("#info-dialog").close();
 };
 $("#clear-note").onclick = () => {
-  note.replaceChildren();
-  noteRange = null;
+  clearNotes();
   $("#note-status").textContent = "粘贴目标 · 保留光标位置";
 };
 $("#reset").onclick = () => {
@@ -742,17 +829,19 @@ $("#reset").onclick = () => {
   $(".tree-controls").inert = false;
   $(".experience-tools").inert = false;
   search.value = "";
-  note.replaceChildren();
-  noteRange = null;
+  clearNotes();
   pasteTarget = null;
   previewId = null;
   sampleKind = "text";
+  sampleLanguage = "zh-Hans";
+  languageSelect.value = sampleLanguage;
+  sampleDrafts.clear();
   keyboardCards = false;
   $("#note-status").textContent = "粘贴目标 · 保留光标位置";
   displaySample();
   document.querySelectorAll<HTMLElement>(".window").forEach((w) => {
     w.classList.remove("expanded");
-    w.classList.add("minimized");
+    if (w.id !== "notes") w.classList.add("minimized");
     w.style.removeProperty("left");
     w.style.removeProperty("top");
     w.style.removeProperty("right");
@@ -803,39 +892,80 @@ document.querySelectorAll<HTMLElement>("[data-drag-window]").forEach((bar) => {
   bar.onpointerup = end;
   bar.onpointercancel = end;
 });
-note.addEventListener("dragover", (e) => {
+const notesWindow = $("#notes");
+notesWindow.addEventListener("dragover", (e) => {
   e.preventDefault();
   if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
-  $("#notes").classList.add("drop-ready");
+  notesWindow.classList.add("drop-ready");
 });
-note.addEventListener("dragleave", () =>
-  $("#notes").classList.remove("drop-ready"),
-);
-note.addEventListener("drop", (e) => {
+notesWindow.addEventListener("dragleave", (e) => {
+  if (!notesWindow.contains(e.relatedTarget as Node))
+    notesWindow.classList.remove("drop-ready");
+});
+notesWindow.addEventListener("drop", (e) => {
   e.preventDefault();
-  $("#notes").classList.remove("drop-ready");
-  const id = e.dataTransfer?.getData("application/x-pastehistory");
-  const clip = store.clips.find((c) => c.id === id);
+  notesWindow.classList.remove("drop-ready");
+  const transfer = e.dataTransfer;
+  if (!transfer) return;
+  const range = document.caretRangeFromPoint?.(e.clientX, e.clientY);
+  const point =
+    range && note.contains(range.startContainer) ? range : noteRange;
+  const clip = store.clips.find(
+    (c) => c.id === transfer.getData("application/x-pastehistory"),
+  );
   if (clip) {
-    pasteTarget = note;
-    const range = document.caretRangeFromPoint?.(e.clientX, e.clientY);
-    if (range && note.contains(range.startContainer)) noteRange = range;
-    paste(clip);
+    insertIntoNotes([clip], point);
+    return;
   }
-});
-// Accept external pastes as plain text, never imported HTML.
-note.addEventListener("paste", (e) => {
-  e.preventDefault();
-  const text = e.clipboardData?.getData("text/plain");
+  const images = imageFiles(Array.from(transfer.files));
+  if (images.length) {
+    insertIntoNotes(images, point);
+    return;
+  }
+  const text = transfer.getData("text/plain");
   if (text)
-    paste({
-      id: "external",
-      kind: "text",
-      text,
-      source: "粘贴",
-      created: Date.now(),
-      pinned: false,
-    });
+    insertIntoNotes(
+      [
+        {
+          id: "drop",
+          kind: "text",
+          text,
+          source: "拖入",
+          created: Date.now(),
+          pinned: false,
+        },
+      ],
+      point,
+    );
+  else if (transfer.files.length)
+    toast("可拖入 PNG、JPEG、GIF、WebP、AVIF 或 BMP 图片");
+});
+// Clipboard files are supplied by the user's paste event. Never import HTML or fetch its URLs.
+note.addEventListener("paste", (e) => {
+  const transfer = e.clipboardData;
+  if (!transfer) return;
+  e.preventDefault();
+  const files = Array.from(transfer.items)
+    .filter((item) => item.kind === "file")
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => !!file);
+  const images = imageFiles(files.length ? files : Array.from(transfer.files));
+  if (images.length) {
+    insertIntoNotes(images);
+    return;
+  }
+  const text = transfer.getData("text/plain");
+  if (text)
+    insertIntoNotes([
+      {
+        id: "paste",
+        kind: "text",
+        text,
+        source: "粘贴",
+        created: Date.now(),
+        pinned: false,
+      },
+    ]);
 });
 document.addEventListener("compositionstart", () => (composing = true));
 document.addEventListener("compositionend", () => {
