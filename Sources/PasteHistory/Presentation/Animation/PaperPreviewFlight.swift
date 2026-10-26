@@ -140,17 +140,6 @@ final class PaperPreviewFlight {
     var visibleFrame: NSRect? { window?.isVisible == true ? window?.frame : nil }
     var visiblePose: PaperPose? { visibleFrame == nil ? nil : sheet?.pose }
 
-    func isDisplaying(record id: UUID?) -> Bool { visiblePose != nil && recordID == id }
-    func isTargeting(_ pose: PaperPose, record id: UUID?) -> Bool {
-        guard isDisplaying(record: id), let motion else { return false }
-        let target = PaperPose(channels: Array(motion.destination.prefix(7)))
-        // AppKit rounds native window placement. Ignore that rounding, but not
-        // a source pin that becomes available/moves after the selection update.
-        return abs(target.pin.x-pose.pin.x) < 1 && abs(target.pin.y-pose.pin.y) < 1
-            && abs(target.size.width-pose.size.width) < 1 && abs(target.size.height-pose.size.height) < 1
-            && abs(target.inset-pose.inset) < 0.002
-    }
-
     func cancel() {
         timer?.stop(); timer = nil
         window?.orderOut(nil)
@@ -162,7 +151,7 @@ final class PaperPreviewFlight {
         let reduce = Motion.reduceMotion
         let target = to.channels + [opening ? 1 : 0, reduce && !opening ? 0 : 1]
         if visiblePose != nil, motion != nil, let panel = window, let face = sheet {
-            // The displayed pose and velocity are owned by motion.
+            // The displayed pose, velocity and acceleration are owned by motion.
             // Do not resample wall time, prepare a new first frame, or restart a
             // clock when the user reverses a sheet that is already on screen.
             motion?.retarget(to: target, reducedMotionDuration: reduce ? duration : nil)
@@ -181,7 +170,7 @@ final class PaperPreviewFlight {
         let phase: CGFloat = opening ? 0 : 1
         let opacity: CGFloat = reduce && opening ? 0 : 1
         motion = PaperFlightMotion(from: from.channels + [phase, opacity], to: target,
-            velocities: [initialVelocity.x, initialVelocity.y, 0, 0, 0, 0, 0, 0, 0], duration: duration, reducedMotion: reduce)
+            velocities: [initialVelocity.x, initialVelocity.y, 0, 0, 0, 0, 0, 0, 0], duration: duration)
         let panel: NSPanel
         let face: PaperFlightView
         if let existing = window, let view = sheet { panel = existing; face = view }
@@ -207,15 +196,15 @@ final class PaperPreviewFlight {
         panel.displayIfNeeded()
         panel.invalidateShadow()
         onReady()
-        lastFrameTime = CACurrentMediaTime()
+        lastFrameTime = nil
         let tick = MotionClock()
         timer = tick
-        tick.start(on: panel) { [weak self] timestamp in self?.step(at: timestamp) }
+        tick.start(on: panel) { [weak self] in self?.step() }
     }
 
-    private func step(at timestamp: CFTimeInterval) {
+    private func step() {
         guard let panel = window, let face = sheet, motion != nil else { return }
-        let now = timestamp
+        let now = CACurrentMediaTime()
         // Only a new flight establishes time zero; retargeting leaves this clock alone.
         let delta = lastFrameTime.map { now-$0 } ?? 0
         lastFrameTime = now
