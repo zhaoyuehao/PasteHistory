@@ -184,8 +184,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         PanelController.shared.toggle()
     }
 
-    @objc private func adjustTreeLayout() { PanelController.shared.beginTreeLayout() }
-
     // MARK: - 菜单栏
 
     private func buildStatusBar() {
@@ -205,16 +203,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         open.keyEquivalentModifierMask = [.command, .shift]
         open.image = Self.menuIcon("clipboard")
         menu.addItem(open)
-        let layout = NSMenuItem(title: "调整树布局…", action: #selector(adjustTreeLayout), keyEquivalent: "M")
-        layout.keyEquivalentModifierMask = [.command, .shift]
-        menu.addItem(layout)
-
-        menu.addItem(NSMenuItem.separator())
-
-        let phone = NSMenuItem(title: L10n.phoneSync, action: #selector(showQR), keyEquivalent: "")
-        phone.image = Self.menuIcon("qrcode")
-        menu.addItem(phone)
-
         // 同步只在失败时出现：成功是承诺，不是新闻
         let syncItem = NSMenuItem(title: L10n.iCloudUnsynced, action: #selector(retrySync), keyEquivalent: "")
         syncItem.image = Self.menuIcon("icloud.slash")
@@ -255,10 +243,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private static let syncMenuItemTag = 9003
-
-    @objc private func showQR() {
-        QRPairPanel.shared.show()
-    }
 
     @objc private func clearHistory() {
         let alert = NSAlert()
