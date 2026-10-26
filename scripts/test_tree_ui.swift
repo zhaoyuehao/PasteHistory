@@ -400,7 +400,9 @@ struct TreeUISmoke {
         _ = key(49, chars: " ") // interrupt opening with close
         run(0.04)
         _ = key(49, chars: " ") // reopen during return flight
-        run(0.3)
+        let rapidDeadline = ProcessInfo.processInfo.systemUptime + 0.4
+        while NSApp.windows.contains(where: { $0.isVisible && $0.title == "纸签预览过渡" })
+            && ProcessInfo.processInfo.systemUptime < rapidDeadline { run(0.004) }
         precondition(controller.isPreviewVisible)
         precondition(!NSApp.windows.contains { $0.isVisible && $0.title == "纸签预览过渡" }, "No stale flight may survive rapid toggling")
         let expanded = NSApp.windows.first { $0.isVisible && $0.title == L10n.previewTitle }!
@@ -472,6 +474,69 @@ struct TreeUISmoke {
                      "Mid-return reopening must preserve the presented geometry and content phase")
         run(0.3)
         precondition(controller.isPreviewVisible && expanded.frame == readingFrameBeforeClose)
+        var interruptionTimeline = "trigger_ms,elapsed_ms,phase,width\n"
+        for trigger in [0.06, 0.12, 0.18] {
+            _ = key(49, chars: " "); run(0.3)
+            _ = key(49, chars: " "); run(trigger)
+            let active = NSApp.windows.first { $0.isVisible && $0.title == "纸签预览过渡" }!
+            let surface = active.contentView as! PaperFlightView
+            let initialPose = surface.pose.channels
+            let initialPhase = surface.expansion
+            precondition(initialPhase > 0 && initialPhase < 1)
+            let reversedAt = ProcessInfo.processInfo.systemUptime
+            _ = key(49, chars: " ")
+            precondition(surface.pose.channels == initialPose && surface.expansion == initialPhase,
+                         "Closing during expansion must preserve the actually displayed sheet")
+            var lastPhase: CGFloat = -1
+            while active.isVisible && ProcessInfo.processInfo.systemUptime-reversedAt < 0.45 {
+                if surface.expansion != lastPhase {
+                    lastPhase = surface.expansion
+                    let elapsed = ProcessInfo.processInfo.systemUptime-reversedAt
+                    interruptionTimeline += "\(trigger*1000),\(elapsed*1000),\(surface.expansion),\(surface.pose.size.width)\n"
+                    precondition(expanded.alphaValue == 0,
+                                 "An interrupted opening must not later complete and flash the full preview")
+                }
+                run(0.004)
+            }
+            precondition(!active.isVisible && !controller.isPreviewVisible)
+            precondition(controller.previewPaper?.alphaValue == treeWindow.treeOpacity)
+            _ = key(49, chars: " "); run(0.3)
+        }
+        try interruptionTimeline.write(toFile: ".build/preview-interruption-timeline.csv", atomically: true, encoding: .utf8)
+        var cadenceTimeline = "interval_ms,elapsed_ms,event,phase,width,input_ms\n"
+        for interval in [0.1, 0.2] {
+            _ = key(49, chars: " "); run(0.4)
+            let source = controller.previewPaper!
+            let originalSnapshot = source.paperSnapshot
+            var captures = 0
+            source.paperSnapshot = { captures += 1; return originalSnapshot?() }
+            let began = ProcessInfo.processInfo.systemUptime
+            var event = 0, lastPhase: CGFloat = -1
+            while event < 10 || ProcessInfo.processInfo.systemUptime-began < interval*9+0.45 {
+                let elapsed = ProcessInfo.processInfo.systemUptime-began
+                var inputMS = 0.0
+                if event < 10 && elapsed >= Double(event)*interval {
+                    let start = ProcessInfo.processInfo.systemUptime
+                    _ = key(49, chars: " ")
+                    inputMS = (ProcessInfo.processInfo.systemUptime-start)*1000
+                    event += 1
+                    lastPhase = -1
+                }
+                if let active = NSApp.windows.first(where: { $0.isVisible && $0.title == "纸签预览过渡" }),
+                   let surface = active.contentView as? PaperFlightView, surface.expansion != lastPhase {
+                    lastPhase = surface.expansion
+                    cadenceTimeline += "\(interval*1000),\(elapsed*1000),\(event),\(surface.expansion),\(surface.pose.size.width),\(inputMS)\n"
+                }
+                run(0.004)
+            }
+            precondition(!controller.isPreviewVisible,
+                         "Repeated 100/200 ms toggles must finish at the most recent closed target")
+            source.paperSnapshot = originalSnapshot
+            precondition(captures == 1,
+                         "The same in-flight paper must reuse its captured face across repeated reversals")
+            _ = key(49, chars: " "); run(0.3)
+        }
+        try cadenceTimeline.write(toFile: ".build/preview-cadence-timeline.csv", atomically: true, encoding: .utf8)
         let returnStarted = ProcessInfo.processInfo.systemUptime
         _ = key(49, chars: " ")
         var closingFrames: [(Double, NSImage, NSSize)] = []
@@ -878,8 +943,23 @@ struct TreeUISmoke {
         let historyBeforePhone = controller.panelModel.current!
         let phoneSurface = phoneIsland.contentView as! TreePaperSurface
         let phoneCenter = NSPoint(x: phoneSurface.bounds.midX, y: phoneSurface.bounds.midY)
+        // Switching content during a flight must capture the new paper instead
+        // of reusing the previous history entry's face.
+        _ = key(49, chars: " ")
+        run(0.06)
         phoneSurface.mouseDown(with: mouse(.leftMouseDown, view: phoneSurface, point: phoneCenter))
         phoneSurface.mouseUp(with: mouse(.leftMouseUp, view: phoneSurface, point: phoneCenter))
+        run(0.06)
+        let phoneFlight = NSApp.windows.first { $0.isVisible && $0.title == "纸签预览过渡" }!.contentView as! PaperFlightView
+        precondition(phoneFlight.readingImage != nil && phoneFlight.compactImage != nil,
+                     "Changing to phone pairing mid-flight must provide both new paper faces")
+        let flightQR = VNDetectBarcodesRequest()
+        flightQR.symbologies = [.qr]
+        try VNImageRequestHandler(data: phoneFlight.readingImage!.tiffRepresentation!).perform([flightQR])
+        precondition(flightQR.results?.contains { $0.payloadStringValue == pairing.address } == true,
+                     "The moving phone paper must show its QR code, not the previous history content")
+        precondition(phoneIsland.alphaValue == 0 && phoneIsland.ignoresMouseEvents,
+                     "The new source paper must be hidden while its preview is moving")
         run(0.8)
         precondition(controller.isPreviewVisible && controller.previewSelectionID == phoneID && pairingStarts == 1)
         let phonePreview = NSApp.windows.first { $0 is PaperPreviewPanel && $0.isVisible } as! PaperPreviewPanel
@@ -919,6 +999,12 @@ struct TreeUISmoke {
         precondition(controller.isPreviewVisible && controller.previewSelectionID == phoneID,
                      "Space reverses the phone paper's interrupted return through the shared flight")
         _ = key(125)
+        run(0.06)
+        let historyFlight = NSApp.windows.first { $0.isVisible && $0.title == "纸签预览过渡" }!.contentView as! PaperFlightView
+        precondition(historyFlight.readingImage != nil && historyFlight.compactImage != nil,
+                     "Leaving a settled phone preview must capture history content for a new flight")
+        precondition(controller.previewPaper?.alphaValue == 0,
+                     "Switching from phone pairing must hide the new history source during flight")
         run(0.7)
         precondition(controller.previewSelectionID == controller.panelModel.current?.id && controller.isPreviewVisible)
         precondition(phoneIsland.alphaValue == 1, "Navigating back to history restores the permanent card")

@@ -26,6 +26,9 @@ enum Motion {
     static let paperOpenDuration: TimeInterval = 0.24
     // Both directions use the same path, duration and symmetric timing curve.
     static let paperCloseDuration = paperOpenDuration
+    // Triple real pole: retargeting preserves position, velocity AND acceleration.
+    // Independent of remaining distance; no compressed 80 ms return trajectory.
+    static let paperRetargetFrequency: CGFloat = 64
     static let paperFollowFrequency: CGFloat = 46
     static let paperFollowDamping: CGFloat = 0.86
     static let paperScaleReturnDuration: TimeInterval = 0.15
