@@ -1,10 +1,111 @@
-import {test} from 'node:test';
-import assert from 'node:assert/strict';
-import {aggregate,fetchStats,loadStats,validStats,REPO} from './github';
-const release=(tag:string,date:string,count:number)=>({draft:false,tag_name:tag,published_at:date,assets:[{name:`PasteHistory-${tag}-arm64.zip`,download_count:count,browser_download_url:`${REPO}/releases/download/${tag}/PasteHistory-${tag}-arm64.zip`},{name:'SHA256SUMS.txt',download_count:999,browser_download_url:'ignored'}]});
-test('only app installers count; latest preview is a valid download',()=>{const stats=aggregate(7,[release('v1','2026-01-01',13),release('v2-beta','2026-02-01',9),{...release('draft','2026-03-01',40),draft:true}]);assert.equal(stats.downloads,22);assert.equal(stats.version,'v2-beta');assert.equal(stats.stars,7);assert.equal(validStats(stats),true);});
-test('empty releases are a truthful zero without a fabricated download',()=>{const s=aggregate(0,[]);assert.equal(s.downloads,0);assert.equal(s.downloadUrl,null);assert.equal(s.version,null);});
-test('pagination includes all releases',async()=>{const called:string[]=[];const fake:typeof fetch=async input=>{const url=String(input);called.push(url);if(!url.includes('/releases'))return Response.json({stargazers_count:3});if(url.includes('page=2'))return Response.json([release('v1','2026-01-01',5)]);return Response.json([release('v2','2026-02-01',7)],{headers:{Link:'<https://api.github.com/repos/zhaoyuehao/PasteHistory/releases?per_page=100&page=2>; rel="next"'}});};const s=await fetchStats(fake);assert.equal(called.length,3);assert.equal(s.downloads,12);});
-test('GitHub errors do not become zero',async()=>{await assert.rejects(fetchStats(async()=>new Response('',{status:403})),/403/);});
-test('invalid cache and foreign download URLs are rejected',()=>{assert.equal(validStats({...aggregate(0,[]),downloadUrl:'https://evil.example/file.zip'}),false);assert.equal(validStats({...aggregate(0,[]),updatedAt:'not a date'}),false);});
-test('offline uses last successful cache, and no evidence reports unavailable',async()=>{const priorFetch=globalThis.fetch;const priorStorage=Object.getOwnPropertyDescriptor(globalThis,'localStorage');let saved:string|null=JSON.stringify({...aggregate(9,[]),updatedAt:'2020-01-01T00:00:00Z'});Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:()=>saved,setItem:(_:string,s:string)=>saved=s}});globalThis.fetch=async()=>{throw new Error('offline');};try{const old=await loadStats('/snapshot');assert.equal(old.stats?.stars,9);assert.equal(old.stale,true);saved=null;assert.deepEqual(await loadStats('/snapshot'),{stats:null,stale:true});}finally{globalThis.fetch=priorFetch;if(priorStorage)Object.defineProperty(globalThis,'localStorage',priorStorage);else Reflect.deleteProperty(globalThis,'localStorage');}});
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { aggregate, fetchStats, loadStats, validStats, REPO } from "./github";
+const release = (tag: string, date: string, count: number) => ({
+  draft: false,
+  tag_name: tag,
+  published_at: date,
+  assets: [
+    {
+      name: `PasteHistory-${tag}-arm64.zip`,
+      download_count: count,
+      browser_download_url: `${REPO}/releases/download/${tag}/PasteHistory-${tag}-arm64.zip`,
+    },
+    {
+      name: "SHA256SUMS.txt",
+      download_count: 999,
+      browser_download_url: "ignored",
+    },
+  ],
+});
+test("only app installers count; latest preview is a valid download", () => {
+  const stats = aggregate(7, [
+    release("v1", "2026-01-01", 13),
+    release("v2-beta", "2026-02-01", 9),
+    { ...release("draft", "2026-03-01", 40), draft: true },
+  ]);
+  assert.equal(stats.downloads, 22);
+  assert.equal(stats.version, "v2-beta");
+  assert.equal(stats.stars, 7);
+  assert.equal(validStats(stats), true);
+});
+test("empty releases are a truthful zero without a fabricated download", () => {
+  const s = aggregate(0, []);
+  assert.equal(s.downloads, 0);
+  assert.equal(s.downloadUrl, null);
+  assert.equal(s.version, null);
+});
+test("pagination includes all releases", async () => {
+  const called: string[] = [];
+  const fake: typeof fetch = async (input) => {
+    const url = String(input);
+    called.push(url);
+    if (!url.includes("/releases"))
+      return Response.json({ stargazers_count: 3 });
+    if (url.includes("page=2"))
+      return Response.json([release("v1", "2026-01-01", 5)]);
+    return Response.json([release("v2", "2026-02-01", 7)], {
+      headers: {
+        Link: '<https://api.github.com/repos/zhaoyuehao/PasteHistory/releases?per_page=100&page=2>; rel="next"',
+      },
+    });
+  };
+  const s = await fetchStats(fake);
+  assert.equal(called.length, 3);
+  assert.equal(s.downloads, 12);
+});
+test("GitHub errors do not become zero", async () => {
+  await assert.rejects(
+    fetchStats(async () => new Response("", { status: 403 })),
+    /403/,
+  );
+});
+test("invalid cache and foreign download URLs are rejected", () => {
+  assert.equal(
+    validStats({
+      ...aggregate(0, []),
+      downloadUrl: "https://evil.example/file.zip",
+    }),
+    false,
+  );
+  assert.equal(
+    validStats({ ...aggregate(0, []), updatedAt: "not a date" }),
+    false,
+  );
+});
+test("offline uses last successful cache, and no evidence reports unavailable", async () => {
+  const priorFetch = globalThis.fetch;
+  const priorStorage = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "localStorage",
+  );
+  let saved: string | null = JSON.stringify({
+    ...aggregate(9, []),
+    updatedAt: "2020-01-01T00:00:00Z",
+  });
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: {
+      getItem: () => saved,
+      setItem: (_: string, s: string) => (saved = s),
+    },
+  });
+  globalThis.fetch = async () => {
+    throw new Error("offline");
+  };
+  try {
+    const old = await loadStats("/snapshot");
+    assert.equal(old.stats?.stars, 9);
+    assert.equal(old.stale, true);
+    saved = null;
+    assert.deepEqual(await loadStats("/snapshot"), {
+      stats: null,
+      stale: true,
+    });
+  } finally {
+    globalThis.fetch = priorFetch;
+    if (priorStorage)
+      Object.defineProperty(globalThis, "localStorage", priorStorage);
+    else Reflect.deleteProperty(globalThis, "localStorage");
+  }
+});
