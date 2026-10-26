@@ -13,7 +13,9 @@ npm run build
 
 ## Experience
 
-The first visit shows the tree with three clipboard kinds, a download button, and centered GitHub statistics. The welcome surface is a uniformly scaled native 880 × 920 layout, including the permanent Phone Sync card and root search tag. Selecting a paper restores native point sizes and reveals the preview and a compact tool dock; secondary actions stay in its menu. Notes appears when pasting. The menu's copy-sample window provides text, image and file examples; **Load more examples** enables the full paginated dataset. Reset restores the three-history-paper welcome state and clears Notes.
+The first visit opens the native default tree layout with eight history records, a permanent Phone Sync card and the root search tag. The same centered frame and point sizes remain in use when selecting, searching and previewing: there is no separate three-record hero, whole-tree zoom or layout transition. The header contains the download button and centered GitHub statistics; web-only sample, target and accessibility controls sit outside the simulated screen.
+
+The sample editor and Notes are stand-ins for other applications. ⇧⌘V can open the tree while either editor is focused. Return pastes into the captured editor selection; the tree closes and returns focus. If no editor has been used, Notes is the default target. Dragging does not open another window: open the destination first, then drag the paper onto it. Clicking the simulated desktop outside the tree's input surfaces dismisses the tree. Reset restores all twelve fixture records and clears Notes.
 
 - All demo data stays in memory. Only an explicit **Copy to system** click or ⌘C writes to the real clipboard. Images use a PNG ClipboardItem; an unavailable or denied API leaves the demo usable and reports failure. Demo Notes receives the actual example image. Copying and pasting close the tree, as in Swift.
 - The sample photo has no OCR text; search matches its title. OCR fields, when provided by fixtures, are explicitly labeled. File records paste paths, not file contents. Vision, iCloud and phone pairing are described rather than simulated as connected services.
@@ -34,7 +36,7 @@ The first visit shows the tree with three clipboard kinds, a download button, an
 
 The browser remains a different host: it can consume ⌘W, ⌘R, ⌘1–9, ⌘Y or global shortcuts before JavaScript receives them. All actions have buttons. There are no system-wide hotkeys, accessibility paste into external applications, real file pasteboard objects, Vision OCR, iCloud or phone pairing in this static demo. File records copy example path text. Font rasterization also depends on the browser and OS. These boundaries are shown in Help; this implementation does not claim verified pixel-for-pixel or OS-level equivalence.
 
-Validation for the native-alignment change: TypeScript/Vite build, architecture check and passive browser rendering inspection. Per repository policy, interaction/UI regression suites and physical Safari/Chrome/trackpad/IME/drag verification require an explicit test request and were not run for this change.
+Validation for the native-alignment change: TypeScript/Vite build, architecture check and passive browser rendering inspection. The layout correction also removes whole-tree resizing on selection, retains the original input target, and places web-only controls outside the native surface. Per repository policy, interaction/UI regression suites and physical Safari/Chrome/trackpad/IME/drag verification require an explicit test request and were not run for this change.
 
 ## Assets
 

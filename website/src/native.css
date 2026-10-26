@@ -544,3 +544,250 @@ kbd {
 .exploring #tree-area {
   transform-origin: 50% 0;
 }
+
+/* Website chrome is outside the native product viewport. */
+.native-desktop {
+  min-height: 640px;
+}
+.site-header {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 88px;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 14px 28px;
+  background: #f7f7f5;
+  border-bottom: 1px solid #ddd;
+}
+.site-identity {
+  display: grid;
+  gap: 5px;
+}
+.site-identity strong {
+  font-size: 19px;
+  font-weight: 600;
+  color: #222;
+}
+.site-identity span {
+  font-size: 11px;
+  color: #777;
+}
+.native-desktop .site-footer {
+  position: static;
+  display: grid;
+  transform: none;
+  gap: 4px;
+  margin: auto;
+  white-space: nowrap;
+}
+.native-desktop .repo-url {
+  display: none;
+}
+.native-desktop .download-area {
+  position: static;
+  transform: none;
+  text-align: right;
+}
+.native-desktop .download-button {
+  height: 36px;
+  min-width: 154px;
+  font-size: 14px;
+  border-radius: 8px;
+}
+.native-desktop .download-area p {
+  margin: 4px 0 2px;
+  font-size: 9px;
+}
+.native-desktop .download-area small {
+  font-size: 8px;
+}
+.native-desktop #desktop-main {
+  position: absolute;
+  top: 88px;
+  bottom: 48px;
+  left: 0;
+  right: 0;
+  isolation: isolate;
+  overflow: hidden;
+}
+.native-desktop .menubar {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 30px;
+}
+.native-desktop #tree-area {
+  transform: none;
+  bottom: auto;
+  transition: none;
+}
+.native-desktop .experience-tools {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  height: 48px;
+  transform: none;
+  opacity: 1;
+  visibility: visible;
+  background: #f7f7f5;
+  border: 0;
+  border-top: 1px solid #ddd;
+  border-radius: 0;
+  padding: 8px 20px;
+  gap: 18px;
+  display: flex;
+  align-items: center;
+}
+.native-desktop .experience-tools button {
+  display: flex;
+  align-items: center;
+  padding: 5px;
+  gap: 6px;
+  font-size: 11px;
+}
+.native-desktop .experience-tools svg {
+  width: 15px;
+  height: 15px;
+}
+.native-desktop #reset {
+  margin-left: auto;
+}
+.native-desktop #action-menu {
+  bottom: 54px;
+  left: 200px;
+  transform: none;
+}
+.native-desktop #empty {
+  display: none;
+}
+.native-desktop .notes-window {
+  z-index: 1;
+}
+.native-desktop .browser-window {
+  z-index: 1;
+}
+.preview-heading {
+  padding: 16.7px 21px 5px;
+  line-height: 13px;
+}
+#preview-content {
+  padding: 8px 21px;
+}
+#preview-date {
+  padding: 0 21px 13px;
+}
+#preview-content.image-content {
+  display: block;
+  padding: 0;
+}
+#preview-content.image-content img {
+  display: block;
+  width: calc(100% - 26px);
+  height: calc(100% - 26px);
+  margin: 13px;
+  object-fit: contain;
+}
+#preview-content.image-content small,
+#preview-content.image-content p {
+  padding: 13px 21px;
+  font-size: 13px;
+}
+@media (max-width: 799px) {
+  .site-header {
+    height: 88px;
+    padding: 12px;
+    gap: 12px;
+  }
+  .site-identity strong {
+    font-size: 15px;
+  }
+  .site-identity span {
+    display: none;
+  }
+  .native-desktop .site-footer {
+    display: grid;
+  }
+  .native-desktop .stats {
+    gap: 7px;
+    font-size: 8px;
+  }
+  .native-desktop .github-link {
+    font-size: 11px;
+  }
+  .native-desktop .download-button {
+    min-width: 110px;
+    font-size: 11px;
+  }
+  .native-desktop .download-area p,
+  .native-desktop .download-area small {
+    display: block;
+    font-size: 7px;
+  }
+  .native-desktop .experience-tools {
+    gap: 7px;
+    padding: 8px;
+  }
+  .native-desktop .experience-tools button {
+    font-size: 10px;
+    gap: 3px;
+  }
+  .native-desktop #action-menu {
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  .native-desktop .window {
+    top: 65px !important;
+  }
+  .native-desktop #note-editor {
+    max-height: calc(100svh - 420px);
+  }
+}
+#tree-stage .paper .paper-text,
+.preview-compact .paper-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--body-lines, 2);
+  line-height: 15.5px;
+}
+.preview-files {
+  padding: 5px 0;
+}
+.preview-file-row {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 8px 0;
+  font-size: 13px;
+}
+.preview-file-row > div {
+  min-width: 0;
+}
+.preview-file-row small {
+  font-size: 11px !important;
+  color: #616161 !important;
+  margin: 2px 0 0 !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.file-glyph {
+  display: grid;
+  place-items: center;
+  flex: 0 0 34px;
+  height: 40px;
+  background: #f5f4ed;
+  border: 1px solid #b5b1a4;
+  border-radius: 3px;
+  color: #9b4942;
+  font-size: 9px;
+}
+#tree-stage .paper .paper-text, .preview-compact .paper-text {
+  bottom:auto;
+  height:calc(var(--body-lines, 2) * 15.5px);
+  max-height:calc(100% - 37px);
+}
+#tree-stage .paper.is-selected .paper-text, .preview-compact .is-selected .paper-text { bottom:auto; max-height:calc(100% - 52px); }
