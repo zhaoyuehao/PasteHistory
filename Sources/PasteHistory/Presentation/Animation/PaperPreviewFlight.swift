@@ -46,13 +46,24 @@ final class PaperFlightView: NSView {
     private var canvas = NSRect.zero
     private(set) var readingSurface: PaperPreviewSurface?
     var acceptsReadingInput = false
+    var measuresRenderingWork = false
+    private(set) var windowUpdateWork = 0.0
+    private(set) var faceUpdateWork = 0.0
+    private(set) var shadowUpdateWork = 0.0
+    private var readingLogicalSize: NSSize?
+    private var readingDisplaySize: NSSize?
+    private var readingAngle: CGFloat?
 
     func attachReading(_ surface: PaperPreviewSurface) {
         guard readingSurface !== surface else { return }
         readingSurface?.removeFromSuperview()
         readingSurface = surface
+        readingLogicalSize = nil
+        readingDisplaySize = nil
+        readingAngle = nil
         addSubview(surface)
         updateFaces()
+        surface.prepareReadingLayout()
     }
     func detachReading() {
         readingSurface?.removeFromSuperview()
@@ -70,15 +81,21 @@ final class PaperFlightView: NSView {
     }
     required init?(coder: NSCoder) { fatalError() }
     func place(_ pose: PaperPose, in panel: NSPanel) {
+        let began = measuresRenderingWork ? CACurrentMediaTime() : 0
         if panel.frame != pose.frame.integral { panel.setFrame(pose.frame.integral, display: false) }
+        windowUpdateWork = measuresRenderingWork ? CACurrentMediaTime()-began : 0
         place(pose, canvas: panel.frame)
     }
     func place(_ pose: PaperPose, canvas: NSRect) {
         let shapeChanged = self.pose.size != pose.size || self.pose.angle != pose.angle || self.pose.inset != pose.inset
         self.pose = pose
         self.canvas = canvas
+        let began = measuresRenderingWork ? CACurrentMediaTime() : 0
         updateFaces()
+        let drew = measuresRenderingWork ? CACurrentMediaTime() : 0
         if shapeChanged { window?.invalidateShadow() }
+        faceUpdateWork = measuresRenderingWork ? drew-began : 0
+        shadowUpdateWork = measuresRenderingWork ? CACurrentMediaTime()-drew : 0
     }
     private func updateFaces() {
         CATransaction.begin(); CATransaction.setDisableActions(true)
@@ -88,16 +105,24 @@ final class PaperFlightView: NSView {
         if let surface = readingSurface {
             let logical = surface.readingSize ?? pose.size
             let scale = min(pose.size.width / logical.width, pose.size.height / logical.height)
-            surface.frameRotation = 0
-            surface.setFrameSize(NSSize(width: logical.width * scale, height: logical.height * scale))
-            surface.setBoundsSize(logical)
-            surface.frameRotation = pose.angle * 180 / .pi
+            let displaySize = NSSize(width: logical.width * scale, height: logical.height * scale)
+            if readingDisplaySize != displaySize || readingAngle != pose.angle || readingLogicalSize != logical {
+                // Translation-only following must not invalidate the document's
+                // scale/rotation. Keep logical bounds fixed while resizing.
+                if surface.frameRotation != 0 { surface.frameRotation = 0 }
+                if readingDisplaySize != displaySize { surface.setFrameSize(displaySize) }
+                if surface.bounds.size != logical { surface.setBoundsSize(logical) }
+                let degrees = pose.angle * 180 / .pi
+                if surface.frameRotation != degrees { surface.frameRotation = degrees }
+                readingDisplaySize = displaySize
+                readingAngle = pose.angle
+                readingLogicalSize = logical
+            }
             let pin = surface.convert(NSPoint(x: logical.width / 2,
                 y: logical.height - IvoryPaperStyle.pinInset), to: self)
             surface.setFrameOrigin(NSPoint(x: surface.frame.origin.x + pose.pin.x - canvas.minX - pin.x,
                 y: surface.frame.origin.y + pose.pin.y - canvas.minY - pin.y))
             surface.alphaValue = PaperFaceLayers.blend(expansion)
-            surface.layoutSubtreeIfNeeded()
         }
         CATransaction.commit()
     }
@@ -132,6 +157,7 @@ final class PaperPreviewFlight {
     private weak var sheet: PaperFlightView?
     private let clock = MotionClock()
     private var clockRunning = false
+    private var trace = PaperMotionTrace()
     private let reduceMotion: () -> Bool
     private var motion: DampedMotion?
     private var completion: (() -> Void)?
@@ -155,12 +181,14 @@ final class PaperPreviewFlight {
         stopClock()
         self.window = window
         self.sheet = sheet
+        sheet.measuresRenderingWork = trace.enabled
         if !preservingMotion { motion = nil }
         completion = nil
         flying = false
     }
     func cancel() {
         generation += 1
+        trace.finish(reason: "cancelled")
         stopClock()
         completion = nil
         flying = false
@@ -180,6 +208,7 @@ final class PaperPreviewFlight {
     func animate(to pose: PaperPose, opening: Bool, completion: @escaping () -> Void) {
         guard let sheet else { return }
         generation += 1
+        trace.begin(opening: opening, refreshRate: window?.screen?.maximumFramesPerSecond ?? 60)
         self.opening = opening
         self.completion = completion
         reduced = reduceMotion()
@@ -247,7 +276,7 @@ final class PaperPreviewFlight {
             stopClock(); return
         }
         let frameGeneration = generation
-        let began = observeFrame == nil ? 0 : CACurrentMediaTime()
+        let began = observeFrame == nil && !trace.enabled ? 0 : CACurrentMediaTime()
         motion?.advance(by: frame.delta)
         fadeElapsed += frame.delta
         let finished = flying && reduced
@@ -264,9 +293,14 @@ final class PaperPreviewFlight {
         if opening, !sheet.acceptsReadingInput, finished || readyForReading {
             setReadingInput(true)
         }
+        trace.record(callbackTime: began, delta: frame.delta,
+            work: trace.enabled ? CACurrentMediaTime()-began : 0,
+            windowWork: sheet.windowUpdateWork, faceWork: sheet.faceUpdateWork,
+            shadowWork: sheet.shadowUpdateWork, expansion: sheet.expansion)
         observeFrame?(FrameSample(delta: frame.delta, work: CACurrentMediaTime()-began,
             pose: sheet.pose, windowFrame: panel.frame, expansion: sheet.expansion, finished: finished))
         guard finished, generation == frameGeneration else { return }
+        trace.finish(reason: "settled")
         stopClock()
         let done = completion
         completion = nil

@@ -84,7 +84,18 @@ When animation regression is requested, `./scripts/test_tree_ui.sh --paper-motio
 checks persistent window/document identity, continuous reversal, gesture routing,
 native pin coordinate conversion and bounded windows.
 Its `.build/paper-motion-frames.csv` measures display callback intervals and CPU
-work, not compositor presentation or physical input latency. Use
+work, not compositor presentation or physical input latency.
+
+For a user-driven motion timing capture, launch the signed app with
+`--trace-paper-motion`. Each opening/closing buffers at most 512 numeric samples
+in memory, then asynchronously writes callback intervals, first-callback wait,
+geometry-update CPU work and shadow invalidation CPU work to
+`~/Library/Application Support/PasteHistory/paper_motion.log` (bounded to 512 KB).
+No record text, IDs or images are captured. Callback cadence is not compositor
+FPS; large gaps with cheap callbacks indicate work outside the measured callback.
+The first display callback establishes animation time zero so initial AppKit
+preparation cannot consume the opening's visible travel. Reading layout is
+prepared before motion; per-frame transforms do not force subtree layout. Use
 `./scripts/test_tree_ui.sh --preview-text` for full-text/reading-position checks.
 
 | Change | Additional validation |

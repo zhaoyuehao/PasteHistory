@@ -43,6 +43,10 @@ struct PaperMotionSmoke {
         var samples: [PaperPreviewFlight.FrameSample] = []
         var readingEnabledBeforeSettling = false
         flight.observeFrame = {
+            if samples.isEmpty {
+                precondition($0.pose.channels == compact.channels,
+                    "The first display tick must retain the source pose, not consume setup latency as motion")
+            }
             samples.append($0)
             if face.acceptsReadingInput && !$0.finished {
                 readingEnabledBeforeSettling = true
