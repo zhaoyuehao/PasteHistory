@@ -15,7 +15,10 @@ final class MotionClock: NSObject {
     func start(on window: NSWindow, update: @escaping (Frame) -> Void) {
         stop()
         self.update = update
-        previousTime = CACurrentMediaTime()
+        // Setup and initial AppKit drawing are not elapsed animation time.
+        // Start on the first delivered display tick; subsequent ticks still use
+        // real elapsed time, including missed frames (never clamp to hide stalls).
+        previousTime = 0
         let link = window.displayLink(target: self, selector: #selector(step))
         self.link = link
         link.add(to: .main, forMode: .common)
@@ -26,7 +29,7 @@ final class MotionClock: NSObject {
     }
     @objc private func step(_ sender: CADisplayLink) {
         let time = sender.targetTimestamp > 0 ? sender.targetTimestamp : CACurrentMediaTime()
-        let delta = max(0, time-previousTime)
+        let delta = previousTime > 0 ? max(0, time-previousTime) : 0
         previousTime = time
         update?(Frame(time: time, delta: delta))
     }

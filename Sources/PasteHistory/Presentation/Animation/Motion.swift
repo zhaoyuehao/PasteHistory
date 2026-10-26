@@ -26,6 +26,8 @@ enum Motion {
     static let paperFadeDuration: TimeInterval = 0.12
     static let paperFrequency: CGFloat = 20
     static let paperAnchorTime: CGFloat = 0.020
+    static let paperContentRevealStart: CGFloat = 0.25
+    static let paperReadingExpansion: CGFloat = 0.98
 
     /// 选中态与跟随滚动：dampingFraction 0.78 有约 4% 过冲，滑过头再回来
     static var selection: Animation {

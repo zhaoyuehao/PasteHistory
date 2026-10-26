@@ -105,18 +105,18 @@ final class PreviewPanelController: NSObject {
         paperFlight.bind(window: paper, sheet: visual, preservingMotion: continuing)
         owner?.setExpandedPaper(id)
         // The paper still receives pinch/click events while its tree drag handler
-        // is disabled. Native text interaction is enabled only after opening.
+        // is disabled. Native reading input opens near the target, before the
+        // final settling tail, without taking keyboard focus from search.
         paper.enabled = true
         paper.beginPaperInteraction()
         animateOpen()
     }
 
     private func animateOpen() {
-        guard let panel else { return }
+        guard panel != nil else { return }
         let id = previewedID
-        paperFlight.animate(to: readingPose(frame: targetFrame()), opening: true) { [weak self, weak panel] in
+        paperFlight.animate(to: readingPose(frame: targetFrame()), opening: true) { [weak self] in
             guard let self, self.previewedID == id, !self.isClosing else { return }
-            panel?.acceptsKeyboardFocus = true
             self.followPaper()
         }
     }

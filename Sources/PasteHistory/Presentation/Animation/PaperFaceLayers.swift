@@ -75,7 +75,9 @@ final class PaperFaceLayers {
         return image.cgImage(forProposedRect: nil, context: nil, hints: nil)
     }
     static func blend(_ t: CGFloat) -> CGFloat {
-        let u = min(1, max(0, (t-0.15)/0.7))
+        // Keep the compact face during the initial travel, then reveal the live
+        // document through the remaining expansion instead of finishing at 85%.
+        let u = min(1, max(0, (t-Motion.paperContentRevealStart)/(1-Motion.paperContentRevealStart)))
         return u*u*(3-2*u)
     }
 }

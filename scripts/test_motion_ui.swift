@@ -41,8 +41,18 @@ struct PaperMotionSmoke {
         let flight = PaperPreviewFlight()
         flight.bind(window: panel, sheet: face)
         var samples: [PaperPreviewFlight.FrameSample] = []
+        var readingEnabledBeforeSettling = false
         flight.observeFrame = {
+            if samples.isEmpty {
+                precondition($0.pose.channels == compact.channels,
+                    "The first display tick must retain the source pose, not consume setup latency as motion")
+            }
             samples.append($0)
+            if face.acceptsReadingInput && !$0.finished {
+                readingEnabledBeforeSettling = true
+                precondition(panel.canBecomeKey && !panel.isKeyWindow,
+                    "Early reading eligibility must not take focus from the current window")
+            }
             precondition(panel.alphaValue == 1 && panel.contentView === face)
             precondition(face.readingSurface?.document === document)
             // Native coordinate conversion, not a second hand-written transform,
@@ -76,6 +86,7 @@ struct PaperMotionSmoke {
                      "Only the latest request may complete, within the settling bound")
         precondition(panel.handlesPaperPinch && panel.isVisible, "The same paper remains interactive after settling")
         precondition(samples.count > 15)
+        precondition(readingEnabledBeforeSettling, "Reading must be available before the motion tail completes")
         for sample in samples {
             precondition(sample.windowFrame.width <= sample.pose.frame.width+2 && sample.windowFrame.height <= sample.pose.frame.height+2,
                          "The animation window must stay bounded to the paper")
@@ -83,6 +94,8 @@ struct PaperMotionSmoke {
         // A completion may immediately open a new animation. The old completion
         // must not hide the reused window or cancel its display clock.
         flight.animate(to: compact, opening: false) { animate(true) }
+        precondition(!face.acceptsReadingInput && !panel.canBecomeKey,
+            "Closing must revoke reading input immediately, including during reversal")
         run(0.65)
         precondition(flight.visiblePose != nil && panel.isVisible)
         run(0.7)

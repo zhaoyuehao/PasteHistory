@@ -6,7 +6,13 @@ import AppKit
 final class PaperPreviewSurface: NSView {
     let document: NSView
     private let documentMask = CAShapeLayer()
-    var readingSize: NSSize? { didSet { needsLayout = true } }
+    var readingSize: NSSize? { didSet { if readingSize != oldValue { needsLayout = true } } }
+
+    /// Resolve the logical document once before motion starts. Physical frame
+    /// changes during flight use AppKit's normal deferred display/layout cycle.
+    func prepareReadingLayout() {
+        layoutSubtreeIfNeeded()
+    }
 
     init(document: NSView) {
         self.document = document
