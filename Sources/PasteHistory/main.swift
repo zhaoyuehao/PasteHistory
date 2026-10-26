@@ -20,12 +20,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         WebSyncServer.shared.configurePage(html: WebSyncPage.html)
         WebSyncServer.shared.start()
         if Settings.shared.hotKeyEnabled {
-            hotKey.register(id: 1, keyCode: kVK_ANSI_C, carbonModifiers: cmdKey | shiftKey) { [weak self] in
+            hotKey.register(id: 1, keyCode: kVK_ANSI_V, carbonModifiers: cmdKey | shiftKey) { [weak self] in
                 Task { @MainActor in self?.togglePanel() }
-            }
-            // ⇧⌘V：不开面板，直接在时间轴上擦。再按一次撤销、换成更早一条
-            hotKey.register(id: 2, keyCode: kVK_ANSI_V, carbonModifiers: cmdKey | shiftKey) {
-                Task { @MainActor in PasteCycler.shared.advance() }
             }
         }
 
@@ -199,8 +195,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func togglePanel() {
-        // 打开面板视为「我要找东西」，⇧⌘V 的循环会话到此为止
-        PasteCycler.shared.end()
         PanelController.shared.toggle()
     }
 
@@ -212,7 +206,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = item.button {
             button.image = NSImage(systemSymbolName: "clipboard", accessibilityDescription: L10n.clipboardHistoryAccessibility)
-            button.toolTip = "\(L10n.panelTitle)（⇧⌘C）"
+            button.toolTip = "\(L10n.panelTitle)（⇧⌘V）"
         }
         item.menu = buildMenu()
         statusItem = item
@@ -221,18 +215,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
 
-        let open = NSMenuItem(title: L10n.showClipboard, action: #selector(togglePanel), keyEquivalent: "C")
+        let open = NSMenuItem(title: L10n.showClipboard, action: #selector(togglePanel), keyEquivalent: "V")
         open.keyEquivalentModifierMask = [.command, .shift]
         open.image = Self.menuIcon("clipboard")
         menu.addItem(open)
         let layout = NSMenuItem(title: "调整树布局…", action: #selector(adjustTreeLayout), keyEquivalent: "M")
         layout.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(layout)
-
-        let cycle = NSMenuItem(title: L10n.pasteEarlier, action: #selector(cyclePaste), keyEquivalent: "V")
-        cycle.keyEquivalentModifierMask = [.command, .shift]
-        cycle.image = Self.menuIcon("clock.arrow.circlepath")
-        menu.addItem(cycle)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -315,10 +304,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func toggleAnchor(_ sender: NSMenuItem) {
         Settings.shared.anchorPanel.toggle()
         sender.state = Settings.shared.anchorPanel ? .on : .off
-    }
-
-    @objc private func cyclePaste() {
-        PasteCycler.shared.advance()
     }
 
     @objc private func retrySync() {

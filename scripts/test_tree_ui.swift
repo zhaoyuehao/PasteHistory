@@ -340,9 +340,7 @@ struct TreeUISmoke {
         paperSurface.mouseUp(with: mouse(.leftMouseUp, view: paperSurface, point: middle))
         run(0.2)
         precondition(controller.panelModel.current?.id == clickedID, "Filtered paper click must select")
-        _ = key(49, chars: " ")
-        run(0.3)
-        precondition(controller.isPreviewVisible, "Preview missing: tree visible=\(controller.isVisible), front=\(NSWorkspace.shared.frontmostApplication?.localizedName ?? "nil")")
+        precondition(controller.isPreviewVisible, "A single paper click must open preview")
         _ = key(49, chars: " ")
         run(0.25)
         let sourcePaper = controller.previewPaper!.frame
@@ -699,6 +697,7 @@ struct TreeUISmoke {
         currentPaper.mouseUp(with: mouse(.leftMouseUp, view: currentPaper, point: moved))
         run(0.1)
         precondition(treeWindow.frame == originalFrame)
+        precondition(!controller.isPreviewVisible, "Dragging must not also trigger click preview")
         treeWindow.prepareDrag = prepareDrag
         // Freeze the source while the native session owns it. A result refresh
         // during dragging must be reconciled even after rendering has settled.
@@ -757,6 +756,30 @@ struct TreeUISmoke {
         controller.endTreeLayout()
         run(0.3)
         precondition(!controller.layoutEditing && controller.isVisible)
+        store.query = ""
+        run(0.5)
+        // Delete follows card navigation, but search editing and IME keep their key.
+        let deleteCandidate = controller.panelModel.current!.id
+        precondition(key(51) == nil)
+        run(0.3)
+        precondition(store.syncDatabase.get(id: deleteCandidate) == nil, "Plain Delete removes the selected card")
+        store.query = "设计"
+        run(0.6)
+        _ = key(0, chars: "a") // text input returns keyboard routing to search
+        let searchCount = store.totalCount
+        precondition(key(51) != nil && key(117) != nil, "Delete must edit a nonempty search query")
+        precondition(store.totalCount == searchCount)
+        _ = key(125)
+        let filteredCandidate = controller.panelModel.current!.id
+        let searchWindow = treeWindow.islands.first { $0.role == .search }!
+        treeWindow.focusSearch()
+        let editor = searchWindow.firstResponder as! NSTextView
+        editor.setMarkedText("拼", selectedRange: NSRange(location: 1, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
+        precondition(key(51) != nil && store.totalCount == searchCount, "IME Delete cannot remove a card")
+        editor.unmarkText()
+        precondition(key(117) == nil)
+        run(0.3)
+        precondition(store.syncDatabase.get(id: filteredCandidate) == nil, "Forward Delete removes the navigated search result")
         store.query = ""
         run(0.5)
         // Render the native display and bounded child surfaces into one synthetic-data artifact.

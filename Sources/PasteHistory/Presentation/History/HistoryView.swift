@@ -358,10 +358,10 @@ struct HistoryView: View {
             .equatable()
             .id(item.id)
             .contentShape(Rectangle())
-            .onTapGesture(count: 2) { onPaste(item) }
-            .simultaneousGesture(TapGesture(count: 1).onEnded {
+            .onTapGesture {
                 model.select(index)
-            })
+                onPreview()
+            }
             .onAppear {
                 if index >= results.count - 8 { store.loadMore() }
             }

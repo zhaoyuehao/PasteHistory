@@ -77,7 +77,7 @@ final class PanelController: NSObject, NSWindowDelegate {
     private var showGeneration = 0
 
     /// 淡出动画进行中：窗口还没 orderOut，但逻辑上已经算关了
-    /// （否则淡出的 0.15s 里再按 ⇧⌘C 会被判成「还开着」而去走 hide）
+    /// （否则淡出的 0.15s 里再按 ⇧⌘V 会被判成「还开着」而去走 hide）
     private var isHiding = false
 
     var isVisible: Bool { (panel?.isVisible ?? false) && !isHiding }
@@ -101,16 +101,13 @@ final class PanelController: NSObject, NSWindowDelegate {
         }
         let continuingOrigin = isTreePresentation && panel.isVisible ? panel.frame.origin : nil
         // 作废上一次 hide() 排队的 previousApp.activate()：
-        // 否则快速收起后再按 ⇧⌘C，那个延迟激活会把面板顶掉 → resignKey → 面板立刻又消失
+        // 否则快速收起后再按 ⇧⌘V，那个延迟激活会把面板顶掉 → resignKey → 面板立刻又消失
         showGeneration += 1
         isHiding = false
         endTreeLayout()
         keyboardState.edit()
         // 面板重开是一次新的会话：预览不跨会话存活
         preview.closeImmediately()
-
-        // 打开面板 = 用户要「找」，⇧⌘V 的循环会话立刻结束
-        PasteCycler.shared.end()
 
         // 打开面板时顺手对账一次 iCloud 远端变化
         iCloudSync.shared.importAll()
@@ -240,7 +237,11 @@ final class PanelController: NSObject, NSWindowDelegate {
                 NotificationCenter.default.post(name: .pasteHistoryDidWritePasteboard, object: nil)
             },
             onClose: { [weak self] in self?.hide() },
-            onPreview: { [weak self] in self?.preview.toggle() },
+            onPreview: { [weak self] in
+                guard let self else { return }
+                keyboardState.navigate()
+                if !preview.isVisible { preview.open() }
+            },
             onTreeModeChanged: { [weak self] enabled in self?.setTreePresentation(enabled) }
         )
 
@@ -541,7 +542,7 @@ final class PanelController: NSObject, NSWindowDelegate {
                 self?.hide(restoreFocus: false)
             }
         }
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown]) { [weak self] event in
             guard let self else { return event }
             return self.handle(event)
         }
@@ -563,6 +564,20 @@ final class PanelController: NSObject, NSWindowDelegate {
     /// Shared dispatch path, also exercised by isolated keyboard regression tests.
     func handle(_ event: NSEvent) -> NSEvent? {
         if panel?.dragInProgress == true { return event } // Escape belongs to the native drag session.
+        if event.type == .leftMouseDown {
+            // Clicking back into search returns Delete to the text editor.
+            if let content = event.window?.contentView {
+                var hit = content.hitTest(content.convert(event.locationInWindow, from: nil))
+                while let view = hit {
+                    if view is NSTextView || view is NSTextField {
+                        keyboardState.edit()
+                        break
+                    }
+                    hit = view.superview
+                }
+            }
+            return event
+        }
         let key = Int(event.keyCode)
         let mods = event.modifierFlags.intersection([.command, .shift, .option, .control])
 
@@ -622,8 +637,12 @@ final class PanelController: NSObject, NSWindowDelegate {
             Self.post(.phConfirm); return nil
         case 8 where mods == [.command]: // ⌘C 仅复制
             Self.post(.phCopyOnly); return nil
-        case 51 where mods == [.command]: // ⌘⌫ 删除
-            Self.post(.phDelete); return nil
+        case 51 where mods == [], 117 where mods == []: // Delete / forward Delete
+            guard keyboardState.deleteRemovesCard(query: store.query, composing: isComposingText) else {
+                return event
+            }
+            if !event.isARepeat { Self.post(.phDelete) }
+            return nil
         case 37 where mods == [.command]: // ⌘L 列表 / 3D 许愿树
             if !event.isARepeat { Self.post(.phToggleTree) }; return nil
         case 35 where mods == [.command]: // ⌘P 置顶
