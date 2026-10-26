@@ -1,96 +1,90 @@
-# 开发与排障
+# Development
 
-[文档索引](README.md) · [架构](architecture.md) · [同步](sync.md)
+[Home](../README.md) · [Contributor rules](../AGENTS.md) · [Sync](sync.md) · [Tree resources](tree.md)
 
-所有命令默认从仓库根目录执行。开始修改前遵守 [AGENTS.md](../AGENTS.md) 的最新 main、个人账号和 PR 流程。
+Run commands from the repository root. Requires macOS 14+, Swift 6 (the target uses Swift 5 language mode), and Python 3 for boundary checks. Blender is only needed for model export; Node.js is only needed for crypto cross-checks.
 
-## 构建和签名
-
-要求 macOS 14+、Swift 6 工具链；包当前使用 Swift 5 语言模式。测试脚本另需 Python 3；模型导出需 Blender，加密交叉验证需 Node.js。正常构建和运行不依赖 Blender。
+## Build
 
 ```sh
-swift --version
 ./scripts/build_app.sh
 codesign -dv --verbose=4 PasteHistory.app
 open PasteHistory.app
 ```
 
-`build_app.sh` 执行 release 构建，将二进制、Info.plist 和 `PasteHistory_PasteHistory.bundle` 装入 `.app`，再按 Apple Development、自签 PasteHistory、ad-hoc 的顺序选择签名。**脚本允许回退，不代表回退签名满足项目的日常使用要求**：应使用 Apple Development，并检查构建输出和 `codesign` 的 Authority。
+The script packages the executable, Info.plist and SwiftPM resource bundle. Use Apple Development signing for regular builds; verify `Authority` instead of assuming the fallback meets that requirement. If Accessibility authorization stops surviving rebuilds, check the signature and remove duplicate app entries in System Settings before authorizing the current app.
 
-辅助功能授权与签名身份相关。重建后反复要求授权时，先确认签名，再到系统设置删除多余的 PasteHistory 条目并为当前应用重新授权。
+After moving the checkout, a PCH/module-cache path error requires deleting `.build` and rebuilding. No Xcode project is used.
 
-移动仓库后如遇 `PCH was compiled with module cache path ...`，在仓库根目录删除旧构建缓存后重建：
+## Architecture
 
-```sh
-rm -rf .build
-./scripts/build_app.sh
-```
+One executable target, with recursively discovered sources under [`Sources/PasteHistory/`](../Sources/PasteHistory/):
 
-## 按改动选择验证
-
-| 改动 | 验证 |
+| Directory | Responsibility |
 | --- | --- |
-| 文档 | 链接 / 路径 / 参数与当前实现核对，`git diff --check`；无需启动应用 |
-| 目录、依赖边界 | `python3 scripts/check_architecture.py`，再运行 UI 冒烟 |
-| 原生界面、预览、输入、动效 | `./scripts/test_tree_ui.sh`，必要时 `--interactive` 人工观察 |
-| 纸签跨应用拖放 | `./scripts/test_drag_ui.sh`；图片加 `--drag-image`，文件加 `--drag-files` |
-| 树模型 | [许愿树几何冒烟与资源验证](ivory-tree/README.md#验证) |
-| 手机网页加密 | [Node.js 交叉验证及端到端检查](sync.md#加密自测) |
-| 打包或资源 | `./scripts/build_app.sh`，检查签名并启动验证 |
+| `Domain/` | Records, content fingerprints and search fields; no UI imports |
+| `Application/` | ClipStore, settings, selection, keyboard rules and feedback events |
+| `Infrastructure/` | SQLite persistence; clipboard/AX/drag adapters; OCR/media loading; iCloud/HTTP; diagnostics |
+| `Presentation/` | Tree, history search, preview, window/input routing, sync UI, styles and animations |
+| `Shared/Localization.swift` | Native localized strings; the web page handles its own localization |
+| `Resources/ivory_tree.scn` | Bundled SceneKit model |
+| `main.swift` | Composition, service lifecycle, menu, global shortcut and startup arguments |
 
-原生 UI 测试需要已登录的 macOS 图形桌面。第一次执行前准备构建目录：
+ClipboardMonitor polls every 0.4 seconds and forwards supported content to ClipStore, which writes SQLite and images, schedules OCR and exports iCloud changes. Search is debounced by 250ms and loads 60 records per batch; the tree presents eight at a time. PreviewMediaLoader receives its image directory by injection. Services emit UserFeedback; the entry point connects it to Toast and injects HTML into the HTTP server.
+
+Application state publishes results and input timing, not animations. Presentation owns motion and layout; storage and image decoding stay in Infrastructure. HTTP routing and encryption use a dedicated queue and read connection, then dispatch writes asynchronously to the main queue. See [implementation constraints](../AGENTS.md#implementation-constraints).
+
+## Validation
 
 ```sh
 mkdir -p .build
+python3 scripts/check_architecture.py
 ./scripts/test_tree_ui.sh
 ```
 
-UI 脚本使用临时 SQLite 和合成数据，不读取用户历史或写入系统通用剪贴板；它会创建测试窗口和构建日志。构建 / 编译日志位于 `.build/tree-ui-build.log` 与 `.build/tree-ui-compile.log`。交互模式会保留演示窗口。
+Native tests require a logged-in macOS graphical session. UI tests use synthetic data and temporary SQLite, not user history or the general clipboard. Build/compile logs are `.build/tree-ui-build.log` and `.build/tree-ui-compile.log`.
 
-自动测试覆盖路由、状态和部分动画几何。真实外部应用的粘贴、跨进程拖放与物理触控板手势仍需人工验证；模拟事件通过不能代替实机验收。不要为文案或偶然字段堆叠低信号断言。
+| Change | Additional validation |
+| --- | --- |
+| Documentation | Relative links, paths, command syntax and `git diff --check` |
+| UI, input or motion | `./scripts/test_tree_ui.sh --interactive` when visual inspection is needed |
+| Cross-app drag | `./scripts/test_drag_ui.sh`, optionally `--drag-image` or `--drag-files` |
+| Model | [Geometry check](tree.md#geometry-check), then UI tests and app packaging |
+| Phone encryption | [Crypto checks](sync.md#crypto-checks) against both implementations |
+| Packaging/resources | `./scripts/build_app.sh`, signature inspection and launch |
 
-## 启动与维护参数
+UI tests verify paste callback routing, not actual paste into another app. Physical trackpad gestures, cross-process dragging and target-app pasting need real-device validation. Do not add assertions for incidental wording or implementation fields.
 
-以下参数仅在**新进程启动**时解析。先从菜单栏退出已运行的 PasteHistory，再启动一次待测应用；重复 `open` 现有进程只会打开面板，不重放维护参数。直接运行可执行文件时也不要同时留下另一实例。
+## Startup and maintenance
+
+Quit the existing app before passing startup arguments. Reopening an existing process reveals the tree but does not replay arguments. These commands use **real history**; paste options send input to the target app, and deletion can propagate to iCloud. The process remains running after maintenance.
 
 ```sh
 PasteHistory.app/Contents/MacOS/PasteHistory --show
 ```
 
-这些命令使用真实数据目录。粘贴参数会向当前目标应用发送按键，删除参数会修改历史。
-
-| 参数 | 行为与前提 |
+| Argument | Effect |
 | --- | --- |
-| `--show` | 启动即打开许愿树 |
-| `--show --trace-anchor` | 打开面板，并将默认落盘的定位日志同时写到 NSLog |
-| `--show-pair` | 打开手机配对面板 |
-| `--print-ax` | 写出辅助功能状态；未授权会请求权限 |
-| `--paste-latest` | 将最近记录走完整粘贴流程；需预先聚焦测试输入框 |
-| `--smoke-panel-paste` | 打开面板后走选中并粘贴路径；需预先聚焦测试输入框 |
-| `--smoke-preview` | 打开预览、移动选择、关闭预览，日志输出 open / switch-follow / close；至少需要两条历史 |
-| `--purge-ids "uuid1,uuid2"` | 删除指定真实记录，并在 iCloud 同步处于活动状态时删除远端记录文件、写墓碑；使用有效 UUID |
-| `--restore-images` | 从活动的 iCloud 同步目录恢复本地缺失原图 |
+| `--show` | Open the tree on launch |
+| `--trace-anchor` | Also send diagnostic trace output to NSLog |
+| `--show-pair` | Open the standalone pairing diagnostic panel; normal access is the tree card |
+| `--print-ax` | Request authorization if needed and write `ax_status.txt` |
+| `--paste-latest` | Paste the most recent record; focus a test input first |
+| `--smoke-panel-paste` | Open history and exercise the paste route; focus a test input first |
+| `--smoke-preview` | Open, follow selection and close preview; needs at least two records |
+| `--purge-ids "uuid1,uuid2"` | Delete valid record UUIDs; active iCloud sync also removes record files and writes tombstones |
+| `--restore-images` | Restore missing originals from an active, readable iCloud sync directory |
 
-当前只保留许愿树，没有视图切换参数；旧列表尺寸和输入框定位参数已移除。维护命令执行后应用仍常驻；不要把启动成功等同于维护已成功完成，应检查日志和数据结果。
+Verify the resulting data/logs rather than treating process startup as successful maintenance.
 
-## 日志与常见问题
+## Diagnostics and recovery
 
-数据目录为 `~/Library/Application Support/PasteHistory/`。
+Data and logs live in `~/Library/Application Support/PasteHistory/`. `anchor_trace.log` is rewritten after 200,000 bytes; `preview-pinch` logs gesture phase, scale and window details, not clipboard text. `ax_status.txt` contains `trusted` or `not-trusted`.
 
-| 症状 | 先检查 |
-| --- | --- |
-| 回车只复制、不自动粘贴 | 辅助功能授权、签名身份和菜单中的自动粘贴开关 |
-| 预览双指缩放无反应 | 指针是否在预览内；查看 `preview-pinch` 行，并用真实触控板复现 |
-| 手机连不上 / 配对失效 | [手机同步排障](sync.md#连接排障) |
-| 图片原图缺失 | 先确认 iCloud 文件已经到达，再使用 `--restore-images` |
-| 面板关闭后立刻重开又消失 | 检查窗口代际号与延迟焦点恢复，参见 [维护记忆](../MEMORY.md) |
+- **Copy works, paste does not:** check Accessibility, signing and the `autoPaste` preference. There is no automatic-paste menu toggle in the current UI.
+- **Preview pinch fails:** keep the pointer inside the preview, inspect `preview-pinch`, and reproduce with a physical trackpad. Non-key previews use a scoped local magnify monitor; view recognizers alone previously required clicking for focus.
+- **Reopened tree disappears:** preserve generation guards that invalidate delayed activation/animation callbacks; guard visibility in resign-key handling.
+- **Phone connection fails:** follow [connection checks](sync.md#connection-checks).
+- **Missing originals:** wait for iCloud files to arrive before `--restore-images`.
 
-`anchor_trace.log` 默认写入，超过 200,000 字节后整体重写。旧版本的列表定位日志已停用，整棵树每次打开在鼠标所在屏幕居中，旧布局位置不再生效。`preview-pinch` 记录手势阶段、倍率与窗口信息，不记录剪贴板正文。
-
-`--print-ax` 写出同目录下的 `ax_status.txt`，内容为 `trusted` 或 `not-trusted`。
-
-## 备份与恢复边界
-
-需要保留历史时，先退出应用，再备份整个 `~/Library/Application Support/PasteHistory/`，同时保留 `history.sqlite`、存在的 `-wal` / `-shm` 文件和 `images/`。不要只复制正在写入的单个 SQLite 主文件。
-
-iCloud 是同步副本，删除会传播，不能替代独立备份。恢复旧数据库前先处理好同步开关与远端墓碑；`--restore-images` 只补图片，不恢复已删除的记录，也不撤销墓碑。
+Quit before backing up the entire data directory, including `images/`, SQLite and any existing `-wal`/`-shm` files. Do not copy only a live SQLite main file. Account for remote tombstones before restoring an old database: image restoration does not recover deleted records or undo deletions.

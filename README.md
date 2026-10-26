@@ -1,99 +1,64 @@
 # PasteHistory
 
-macOS 菜单栏剪贴板历史工具。记录文本、图片和文件路径，按 **⇧⌘V** 搜索历史，再按回车粘贴到原输入框。支持本地图片 OCR、iCloud 多台 Mac 同步，以及手机浏览器局域网同步。
+[简体中文](README_ZH.md)
 
-界面只保留浮在桌面的象牙白许愿树，每组展示 8 张纸签。树体和空白区域不拦截后方应用的点击。
+A macOS menu bar clipboard history app. Press **⇧⌘V** to search text, images and file paths on a desktop tree, then press Return to paste into the original app. Includes on-device OCR, iCloud sync between Macs and local-network phone access.
 
-## 快速开始
+## Build and run
 
-需要 **macOS 14 或更新版本**及 **Swift 6 工具链**。项目使用 SwiftPM，没有 Xcode 工程。
-
-在仓库根目录执行：
+Requires **macOS 14+** and a **Swift 6 toolchain**. No Xcode project or runtime Blender installation is needed.
 
 ```sh
 ./scripts/build_app.sh
 open PasteHistory.app
 ```
 
-脚本构建 release、打包资源并自动选择签名身份：Apple Development → 自签 PasteHistory → ad-hoc。日常构建按项目约定使用 **Apple Development**；回退到 ad-hoc 的构建不能作为辅助功能授权可跨重建保留的验收结果。
+The script builds and packages the app, then selects Apple Development, a local PasteHistory certificate, or ad-hoc signing in that order. Use **Apple Development** for regular builds: ad-hoc rebuilds can invalidate Accessibility authorization.
 
-首次启动后，在「系统设置 → 隐私与安全性 → 辅助功能」允许 PasteHistory，才能自动模拟粘贴。未授权或关闭自动粘贴时，选中内容仍会写入剪贴板，可自行按 ⌘V。应用常驻菜单栏，不显示 Dock 图标。
+Allow PasteHistory in **System Settings → Privacy & Security → Accessibility** for automatic paste. Without authorization, the selected content is copied for manual ⌘V. The app stays in the menu bar, with no Dock icon.
 
-## 日常使用
+## Use
 
-1. 在其他应用复制内容，PasteHistory 会记录支持的剪贴板类型。
-2. 按 ⇧⌘V 打开历史，直接输入文字搜索；图片中的 OCR 文字也可命中。
-3. 用 ↑ / ↓ 选择记录，空格或 ⌘Y 预览，回车贴回原输入框。
+Copy content in another app, open the tree and type to search. Each group contains eight history cards plus a permanent **Phone Sync** card. The tree opens centered on the screen under the pointer; decorative branches and empty space let clicks pass through.
 
-单击纸签选中并打开预览，再单击展开的纸面收回（拖动选字、滚动和缩放不触发收回），按 Delete 删除选中记录；编辑搜索词时 Delete 用于删字。纸签也可拖到支持相应格式的应用，只执行复制，不移动原文件。整棵树每次打开都在鼠标所在屏幕的可用区域居中，不跟随输入框或恢复旧位置；面板内 ⇧⌘M 可进入调整模式。
+Click a history card to preview it. Click the expanded paper to close it; text selection, scrolling and pinching do not close it. Pinching inside the preview scales the whole paper without taking keyboard focus from search. Drag history cards into compatible apps to copy their content without moving source files.
 
-预览不夺走搜索框的键盘焦点。树模式下，在预览窗口内双指缩放会连同纸面一起缩放，同次预览切换记录保留倍率，关闭后复位。详见[许愿树交互说明](docs/ivory-tree/README.md)。
-
-### 快捷键
-
-除标注「全局」的快捷键外，以下操作在历史面板打开时生效；输入法组词中的导航和确认键优先交给输入法。
-
-| 操作 | 快捷键或手势 |
+| Action | Shortcut |
 | --- | --- |
-| 打开 / 关闭历史（全局） | ⇧⌘V |
-| 选择记录 | ↑ / ↓ |
-| 树模式翻组 | Page Up / Page Down；MacBook 为 fn↑ / fn↓ |
-| 预览开关 | 空格 / ⌘Y；单击纸签打开预览 |
-| 树模式输入搜索词中的空格 | Shift＋空格 |
-| 粘贴 / 仅复制 | 回车 / ⌘C |
-| 快速粘贴结果中的前 9 条 | ⌘1–9（按整个结果序列，不是当前树分组） |
-| 置顶 / 取消置顶 | ⌘P |
-| 删除选中记录 | Delete；编辑搜索词或输入法组词时用于删字 |
-| 关闭预览，再关闭面板 | Esc 分层退出；组词或拖放时先处理当前操作 |
-| 直接关闭面板 | ⌘W，或点击其他应用 |
-| 进入 / 退出树布局调整 | ⇧⌘M；调整中 ⌘R 复位，Esc 完成 |
+| Toggle history globally | ⇧⌘V |
+| Select / change group | ↑ / ↓; Page Up / Page Down (fn↑ / fn↓) |
+| Toggle preview | Space / ⌘Y |
+| Insert a space in search | Shift-Space |
+| Paste / copy only | Return / ⌘C |
+| Paste result 1–9 | ⌘1–9, indexed across search results, not the current group |
+| Pin / unpin | ⌘P |
+| Delete a record | Delete when navigating or when search is empty; otherwise edit search text |
+| Close preview, then history | Esc; IME composition and native dragging handle cancellation first |
+| Close history | ⌘W or click another app |
+| Adjust layout | ⇧⌘M; ⌘R resets, Esc finishes |
 
+Layout changes preserve the size preset; moving the tree only affects the current opening. Input-method composition keeps its own navigation and confirmation keys. The Phone Sync card is not a history record: it cannot be deleted, pinned or dragged out.
 
-## 搜索、记录与隐私
+## Sync
 
-- 搜索文本、文件路径、来源应用及图片 OCR / 场景标签；使用 SQLite 子串匹配，输入后防抖 250ms。
-- OCR 在本机通过 Vision 识别简体中文、繁体中文和英文。图片卡片展示图片，预览向下滚动可读识别文字；场景标签是分类结果，不是图片问答。
-- 默认忽略 1Password、Bitwarden、KeePassXC、钥匙串访问，并跳过带保密或瞬态标记的内容。未被来源应用标记的敏感文本仍可能被记录，可通过菜单暂停记录。
-- 系统通用剪贴板的内容到达 Mac、且能被读取时会照常记录；检测到远端标记时显示「接力 · iPhone/iPad」。这不等于持续采集手机剪贴板历史。
-- 本地数据库、图片和 iCloud 导出文件**没有应用层加密**。手机同步中的内容加密范围另见[同步说明](docs/sync.md)。
+- **Phone:** click the tree's Phone Sync card and scan the QR code on the same reachable local network. Paste text into the web page to send it to the Mac; copy text/file paths or save images from Mac history. Refreshing the QR code invalidates old pairing sessions. HTTP phone pages cannot automatically read the clipboard or work offline.
+- **Other Macs:** use the same Apple account with iCloud Drive available. Sync is enabled by default; the menu shows a retry item when unavailable. Records, images and deletions propagate through `iCloud Drive/PasteHistory/` as files arrive.
 
-## 跨设备使用
+The phone page searches at most 300 downloaded records. File entries contain paths, not arbitrary file contents. See [sync details and security boundaries](docs/sync.md).
 
-### 手机浏览器
+## Data and privacy
 
-让手机与 Mac 处于可互访的局域网，Mac 保持运行。单击树上常驻的「手机同步」卡片，展开二维码后扫码，或在手机打开详情中的完整配对链接。
+History lives in `~/Library/Application Support/PasteHistory/`: `history.sqlite` and its WAL files, plus `images/`. Preferences use the `com.verdent.pastehistory` UserDefaults domain. Quit the app before backing up the complete data directory; iCloud sync is not an independent backup.
 
-- **手机 → Mac**：点「粘贴同步」，在粘贴框内长按粘贴文本，再点「同步到 Mac」。当前网页上传交互支持文本。
-- **Mac → 手机**：网页中搜索、打开条目，复制文本或文件路径；图片长按保存。网页不会把 Mac 文件本体传给手机。
-- 配对码失效时重新扫码；在 Mac 配对面板刷新二维码会更换配对码，使旧会话失效。
-- 可添加到主屏幕作为快捷入口；局域网 HTTP 页面不提供离线 Service Worker，也不能直接自动读取手机剪贴板。
+OCR runs locally for Simplified Chinese, Traditional Chinese and English. Search also covers text, file paths, source apps and image classification labels. Password-manager apps and concealed/transient clipboard markers are ignored by default; unmarked sensitive text can still be recorded. Pause recording from the menu when needed.
 
-手机页面最多获取 300 条记录，并在这批记录中搜索。配对方式、HTTP 加密边界及连接排障见[同步说明](docs/sync.md)。
+**Local and iCloud files have no application-level encryption.** Phone payload encryption does not provide HTTPS protection; use a trusted local network. Universal Clipboard content is recorded when it reaches the Mac, not as a continuous history of phone activity.
 
-### 多台 Mac
+## Development
 
-在各台 Mac 登录同一 Apple 账户并开启 iCloud Drive，运行 PasteHistory 并启用菜单栏中的 iCloud 同步。记录、图片原图和 OCR 结果通过 `iCloud Drive/PasteHistory/` 同步；删除也会传播。同步取决于 iCloud 文件到达，不保证即时完成。
+- [Development](docs/development.md): architecture, tests, diagnostics and maintenance commands.
+- [Sync](docs/sync.md): pairing, wire format, limitations and crypto checks.
+- [Tree resources](docs/tree.md): interaction constraints, model export and geometry checks.
+- [Contributor rules](AGENTS.md): branch workflow and implementation requirements.
 
-## 数据位置
-
-| 内容 | 位置 |
-| --- | --- |
-| SQLite 数据库及 WAL 文件 | `~/Library/Application Support/PasteHistory/history.sqlite` 及同名前缀文件 |
-| 图片原图 | `~/Library/Application Support/PasteHistory/images/` |
-| 定位及缩放诊断日志 | `~/Library/Application Support/PasteHistory/anchor_trace.log` |
-| 设置 | UserDefaults 域 `com.verdent.pastehistory` |
-| iCloud 记录 / 删除标记 / 图片 | `iCloud Drive/PasteHistory/clips/`、`tombstones/`、`images/` |
-
-原图按内容指纹命名，缩略图最长边 128px 并存入数据库。历史按 60 条一批加载；这与树模式每组 8 张纸签是两个不同层次。旧版 `history.json` 会在迁移后保留为 `history.json.migrated`。
-
-## 文档导航
-
-| 文档 | 内容 |
-| --- | --- |
-| [开发与排障](docs/development.md) | 构建签名、测试、维护参数、日志和备份 |
-| [架构](docs/architecture.md) | 目录职责、数据流和依赖边界 |
-| [同步](docs/sync.md) | iCloud、手机配对、协议和加密自测 |
-| [许愿树](docs/ivory-tree/README.md) | 交互、预览、资源更新和验收 |
-| [协作规则](AGENTS.md) | 分支、个人账号、PR 和不可破坏的约束 |
-| [维护记忆](MEMORY.md) | 已定决策、历史问题和避免回归的原因 |
-| [文档索引](docs/README.md) | 文档维护约定及历史设计资料 |
+English is the default documentation language. Keep [README_ZH.md](README_ZH.md) aligned with user-facing changes; keep generated previews and design experiments out of the source tree.
