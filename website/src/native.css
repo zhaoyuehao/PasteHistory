@@ -857,9 +857,6 @@ kbd {
   max-height: 210px;
   object-fit: contain;
 }
-.samples-rail .sample-tabs {
-  margin-bottom: 16px;
-}
 .samples-rail .collect-button {
   margin-bottom: 12px;
 }
@@ -1003,18 +1000,6 @@ kbd {
 #clear-note:hover {
   background: #e8edf3;
 }
-.samples-rail .sample-tabs button {
-  flex: 1;
-  padding: 6px 8px;
-  color: #161616;
-}
-.samples-rail .sample-tabs [aria-selected="true"] {
-  background: #fff;
-  border: 1px solid #d9dde2;
-}
-.samples-rail .sample-tabs button:hover {
-  background: #ffffffb3;
-}
 .samples-rail .collect-button {
   background: #007aff;
   border: 1px solid #0068da;
@@ -1140,10 +1125,6 @@ kbd {
   flex-direction: column;
   padding: clamp(12px, 1.5vw, 22px);
 }
-.native-desktop .samples-rail .sample-tabs {
-  flex-shrink: 0;
-  margin-bottom: 14px;
-}
 .native-desktop .samples-rail #sample-content {
   flex: 1;
   height: auto;
@@ -1185,4 +1166,56 @@ kbd {
 }
 #download-state:empty {
   display: none;
+}
+/* A small φ-based scale keeps controls subordinate to the sculpture. */
+.native-desktop {
+  --phi: 1.61803398875;
+  --control-unit: 34px;
+}
+.native-desktop .samples-rail .browser-body,
+.native-desktop .notes-rail .notes-body {
+  padding: 12px;
+}
+.native-desktop .samples-rail #sample-content {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  gap: calc(12px * var(--phi));
+  margin: 0;
+}
+.sample-item {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) var(--control-unit);
+  gap: 8px;
+}
+.native-desktop .samples-rail #sample-text {
+  padding: 10px;
+  font-size: 13px;
+  line-height: 1.618;
+}
+.native-desktop .samples-rail .collect-button {
+  justify-self: end;
+  width: calc(var(--control-unit) * var(--phi) * var(--phi));
+  height: var(--control-unit);
+  min-height: 0;
+  padding: 0 8px;
+  margin: 0;
+  gap: 5px;
+  font-size: 12px;
+}
+.native-desktop .root-links .download-button {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: calc(42px * var(--phi) * var(--phi) * var(--phi));
+  min-width: 0;
+  height: 42px;
+  padding: 0 13px;
+  gap: 8px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.native-desktop .tree-controls,
+.native-desktop .search-tag {
+  height: calc(116px / var(--phi));
 }

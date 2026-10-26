@@ -8,35 +8,30 @@ export const sampleLanguages = [
     label: "简体中文",
     text: "给生活留一点空白。",
     image: "山野来信 · 布莱埃斯湖.jpg",
-    file: "秋日灵感.fig",
   },
   {
     code: "en",
     label: "English",
     text: "Leave room for wonder.",
     image: "A quiet morning · Lake Braies.jpg",
-    file: "Autumn inspiration.fig",
   },
   {
     code: "zh-Hant",
     label: "繁體中文",
     text: "把靈感收好。",
     image: "山野來信 · 布萊埃斯湖.jpg",
-    file: "秋日靈感.fig",
   },
   {
     code: "ja",
     label: "日本語",
     text: "ひらめきを、そっと残す。",
     image: "静かな朝 · ブラーイエス湖.jpg",
-    file: "秋のアイデア.fig",
   },
   {
     code: "ko",
     label: "한국어",
     text: "떠오른 생각을 담아 두세요.",
     image: "고요한 아침 · 브라이에스 호수.jpg",
-    file: "가을의 영감.fig",
   },
 ] as const;
 export type SampleLanguage = (typeof sampleLanguages)[number]["code"];

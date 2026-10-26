@@ -28,6 +28,9 @@ export function setLocale(value: string) {
 }
 // Simplified Chinese keys, followed by English, Traditional Chinese, Japanese and Korean.
 const messages: Record<string, readonly [string, string, string, string]> = {
+  复制: ["Copy", "複製", "コピー", "복사"],
+  复制文字: ["Copy text", "複製文字", "テキストをコピー", "텍스트 복사"],
+  复制图片: ["Copy image", "複製圖片", "画像をコピー", "이미지 복사"],
   "正在获取下载…": [
     "Getting download…",
     "正在取得下載…",

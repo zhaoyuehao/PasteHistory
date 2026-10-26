@@ -573,23 +573,6 @@ svg {
   font-weight: 600;
   margin: 0 0 20px;
 }
-.sample-tabs {
-  display: flex;
-  justify-content: space-between;
-  padding: 3px;
-  border-radius: 7px;
-  background: #eaecef;
-  margin-bottom: 20px;
-}
-.sample-tabs button {
-  padding: 5px 18px;
-  font-size: 11px;
-  border-radius: 5px;
-}
-.sample-tabs [aria-selected="true"] {
-  background: white;
-  box-shadow: 0 1px 3px #0002;
-}
 #sample-content {
   height: 100px;
   margin-bottom: 18px;
@@ -610,10 +593,6 @@ svg {
   height: 100%;
   object-fit: cover;
   border-radius: 6px;
-}
-.file-sample {
-  padding: 20px 0;
-  font-size: 15px;
 }
 .collect-button {
   display: flex;

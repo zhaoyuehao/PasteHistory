@@ -1,13 +1,14 @@
 import { locale } from "./i18n";
-// Direct ports of IvoryTreeLayout, IvoryPaperStyle, TreeMotion and Motion.
+// Native anchors and motion tokens, with website-specific golden paper geometry.
 // Reference: native main 0765399. Keep source references beside non-obvious math.
+export const PHI = (1 + Math.sqrt(5)) / 2;
 export const NATIVE = {
   pageSize: 8,
   width: 158,
-  height: 74,
-  selectedHeight: 112,
-  imageHeight: 98,
-  selectedImageHeight: 128,
+  height: 158 / PHI,
+  selectedHeight: 174 / PHI,
+  imageHeight: 158 / PHI,
+  selectedImageHeight: 174 / PHI,
   phoneWidth: 72,
   pin: 7,
   drops: [24, 33, 22, 37, 29, 21, 38, 26],

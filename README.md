@@ -4,7 +4,7 @@
 
 [Try the desktop demo](https://zhaoyuehao.github.io/PasteHistory/) · [Download the macOS preview](https://github.com/zhaoyuehao/PasteHistory/releases)
 
-The web demo follows the Swift tree layout and keyboard dispatch, with the full eight-record layout from the first visit. Browser-reserved shortcuts and system integrations remain subject to browser limits; see the [website notes](website/README.md#native-interaction-reference). The desktop uses a centered 1 : 1.618 : 1 composition, with matching portrait golden-ratio sample and Notes windows.
+The web demo follows the Swift tree layout and keyboard dispatch, with the full eight-record layout from the first visit. Browser-reserved shortcuts and system integrations remain subject to browser limits; see the [website notes](website/README.md#native-interaction-reference). The desktop emphasizes the tree with smaller golden-ratio side windows, proportional spacing and papers; text and image samples are visible together.
 
 Copy Samples and Notes use concise copy; the top bar only retains a compact language picker and no auxiliary Actions or Reset controls.
 

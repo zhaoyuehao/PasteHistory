@@ -5,7 +5,7 @@ import { initialClips, sampleImage, sampleLanguages } from "./fixtures";
 import { TreeStage } from "./tree";
 import { TreeEntrance } from "./entrance";
 import { NativePreview } from "./preview";
-import { PHONE_ID, dateLabel } from "./native";
+import { PHI, PHONE_ID, dateLabel } from "./native";
 import { loadStats, REPO, type Stats } from "./github";
 import {
   t,
@@ -46,7 +46,7 @@ $("#app").innerHTML = `
   <section class="hero-heading"><p>PasteHistory</p><h1>复制过的，随时找回。</h1></section>
   <section id="tree-area" aria-label="许愿树剪贴板"><div id="tree-stage"></div><div id="empty" hidden>枝头暂时空了。<br><small>换个关键词，或复制一条新灵感。</small></div><p class="tree-hint">点一张纸签，试试看。</p><div class="tree-controls"><span class="search-cord"></span><div class="search-tag"><span class="search-hole"></span>${icon("search")}<input id="search" aria-label="搜索剪贴板" autocomplete="off" spellcheck="false"><span id="page-label"></span></div></div></section>
   <section class="download-area" aria-label="下载 PasteHistory"><a id="download-button" class="download-button" tabindex="0" role="link" aria-disabled="true">${icon("download")}<span id="download-label">下载 Mac 版</span></a><p>Apple Silicon · macOS 14+</p><small>预览版 · 未经 Apple 公证</small><small id="download-state" role="status" aria-live="polite"></small></section>
-  <section id="browser" class="window browser-window" aria-label="素材浏览器"><div class="titlebar">${lights()}<span>复制样例</span></div><div class="browser-body"><div class="sample-tabs" role="tablist" aria-label="素材类型"><button role="tab" aria-selected="true" data-sample="text">文字</button><button role="tab" aria-selected="false" data-sample="image">图片</button><button role="tab" aria-selected="false" data-sample="file">文件</button></div><div id="sample-content"></div><button id="collect" class="collect-button">${icon("copy")} 复制到树</button></div></section>
+  <section id="browser" class="window browser-window" aria-label="复制样例"><div class="titlebar">${lights()}<span>复制样例</span></div><div class="browser-body"><div id="sample-content"></div></div></section>
   <section id="notes" class="window notes-window" aria-label="备忘录"><div class="titlebar"><div class="traffic" aria-hidden="true"><span class="red"></span><span class="yellow"></span><span class="green"></span></div><span>备忘录</span><button id="clear-note" aria-label="清空备忘录">${icon("trash")}</button></div><div class="notes-body"><div id="note-editor" role="textbox" aria-label="备忘录内容" contenteditable="true" aria-multiline="true" data-placeholder="拖到这里，或直接粘贴。"></div></div><span id="note-status" class="sr-only" role="status" aria-live="polite"></span></section>
  </main>
  <footer class="site-footer"><a href="${REPO}" target="_blank" rel="noopener" class="github-link">${icon("github")} GitHub</a><a href="${REPO}" target="_blank" rel="noopener" class="repo-url">github.com/zhaoyuehao/PasteHistory</a><div class="stats"><a id="stars" href="${REPO}/stargazers" target="_blank" rel="noopener">Star <span>—</span></a><span id="downloads">下载次数 <span>—</span></span></div></footer>
@@ -117,7 +117,6 @@ function enterExperience() {
   $(".desktop").classList.add("exploring");
   $(".tree-controls").inert = false;
 }
-let sampleKind: Clip["kind"] = "text";
 const sampleDrafts = new Map<string, string>();
 const languageSelect = $<HTMLSelectElement>("#site-language");
 for (const [code, label] of [["auto", "跟随浏览器"], ...locales]) {
@@ -188,7 +187,7 @@ let toastTimer: ReturnType<typeof setTimeout>;
 let downloadPending = false;
 let downloadRequested = false;
 // One golden-ratio composition owns window sizes, spacing and placement.
-const PHI = (1 + Math.sqrt(5)) / 2;
+
 function placeNativeTree() {
   const desktop = $(".desktop");
   const viewportWidth = desktop.clientWidth;
@@ -225,23 +224,24 @@ function placeNativeTree() {
     desktop.style.removeProperty("height");
     const viewportHeight = desktop.clientHeight;
     const availableHeight = viewportHeight - menuHeight;
-    // Columns 1:φ:1; gaps and outer gutters are smaller powers of the same unit.
-    const widthFactor = 2 + PHI + 2 / PHI ** 6 + 2 / PHI ** 3;
-    const treeHeightFactor = (PHI * logicalHeight) / logicalWidth;
-    const heightFactor = treeHeightFactor + 1 / PHI ** 6 + 2 / PHI ** 4;
-    windowWidth = Math.min(
-      viewportWidth / widthFactor,
-      (availableHeight - rootHeight) / heightFactor,
-      logicalWidth / PHI,
+    // Reserve height for the root links, then give the tree the dominant column.
+    // Horizontal outer gutters : inter-column gaps = φ : 1 at every desktop width.
+    const idealWindow = Math.min(
+      230,
+      viewportWidth / (2 + PHI ** 2 + 2 / PHI ** 4 + 2 / PHI ** 3),
     );
-    gap = windowWidth / PHI ** 6;
-    treeWidth = windowWidth * PHI;
+    treeWidth = Math.min(
+      logicalWidth,
+      idealWindow * PHI ** 2,
+      ((availableHeight - rootHeight - 24) * logicalWidth) / logicalHeight,
+    );
+    windowWidth = Math.min(idealWindow, Math.max(180, treeWidth / PHI ** 2));
+    gap = (viewportWidth - windowWidth * 2 - treeWidth) / (2 * (PHI + 1));
+    const outer = gap * PHI;
     const treeHeight = (treeWidth * logicalHeight) / logicalWidth;
-    const groupWidth = windowWidth * 2 + treeWidth + gap * 2;
-    const groupHeight = treeHeight + gap + rootHeight;
-    // The remaining vertical space is split 0.382 above / 0.618 below.
+    const groupHeight = treeHeight + 12 + rootHeight;
     treeTop = menuHeight + (availableHeight - groupHeight) / PHI ** 2;
-    samplesLeft = (viewportWidth - groupWidth) / 2;
+    samplesLeft = outer;
     treeLeft = samplesLeft + windowWidth + gap;
     notesLeft = treeLeft + treeWidth + gap;
     samplesTop = notesTop = treeTop + (treeHeight - windowWidth * PHI) / 2;
@@ -259,7 +259,7 @@ function placeNativeTree() {
       right: "auto",
     });
   }
-  desktop.style.setProperty("--composition-gap", `${gap}px`);
+  desktop.style.setProperty("--composition-gap", "12px");
   Object.assign($("#tree-area").style, {
     width: `${logicalWidth}px`,
     height: `${logicalHeight}px`,
@@ -276,7 +276,10 @@ function placeNativeTree() {
 }
 
 placeNativeTree();
-window.addEventListener("resize", placeNativeTree);
+window.addEventListener("resize", () => {
+  placeNativeTree();
+  placeRootLinks();
+});
 new ResizeObserver(placeNativeTree).observe(samplesRail);
 new ResizeObserver(placeNativeTree).observe(notesRail);
 const tree = new TreeStage($("#tree-stage"));
@@ -363,34 +366,36 @@ function displaySample() {
   const host = $("#sample-content");
   const language = sampleLanguages.find((l) => l.code === locale)!;
   host.replaceChildren();
-  if (sampleKind === "text") {
-    const editor = document.createElement("textarea");
-    editor.id = "sample-text";
-    editor.setAttribute("aria-label", t("可复制的示例文字"));
-    editor.value = sampleDrafts.get(locale) ?? language.text;
-    editor.lang = locale;
-    editor.oninput = () => sampleDrafts.set(locale, editor.value);
-    host.append(editor);
-  } else if (sampleKind === "image") {
-    const img = document.createElement("img");
-    img.src = sampleImage;
-    img.alt = language.image;
-    host.append(img);
-  } else {
-    const p = document.createElement("div");
-    p.className = "file-sample";
-    p.textContent = `▤  ${language.file}`;
-    p.lang = locale;
-    const small = document.createElement("small");
-    small.textContent = `/Users/demo/Documents/${language.file} · ${t("示例文件路径")}`;
-    p.append(small);
-    host.append(p);
-  }
-  document
-    .querySelectorAll<HTMLButtonElement>("[data-sample]")
-    .forEach((b) =>
-      b.setAttribute("aria-selected", String(b.dataset.sample === sampleKind)),
+  for (const kind of ["text", "image"] as const) {
+    const sample = document.createElement("section");
+    sample.className = "sample-item";
+    if (kind === "text") {
+      const editor = document.createElement("textarea");
+      editor.id = "sample-text";
+      editor.setAttribute("aria-label", t("可复制的示例文字"));
+      editor.value = sampleDrafts.get(locale) ?? language.text;
+      editor.lang = locale;
+      editor.oninput = () => sampleDrafts.set(locale, editor.value);
+      sample.append(editor);
+    } else {
+      const image = document.createElement("img");
+      image.src = sampleImage;
+      image.alt = language.image;
+      sample.append(image);
+    }
+    const button = document.createElement("button");
+    button.className = "collect-button";
+    button.dataset.copy = kind;
+    button.innerHTML = `${icon("copy")}<span></span>`;
+    button.querySelector("span")!.textContent = t("复制");
+    button.setAttribute(
+      "aria-label",
+      t(kind === "text" ? "复制文字" : "复制图片"),
     );
+    button.onclick = () => collect(kind);
+    sample.append(button);
+    host.append(sample);
+  }
 }
 function syncInteraction() {
   $("#tree-area").inert = !store.visible;
@@ -412,7 +417,7 @@ function showWindow(name: string) {
     });
   }
 }
-function collect() {
+function collect(sampleKind: "text" | "image") {
   const language = sampleLanguages.find((l) => l.code === locale)!;
   const clip: Clip = {
     id: crypto.randomUUID(),
@@ -420,14 +425,9 @@ function collect() {
     text:
       sampleKind === "text"
         ? $<HTMLTextAreaElement>("#sample-text").value
-        : sampleKind === "image"
-          ? language.image
-          : language.file,
+        : language.image,
     lang: locale,
-    ...(sampleKind === "file"
-      ? { paths: [`/Users/demo/Documents/${language.file}`] }
-      : {}),
-    source: sampleKind === "file" ? t("访达") : "Safari",
+    source: "Safari",
     created: Date.now(),
     pinned: false,
     ...(sampleKind === "image" ? { image: sampleImage } : {}),
@@ -796,14 +796,6 @@ $("#download-button").onclick = async (event) => {
     renderDownload();
   }
 };
-$("#collect").onclick = collect;
-document.querySelectorAll<HTMLButtonElement>("[data-sample]").forEach(
-  (b) =>
-    (b.onclick = () => {
-      sampleKind = b.dataset.sample as Clip["kind"];
-      displaySample();
-    }),
-);
 search.addEventListener("input", () => {
   if (composing) return;
   store.search(search.value);

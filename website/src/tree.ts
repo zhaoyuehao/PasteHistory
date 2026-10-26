@@ -1,7 +1,14 @@
 import { t, locale } from "./i18n";
 import { PerspectiveCamera, Vector3 } from "three";
 import reference from "../public/native-tree.json";
-import { NATIVE as N, PHONE_ID, clamp, dateLabel, type Pose } from "./native";
+import {
+  NATIVE as N,
+  PHI,
+  PHONE_ID,
+  clamp,
+  dateLabel,
+  type Pose,
+} from "./native";
 import type { Clip } from "./store";
 export type Anchor = { x: number; y: number };
 type Card = {
@@ -236,17 +243,16 @@ export class TreeStage {
             slot: index,
             x: 0,
             y: 0,
-            width: 158,
+            width:
+              clip.id === PHONE_ID
+                ? N.phoneWidth
+                : clip.id === selected
+                  ? 174
+                  : N.width,
             height:
               clip.id === PHONE_ID
-                ? 72 * 1.61803398875
-                : clip.kind === "image"
-                  ? clip.id === selected
-                    ? 128
-                    : 98
-                  : clip.id === selected
-                    ? 112
-                    : 74,
+                ? N.phoneWidth * PHI
+                : (clip.id === selected ? 174 : N.width) / PHI,
             tilt: 0,
             fold: 1,
             opacity: 1,
@@ -356,20 +362,15 @@ export class TreeStage {
     for (const c of ordered) {
       const phone = c.clip.id === PHONE_ID,
         selected = c.clip.id === this.selected;
-      const a = this.anchor(c.slot),
-        width = phone ? 72 : Math.min(158, Math.max(130, this.width * 0.32));
-      const target = phone
-        ? 72 * 1.61803398875
-        : c.clip.kind === "image"
-          ? selected
-            ? 128
-            : 98
-          : selected
-            ? 112
-            : 74;
-      c.height = reduced ? target : c.height + (target - c.height) * blend;
-      unsettled += Math.abs(target - c.height);
-      c.width = width;
+      const a = this.anchor(c.slot);
+      const targetWidth = phone ? N.phoneWidth : selected ? 174 : N.width;
+      // Width and height settle together, preserving the golden rectangle throughout.
+      c.width = reduced
+        ? targetWidth
+        : c.width + (targetWidth - c.width) * blend;
+      unsettled += Math.abs(targetWidth - c.width);
+      const width = c.width;
+      c.height = phone ? width * PHI : width / PHI;
       c.x = clamp(a.x - width / 2, 8, this.width - width - 8);
       c.y = a.y + N.drops[c.slot % 8];
       for (const prior of placed)
