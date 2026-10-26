@@ -1,6 +1,6 @@
 import "./style.css";
 import { HistoryStore, type Clip } from "./store";
-import { initialClips, sampleImage } from "./fixtures";
+import { initialClips, welcomeClips, sampleImage } from "./fixtures";
 import { TreeStage } from "./tree";
 import { Spring } from "./motion";
 import { loadStats, REPO } from "./github";
@@ -29,24 +29,31 @@ const lights = (name: string) =>
   `<div class="traffic"><button class="red" data-minimize="${name}" aria-label="关闭${name === "browser" ? "素材窗口" : "备忘录"}"></button><button class="yellow" data-minimize="${name}" aria-label="最小化${name === "browser" ? "素材窗口" : "备忘录"}"></button><button class="green" data-expand="${name}" aria-label="放大窗口"></button></div>`;
 $("#app").innerHTML = `
 <div class="desktop" data-mobile-view="tree">
- <div class="wallpaper" aria-hidden="true"><div class="mountain far"></div><div class="mountain middle"></div><div class="mountain near"></div><div class="sun"></div></div>
- <header class="menubar"><button class="brand" id="menu-tree">${icon("tree")}<b>PasteHistory</b></button><span class="menu-label">交互体验</span><button id="about-button" class="menu-label">关于</button><div class="menu-spacer"></div><a href="${REPO}" target="_blank" rel="noopener" class="github-link">${icon("github")}<span>GitHub</span></a><a class="stat" id="stars" href="${REPO}/stargazers" target="_blank" rel="noopener">${icon("star")}<span>—</span></a><span class="stat" id="downloads">${icon("download")}<span>—</span></span><button id="download-button" class="download-button">下载 Mac 版 ${icon("arrow")}</button><time id="clock"></time></header>
+ <div class="wallpaper" aria-hidden="true"></div>
+ <header class="menubar"><button class="brand" id="menu-tree">${icon("tree")}<b>PasteHistory</b></button><button data-open="browser">复制样例</button><button id="about-button">帮助</button><div class="menu-spacer"></div><span class="system-status" aria-hidden="true">⌁ &nbsp; ▰</span><time id="clock"></time></header>
  <main id="desktop-main">
-  <section class="intro"><div class="eyebrow"><span></span> A LITTLE ROOM FOR WONDER</div><h1>让灵感，<br>留在枝头。</h1><p>每一次复制，都值得被好好收藏。<br>一棵许愿树，接住你的文字与灵感。</p><button id="intro-start" class="text-link">在这张桌面上，试试看 ${icon("arrow")}</button></section>
-  <section id="browser" class="window browser-window" aria-label="素材浏览器"><div class="titlebar" data-drag-window="browser">${lights("browser")}<span>${icon("compass")} 灵感采集</span><span class="window-mark">Safari</span></div><div class="address-bar"><span>◂ &nbsp; ▸</span><div>◈ &nbsp; a-little-inspiration.local</div></div><div class="browser-body"><div class="mini-label">YOUR DAILY INSPIRATION · 01</div><h2>把小小的灵感，<br>变成自己的收藏。</h2><div class="sample-tabs" role="tablist" aria-label="素材类型"><button role="tab" aria-selected="true" data-sample="text">文字</button><button role="tab" aria-selected="false" data-sample="image">图片</button><button role="tab" aria-selected="false" data-sample="file">文件</button></div><div id="sample-content"></div><button id="collect" class="collect-button">${icon("copy")} 复制到许愿树</button><small>模拟复制 · 不读取你的系统剪贴板</small></div></section>
-  <section id="notes" class="window notes-window" aria-label="备忘录"><div class="titlebar" data-drag-window="notes">${lights("notes")}<span>${icon("note")} 备忘录</span><button id="clear-note" aria-label="清空备忘录">${icon("trash")}</button></div><div class="notes-body"><div class="notes-date">今天 · 我的灵感簿</div><h2>好想法的落脚处</h2><div id="note-editor" role="textbox" aria-label="备忘录内容" contenteditable="true" aria-multiline="true" data-placeholder="在这里写点什么…&#10;&#10;也可以从树上挑一张纸签，&#10;按回车，或直接拖进来。"></div></div><footer><span id="note-status">准备接住你的灵感</span><span>本次体验内保存</span></footer></section>
-  <section id="tree-area" aria-label="许愿树剪贴板"><div id="tree-stage"></div><div id="empty" hidden>枝头暂时空了。<br><small>换个关键词，或复制一条新灵感。</small></div><div class="tree-controls"><div class="search-wrap">${icon("search")}<input id="search" aria-label="搜索剪贴板" placeholder="寻找一片灵感…" autocomplete="off"><button id="clear-search" aria-label="清空搜索">×</button></div><div class="tree-toolbar"><button id="previous" aria-label="上一组">‹</button><span id="page-label"></span><button id="next" aria-label="下一组">›</button><span class="toolbar-divider"></span><button id="pin" title="置顶选中纸签" aria-label="置顶选中纸签">${icon("pin")}</button><button id="delete" title="删除选中纸签" aria-label="删除选中纸签">${icon("trash")}</button><button id="paste" class="paste-button">粘贴到备忘录 ↵</button></div></div></section>
-  <aside class="desktop-caption"><span class="live-dot"></span> 可操作的浏览器演示<span class="caption-line"></span><span>你的内容只留在这次体验里</span></aside>
-  <aside id="guide" class="guide"><div class="guide-top"><span id="guide-count">01 / 03</span><button id="skip-guide">跳过引导 ×</button></div><h3 id="guide-title">从一次复制开始</h3><p id="guide-body">点击左侧「复制到许愿树」，看灵感落在枝头。</p><div class="guide-bottom"><div class="guide-dots"><i class="active"></i><i></i><i></i></div><button id="guide-next">下一步 ${icon("arrow")}</button></div></aside>
+  <section class="hero-heading"><p>PasteHistory</p><h1>复制过的，随时找回。</h1></section>
+  <section id="tree-area" aria-label="许愿树剪贴板"><div id="tree-stage"></div><div id="empty" hidden>枝头暂时空了。<br><small>换个关键词，或复制一条新灵感。</small></div><p class="tree-hint">点一张纸签，试试看。</p><div class="tree-controls" inert><div class="search-wrap">${icon("search")}<input id="search" aria-label="搜索剪贴板" placeholder="搜索剪贴板历史…" autocomplete="off"><button id="clear-search" aria-label="清空搜索">×</button></div><div class="tree-toolbar"><button id="previous" aria-label="上一组">‹</button><span id="page-label"></span><button id="next" aria-label="下一组">›</button><span class="toolbar-divider"></span><button id="pin" title="置顶选中纸签" aria-label="置顶选中纸签">${icon("pin")}</button><button id="delete" title="删除选中纸签" aria-label="删除选中纸签">${icon("trash")}</button><button id="paste" class="paste-button">粘贴 ↵</button></div></div></section>
+  <section class="download-area" aria-label="下载 PasteHistory"><button id="download-button" class="download-button">${icon("download")} 下载 Mac 版</button><p>Apple Silicon · macOS 14+</p><small>预览版 · 未经 Apple 公证</small></section>
+  <section id="browser" class="window browser-window minimized" inert aria-label="素材浏览器"><div class="titlebar" data-drag-window="browser">${lights("browser")}<span>${icon("compass")} 复制一点灵感</span></div><div class="browser-body"><h2>从这里，挂上枝头。</h2><div class="sample-tabs" role="tablist" aria-label="素材类型"><button role="tab" aria-selected="true" data-sample="text">文字</button><button role="tab" aria-selected="false" data-sample="image">图片</button><button role="tab" aria-selected="false" data-sample="file">文件</button></div><div id="sample-content"></div><button id="collect" class="collect-button">${icon("copy")} 复制到许愿树</button><button id="more-samples" class="text-link">载入更多示例</button><small>仅在本页演示，不读取系统剪贴板。</small></div></section>
+  <section id="notes" class="window notes-window minimized" inert aria-label="备忘录"><div class="titlebar" data-drag-window="notes">${lights("notes")}<span>备忘录</span><button id="clear-note" aria-label="清空备忘录">${icon("trash")}</button></div><div class="notes-body"><div class="notes-date">今天 · 我的灵感</div><h2>先记下来。</h2><div id="note-editor" role="textbox" aria-label="备忘录内容" contenteditable="true" aria-multiline="true" data-placeholder="在这里写点什么…&#10;也可以把纸签拖进来。"></div></div><footer><span id="note-status">准备接住你的灵感</span><span>仅本次体验</span></footer></section>
  </main>
- <nav class="dock" aria-label="桌面应用"><button data-open="browser" aria-label="打开素材浏览器"><span class="dock-icon safari">${icon("compass")}</span><span class="dock-tooltip">灵感采集</span><i></i></button><button data-open="notes" aria-label="打开备忘录"><span class="dock-icon notes">${icon("note")}</span><span class="dock-tooltip">备忘录</span><i></i></button><div class="dock-separator"></div><button data-open="tree" aria-label="打开许愿树"><span class="dock-icon tree">${icon("tree")}</span><span class="dock-tooltip">许愿树 ⇧⌘V</span><i></i></button><button id="help" aria-label="操作说明"><span class="dock-icon help">${icon("info")}</span><span class="dock-tooltip">操作说明</span></button><button id="reset" aria-label="重置演示"><span class="dock-icon reset">${icon("reset")}</span><span class="dock-tooltip">重新体验</span></button></nav>
+ <footer class="site-footer"><a href="${REPO}" target="_blank" rel="noopener" class="github-link">${icon("github")} GitHub</a><a href="${REPO}" target="_blank" rel="noopener" class="repo-url">github.com/zhaoyuehao/PasteHistory</a><div class="stats"><a id="stars" href="${REPO}/stargazers" target="_blank" rel="noopener">Star <span>—</span></a><span id="downloads">下载次数 <span>—</span></span></div></footer>
+ <nav class="experience-tools" aria-label="体验工具" inert><button data-open="browser" aria-label="打开素材浏览器">${icon("copy")}<span>复制样例</span></button><button data-open="notes" aria-label="打开备忘录">${icon("note")}<span>备忘录</span></button><button data-open="tree" aria-label="打开许愿树">${icon("tree")}<span>许愿树</span></button><button id="reset" aria-label="重置演示">${icon("reset")}<span>重置</span></button></nav>
  <div id="preview" class="preview" hidden aria-label="纸签预览"><div class="preview-hole"></div><div class="preview-heading"><span id="preview-source"></span><button id="close-preview" aria-label="关闭预览">${icon("close")}</button></div><div id="preview-content"></div><footer><button id="real-copy">${icon("copy")} 复制到系统</button><button id="preview-paste">粘贴到备忘录 ↵</button></footer></div>
  <div id="toast" role="status" aria-live="polite"></div>
  <dialog id="info-dialog"><button class="dialog-close" aria-label="关闭说明">${icon("close")}</button><div id="info-content"></div></dialog>
 </div>`;
-let store = new HistoryStore(initialClips());
+let store = new HistoryStore(welcomeClips());
+store.selectedId = null;
+let exploring = false;
+function enterExperience() {
+  exploring = true;
+  $(".desktop").classList.add("exploring");
+  $(".tree-controls").inert = false;
+  $(".experience-tools").inert = false;
+}
 let sampleKind: Clip["kind"] = "text";
-let guideStep = 0;
 let composing = false;
 let keyboardCards = false;
 let noteRange: Range | null = null;
@@ -61,7 +68,8 @@ const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 let previewId: string | null = null;
 const openMotion = new Spring(0),
   px = new Spring(0),
-  py = new Spring(0);
+  py = new Spring(0),
+  previewScale = new Spring(1);
 let previewFrame = 0,
   previewLast = 0;
 let source = { x: 0, y: 0, width: 150 };
@@ -71,25 +79,6 @@ function toast(message: string) {
   $("#toast").classList.add("visible");
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => $("#toast").classList.remove("visible"), 2600);
-}
-function guide(step: number) {
-  guideStep = step;
-  $("#guide").hidden = step > 2;
-  if (step > 2) return;
-  $("#guide-count").textContent = `0${step + 1} / 03`;
-  $("#guide-title").textContent = [
-    "从一次复制开始",
-    "在枝头，找到它",
-    "把灵感放进备忘录",
-  ][step];
-  $("#guide-body").textContent = [
-    "点击素材窗口的「复制到许愿树」，看灵感落在枝头。",
-    "单击任意纸签展开预览。也可以搜索“山野”，找到图片里的文字。",
-    "按回车，或把纸签拖进备忘录。灵感就回到了你想要的地方。",
-  ][step];
-  document
-    .querySelectorAll(".guide-dots i")
-    .forEach((el, i) => el.classList.toggle("active", i === step));
 }
 function displaySample() {
   const host = $("#sample-content");
@@ -123,6 +112,8 @@ function displaySample() {
 function syncInteraction() {
   const mobile = innerWidth < 800;
   const view = $(".desktop").dataset.mobileView;
+  $(".download-area").inert = mobile && view !== "tree";
+  $(".tree-hint").setAttribute("aria-hidden", String(exploring));
   $("#tree-area").inert = !store.visible || (mobile && view !== "tree");
   for (const name of ["browser", "notes"]) {
     const window = $(`#${name}`);
@@ -132,6 +123,7 @@ function syncInteraction() {
 }
 window.addEventListener("resize", syncInteraction);
 function showWindow(name: string) {
+  enterExperience();
   $(".desktop").dataset.mobileView = name;
   if (name === "tree") {
     store.visible = true;
@@ -174,7 +166,8 @@ function collect() {
   showWindow("tree");
   render();
   toast("已收藏到许愿树");
-  if (guideStep === 0) guide(1);
+  $("#browser").classList.add("minimized");
+  syncInteraction();
 }
 function render() {
   tree.render(
@@ -200,13 +193,14 @@ function render() {
 }
 function select(id: string) {
   store.select(id, true);
-  search.focus({ preventScroll: true });
+  enterExperience();
   keyboardCards = true;
   render();
-  if (guideStep === 1) guide(2);
 }
 tree.onSelect = select;
 tree.onDrag = (id) => {
+  enterExperience();
+  showWindow("notes");
   store.select(id);
   store.preview = false;
   keyboardCards = true;
@@ -227,13 +221,16 @@ function updatePreview() {
     );
     const ty = Math.max(48, Math.min(innerHeight - 420, source.y - 60));
     if (preview.hidden) {
-      px.value = tx;
-      py.value = ty;
+      px.value = source.x;
+      py.value = source.y;
+      previewScale.value = source.width / previewWidth;
+      previewScale.velocity = 0;
       px.velocity = 0;
       py.velocity = 0;
     }
-    px.target = tx;
-    py.target = ty;
+    px.target = want ? tx : source.x;
+    py.target = want ? ty : source.y;
+    previewScale.target = want ? 1 : source.width / previewWidth;
     if (previewId !== clip.id) {
       previewId = clip.id;
       $("#preview-source").textContent =
@@ -271,24 +268,24 @@ function animatePreview(now: number) {
   previewFrame = 0;
   const dt = Math.min(0.04, (now - previewLast) / 1000);
   previewLast = now;
-  for (const s of [openMotion, px, py]) {
+  for (const s of [openMotion, px, py, previewScale]) {
     if (reduced.matches) {
       s.value = s.target;
       s.velocity = 0;
     } else s.step(dt);
   }
-  const t = openMotion.value,
-    scale = source.width / previewWidth + (1 - source.width / previewWidth) * t;
-  preview.style.transform = `translate(${source.x + (px.value - source.x) * t}px,${source.y + (py.value - source.y) * t}px) scale(${scale})`;
-  preview.style.opacity = String(Math.min(1, t * 3));
-  if (openMotion.target === 0 && openMotion.settled) {
+  preview.style.transform = `translate(${px.value}px,${py.value}px) scale(${previewScale.value})`;
+  preview.style.opacity = String(
+    Math.max(0, Math.min(1, openMotion.value * 3)),
+  );
+  const settled = [openMotion, px, py, previewScale].every((s) => s.settled);
+  if (openMotion.target === 0 && settled) {
     preview.hidden = true;
     previewId = null;
     tree.render(store.entries, store.selectedId, false, store.visible);
     return;
   }
-  if (!openMotion.settled || !px.settled || !py.settled)
-    previewFrame = requestAnimationFrame(animatePreview);
+  if (!settled) previewFrame = requestAnimationFrame(animatePreview);
 }
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
@@ -340,10 +337,8 @@ function paste(clip = store.selected) {
       minute: "2-digit",
     });
   store.preview = false;
-  store.visible = false;
   render();
-  toast("灵感已落在备忘录里");
-  if (guideStep === 2) guide(3);
+  toast("已粘贴到备忘录");
 }
 async function realCopy() {
   const clip = store.selected;
@@ -360,7 +355,7 @@ function deleteSelected() {
   store.remove();
   previewId = null;
   render();
-  toast("纸签已删除 · 可通过 Dock 重置演示");
+  toast("纸签已删除 · 可重置演示恢复");
 }
 function modal(html: string) {
   $("#info-content").innerHTML = html;
@@ -368,7 +363,7 @@ function modal(html: string) {
 }
 function help() {
   modal(
-    `<span class="eyebrow">A QUIETER PLACE FOR IDEAS</span><h2>一棵树，收好你的灵感。</h2><p>这是浏览器中的可操作演示。文字、图片与文件路径均为示例，你输入的内容只保留在当前页面中。</p><dl><dt>打开许愿树</dt><dd>菜单栏图标 / Dock / ⇧⌘V</dd><dt>选择与预览</dt><dd>↑ ↓ 选择 · 单击或空格展开</dd><dt>粘贴与整理</dt><dd>回车粘贴 · Delete 删除 · 按钮置顶</dd><dt>翻组</dt><dd>Page Up / Page Down 或树下方箭头</dd><dt>关闭</dt><dd>Esc 先关闭预览，再收起许愿树</dd></dl><p class="muted">浏览器占用的快捷键请使用按钮。macOS App 另支持本地 Vision OCR、iCloud 和局域网手机同步；本网页不连接这些服务。</p><a href="${REPO}" target="_blank" rel="noopener" class="dialog-link">查看 GitHub 与完整说明 ↗</a>`,
+    `<span class="eyebrow">A QUIETER PLACE FOR IDEAS</span><h2>一棵树，收好你的灵感。</h2><p>这是浏览器中的可操作演示。文字、图片与文件路径均为示例，你输入的内容只保留在当前页面中。</p><dl><dt>打开许愿树</dt><dd>菜单栏图标 / 许愿树按钮 / ⇧⌘V</dd><dt>选择与预览</dt><dd>↑ ↓ 选择 · 单击或空格展开</dd><dt>粘贴与整理</dt><dd>回车粘贴 · Delete 删除 · 按钮置顶</dd><dt>翻组</dt><dd>Page Up / Page Down 或树下方箭头</dd><dt>关闭</dt><dd>Esc 先关闭预览，再收起许愿树</dd></dl><p class="muted">浏览器占用的快捷键请使用按钮。macOS App 另支持本地 Vision OCR、iCloud 和局域网手机同步；本网页不连接这些服务。</p><a href="${REPO}" target="_blank" rel="noopener" class="dialog-link">查看 GitHub 与完整说明 ↗</a>`,
   );
 }
 $("#download-button").onclick = () => {
@@ -384,6 +379,16 @@ $("#download-button").onclick = () => {
     latestVersion ?? "安装包尚未发布。你现在就可以体验网页中的许愿树。";
 };
 $("#collect").onclick = collect;
+$("#more-samples").onclick = () => {
+  const ids = new Set(store.clips.map((c) => c.id));
+  store.clips.push(...initialClips().filter((c) => !ids.has(c.id)));
+  store.search("");
+  search.value = "";
+  showWindow("tree");
+  $("#browser").classList.add("minimized");
+  render();
+  toast("已载入文字、图片与文件示例");
+};
 document.querySelectorAll<HTMLButtonElement>("[data-sample]").forEach(
   (b) =>
     (b.onclick = () => {
@@ -427,21 +432,12 @@ $("#close-preview").onclick = () => {
   render();
 };
 $("#menu-tree").onclick = () => {
+  enterExperience();
   store.visible = !store.visible;
   if (!store.visible) store.preview = false;
   $(".desktop").dataset.mobileView = "tree";
   render();
 };
-$("#intro-start").onclick = () => {
-  showWindow("browser");
-  guide(0);
-};
-$("#guide-next").onclick = () => {
-  guide(guideStep + 1);
-  if (guideStep === 1) showWindow("tree");
-};
-$("#skip-guide").onclick = () => guide(3);
-$("#help").onclick = help;
 $("#about-button").onclick = help;
 $(".dialog-close").onclick = () => $<HTMLDialogElement>("#info-dialog").close();
 $("#info-dialog").onclick = (e) => {
@@ -454,7 +450,12 @@ $("#clear-note").onclick = () => {
   $("#note-status").textContent = "准备接住你的灵感";
 };
 $("#reset").onclick = () => {
-  store = new HistoryStore(initialClips());
+  store = new HistoryStore(welcomeClips());
+  store.selectedId = null;
+  exploring = false;
+  $(".desktop").classList.remove("exploring");
+  $(".tree-controls").inert = true;
+  $(".experience-tools").inert = true;
   search.value = "";
   note.replaceChildren();
   noteRange = null;
@@ -464,13 +465,13 @@ $("#reset").onclick = () => {
   $("#note-status").textContent = "准备接住你的灵感";
   displaySample();
   document.querySelectorAll<HTMLElement>(".window").forEach((w) => {
-    w.classList.remove("minimized", "expanded");
+    w.classList.remove("expanded");
+    w.classList.add("minimized");
     w.style.removeProperty("left");
     w.style.removeProperty("top");
     w.style.removeProperty("right");
   });
   $(".desktop").dataset.mobileView = "tree";
-  guide(0);
   render();
   toast("已回到最初的桌面");
 };
@@ -569,6 +570,8 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   if (editing || !store.visible) return;
+  const cardTarget =
+    target === document.body || target === search || !!target.closest(".paper");
   if (e.key === "Escape") {
     e.preventDefault();
     if (store.preview) store.preview = false;
@@ -576,7 +579,11 @@ document.addEventListener("keydown", (e) => {
     render();
     return;
   }
-  if (e.metaKey || e.ctrlKey || e.altKey) return; // Preserve browser-level shortcuts.
+  if (e.metaKey || e.ctrlKey || e.altKey || !cardTarget) return;
+  if (
+    ["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Enter", " "].includes(e.key)
+  )
+    enterExperience();
   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
     e.preventDefault();
     keyboardCards = true;
@@ -589,14 +596,14 @@ document.addEventListener("keydown", (e) => {
     render();
   } else if (
     e.key === "Enter" &&
-    (target === search || keyboardCards || target === document.body)
+    (target !== search || keyboardCards || !search.value)
   ) {
     e.preventDefault();
     paste();
   } else if (
     e.key === " " &&
     !e.shiftKey &&
-    (target === search || keyboardCards || target === document.body)
+    (target !== search || keyboardCards)
   ) {
     e.preventDefault();
     store.preview = !store.preview;
@@ -635,5 +642,4 @@ void loadStats(`${import.meta.env.BASE_URL}github-stats.json`).then(
   },
 );
 displaySample();
-guide(0);
 render();

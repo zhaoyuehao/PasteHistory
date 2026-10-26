@@ -51,6 +51,7 @@ export class TreeStage {
   private width = 700;
   private height = 700;
   private paperWidth = 150;
+  private sparse = true;
   private dirty = true;
   private fallback: HTMLImageElement;
   onSelect: (id: string) => void = () => {};
@@ -82,6 +83,8 @@ export class TreeStage {
         throw new Error("Fallback preview");
       this.renderer = new THREE.WebGLRenderer({
         alpha: true,
+        // Retain the settled sculpture while the render loop sleeps.
+        preserveDrawingBuffer: true,
         antialias: true,
         powerPreference: "low-power",
       });
@@ -153,12 +156,12 @@ export class TreeStage {
     this.width = this.host.clientWidth;
     this.height = this.host.clientHeight;
     if (!this.width || !this.height) return;
-    this.paperWidth = Math.max(122, Math.min(156, this.width * 0.235));
+    this.paperWidth = Math.max(86, Math.min(118, this.width * 0.19));
     this.host.style.setProperty("--paper-width", `${this.paperWidth}px`);
     this.camera.aspect = this.width / this.height;
     this.camera.position.z = Math.max(
-      5.25 / Math.tan((19 * Math.PI) / 180),
-      4.1 / (Math.tan((19 * Math.PI) / 180) * this.camera.aspect),
+      4.55 / Math.tan((19 * Math.PI) / 180),
+      3.3 / (Math.tan((19 * Math.PI) / 180) * this.camera.aspect),
     );
     this.camera.updateProjectionMatrix();
     this.camera.updateMatrixWorld();
@@ -195,6 +198,8 @@ export class TreeStage {
     preview: boolean,
     visible: boolean,
   ) {
+    this.sparse = entries.length <= 3;
+    this.host.classList.toggle("sparse-tree", this.sparse);
     this.selected = selected;
     this.preview = preview;
     this.visible = visible;
@@ -208,7 +213,8 @@ export class TreeStage {
         c.el.setAttribute("aria-hidden", "true");
       }
     });
-    entries.forEach((clip, slot) => {
+    entries.forEach((clip, index) => {
+      const slot = this.sparse ? [3, 1, 4][index] : index;
       let c = this.cards.get(clip.id);
       if (!c) {
         const el = document.createElement("button");
@@ -245,10 +251,11 @@ export class TreeStage {
       c.el.setAttribute("aria-pressed", String(clip.id === selected));
       c.el.classList.toggle("is-selected", clip.id === selected);
       c.el.classList.toggle("image-paper", clip.kind === "image");
+      c.el.classList.toggle("file-paper", clip.kind === "file");
       c.el.replaceChildren();
       const meta = document.createElement("span");
       meta.className = "paper-meta";
-      meta.textContent = `${String(slot + 1).padStart(2, "0")} · ${clip.source}${clip.pinned ? " · 已置顶" : ""}`;
+      meta.textContent = `${clip.source}${clip.pinned ? " · 已置顶" : ""}`;
       c.el.append(meta);
       if (clip.image) {
         const img = document.createElement("img");
@@ -261,15 +268,13 @@ export class TreeStage {
         text.textContent = clip.text;
         c.el.append(text);
       }
-      const hint = document.createElement("span");
-      hint.className = "paper-hint";
-      hint.textContent = "单击展开  ·  拖动粘贴";
-      c.el.append(hint);
     });
     this.wake();
   }
   private cardHeight(clip: Clip) {
-    const base = Math.max(55, Math.min(92, (this.height - 70) / 6));
+    const base = this.sparse
+      ? Math.max(95, Math.min(132, this.height * 0.25))
+      : Math.max(55, Math.min(92, (this.height - 70) / 6));
     return base + (clip.kind === "image" ? 12 : 0);
   }
   private layoutCards() {
