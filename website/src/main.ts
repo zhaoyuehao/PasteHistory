@@ -79,13 +79,20 @@ function placeRootLinks() {
     ),
   );
   const y = Math.min(
-    tag.bottom - desktop.top + 12,
+    tag.bottom -
+      desktop.top +
+      (parseFloat(
+        getComputedStyle($(".desktop")).getPropertyValue("--composition-gap"),
+      ) || 12),
     desktop.height - rootLinks.offsetHeight - 16,
   );
   rootLinks.style.left = `${x}px`;
   rootLinks.style.top = `${Math.max(42, y)}px`;
 }
-new ResizeObserver(placeRootLinks).observe(rootLinks);
+new ResizeObserver(() => {
+  placeNativeTree();
+  placeRootLinks();
+}).observe(rootLinks);
 $(".hero-heading").remove();
 $(".tree-hint").remove();
 const notesRail = document.createElement("aside");
@@ -181,47 +188,92 @@ document.addEventListener("focusout", captureInputTarget, true);
 let toastTimer: ReturnType<typeof setTimeout>;
 let downloadUrl: string | null = null;
 let latestVersion: string | null = null;
+// One golden-ratio composition owns window sizes, spacing and placement.
+const PHI = (1 + Math.sqrt(5)) / 2;
 function placeNativeTree() {
-  const stacked = screen.clientWidth < 760;
-  const railWidth = stacked
-    ? 0
-    : Math.min(290, Math.max(196, screen.clientWidth * 0.21));
-  for (const rail of [notesRail, samplesRail])
-    rail.style.width = stacked ? "calc(100% - 32px)" : `${railWidth}px`;
-  const inset = stacked ? 0 : railWidth + 28;
-  const availableWidth = screen.clientWidth - inset * 2;
-  const availableHeight = stacked
-    ? Math.min(720, screen.clientWidth * 1.05)
-    : Math.max(1, screen.clientHeight - 54);
-  const height = 920;
-  const width = 880;
-  const scale = Math.min(
-    1,
-    (availableWidth - 16) / width,
-    availableHeight / height,
-  );
-  const left = inset + (availableWidth - width * scale) / 2;
+  const desktop = $(".desktop");
+  const viewportWidth = desktop.clientWidth;
+  const menuHeight = $(".menubar").offsetHeight;
+  const stacked = viewportWidth < 760;
+  const rootHeight = rootLinks.offsetHeight;
+  const logicalWidth = 880;
+  const logicalHeight = 920;
+  let treeWidth: number;
+  let treeTop: number;
+  let treeLeft: number;
+  let windowWidth: number;
+  let samplesTop: number;
+  let notesTop: number;
+  let samplesLeft: number;
+  let notesLeft: number;
+  let gap: number;
+  if (stacked) {
+    const margin = 16;
+    windowWidth = Math.min(viewportWidth - margin * 2, 377);
+    gap = windowWidth / PHI ** 4;
+    treeWidth = Math.min(viewportWidth - margin * 2, logicalWidth);
+    treeTop = menuHeight + gap;
+    treeLeft = (viewportWidth - treeWidth) / 2;
+    samplesLeft = notesLeft = (viewportWidth - windowWidth) / 2;
+    samplesTop =
+      treeTop +
+      (treeWidth * logicalHeight) / logicalWidth +
+      rootHeight +
+      gap * 2;
+    notesTop = samplesTop + windowWidth * PHI + gap;
+    desktop.style.height = `${notesTop + windowWidth * PHI + gap}px`;
+  } else {
+    desktop.style.removeProperty("height");
+    const viewportHeight = desktop.clientHeight;
+    const availableHeight = viewportHeight - menuHeight;
+    // Columns 1:φ:1; gaps and outer gutters are smaller powers of the same unit.
+    const widthFactor = 2 + PHI + 2 / PHI ** 6 + 2 / PHI ** 3;
+    const treeHeightFactor = (PHI * logicalHeight) / logicalWidth;
+    const heightFactor = treeHeightFactor + 1 / PHI ** 6 + 2 / PHI ** 4;
+    windowWidth = Math.min(
+      viewportWidth / widthFactor,
+      (availableHeight - rootHeight) / heightFactor,
+      logicalWidth / PHI,
+    );
+    gap = windowWidth / PHI ** 6;
+    treeWidth = windowWidth * PHI;
+    const treeHeight = (treeWidth * logicalHeight) / logicalWidth;
+    const groupWidth = windowWidth * 2 + treeWidth + gap * 2;
+    const groupHeight = treeHeight + gap + rootHeight;
+    // The remaining vertical space is split 0.382 above / 0.618 below.
+    treeTop = menuHeight + (availableHeight - groupHeight) / PHI ** 2;
+    samplesLeft = (viewportWidth - groupWidth) / 2;
+    treeLeft = samplesLeft + windowWidth + gap;
+    notesLeft = treeLeft + treeWidth + gap;
+    samplesTop = notesTop = treeTop + (treeHeight - windowWidth * PHI) / 2;
+  }
+  const windowHeight = windowWidth * PHI;
+  for (const [rail, left, top] of [
+    [samplesRail, samplesLeft, samplesTop],
+    [notesRail, notesLeft, notesTop],
+  ] as const) {
+    Object.assign(rail.style, {
+      width: `${windowWidth}px`,
+      height: `${windowHeight}px`,
+      left: `${left}px`,
+      top: `${top}px`,
+      right: "auto",
+    });
+  }
+  desktop.style.setProperty("--composition-gap", `${gap}px`);
   Object.assign($("#tree-area").style, {
-    width: `${width}px`,
-    height: `${height}px`,
-    left: `${left}px`,
-    top: `${42 + (availableHeight - height * scale) / 2}px`,
-    transform: `scale(${scale})`,
+    width: `${logicalWidth}px`,
+    height: `${logicalHeight}px`,
+    left: `${treeLeft}px`,
+    top: `${treeTop}px`,
+    transform: `scale(${treeWidth / logicalWidth})`,
     transformOrigin: "0 0",
   });
   Object.assign(reopenTree.style, {
-    width: `${Math.min(330, availableWidth - 16)}px`,
-    left: `${inset + availableWidth / 2}px`,
-    top: `${42 + availableHeight * 0.44}px`,
+    width: `${Math.min(330, treeWidth - 16)}px`,
+    left: `${treeLeft + treeWidth / 2}px`,
+    top: `${treeTop + (treeWidth * logicalHeight) / logicalWidth / 2}px`,
   });
-  samplesRail.style.top = stacked ? `${availableHeight + 230}px` : "68px";
-  notesRail.style.top = stacked
-    ? `${availableHeight + 230 + samplesRail.offsetHeight + 24}px`
-    : "68px";
-  if (stacked)
-    $(".desktop").style.height =
-      `${availableHeight + 280 + samplesRail.offsetHeight + notesRail.offsetHeight}px`;
-  else $(".desktop").style.removeProperty("height");
 }
 
 placeNativeTree();

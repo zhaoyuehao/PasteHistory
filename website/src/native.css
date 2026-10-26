@@ -1113,3 +1113,62 @@ kbd {
   margin-bottom: 0;
   gap: 9px;
 }
+/* Golden rectangles share one centre line with the native tree viewport. */
+.native-desktop #desktop-main {
+  bottom: 0;
+}
+.native-desktop .notes-rail,
+.native-desktop .samples-rail {
+  max-height: none;
+  overflow: visible;
+}
+.native-desktop .notes-rail .notes-window,
+.native-desktop .samples-rail .browser-window {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.notes-rail .titlebar,
+.samples-rail .titlebar {
+  flex: 0 0 40px;
+}
+.native-desktop .notes-rail .notes-body,
+.native-desktop .samples-rail .browser-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: clamp(12px, 1.5vw, 22px);
+}
+.native-desktop .samples-rail .sample-tabs {
+  flex-shrink: 0;
+  margin-bottom: 14px;
+}
+.native-desktop .samples-rail #sample-content {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+  margin-bottom: 14px;
+  overflow: auto;
+}
+.native-desktop .samples-rail #sample-text {
+  display: block;
+  height: 100%;
+  min-height: 0;
+}
+.native-desktop .samples-rail #sample-content img {
+  height: 100%;
+  max-height: none;
+  object-fit: contain;
+}
+.native-desktop .samples-rail .collect-button {
+  flex-shrink: 0;
+}
+.native-desktop .notes-rail #note-editor {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+.native-desktop .notes-rail .shortcut-guide {
+  flex-shrink: 0;
+}
