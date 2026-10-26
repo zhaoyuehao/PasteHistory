@@ -21,3 +21,13 @@ website/.test-output/
 
 # Cloudflare local cache
 .wrangler/
+
+# Local tools and exploratory design artifacts
+/.workbuddy/
+/Documents
+/design/
+/generated-images/
+/docs/design-spec.html
+/docs/preview-space-look.html
+/docs/ui-spec-v4.html
+/docs/ui-spec.html
