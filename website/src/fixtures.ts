@@ -26,7 +26,12 @@ export function initialClips(): Clip[] {
       text: "把灵感收好，再慢慢展开。\nKeep a little room for wonder.",
       source: "备忘录",
     },
-    { kind: "file", text: "灵感笔记.pdf", source: "访达" },
+    {
+      kind: "file",
+      text: "灵感笔记.pdf",
+      source: "访达",
+      paths: ["/Users/demo/Documents/灵感笔记.pdf"],
+    },
     {
       kind: "text",
       text: "山间的绿，纸上的暖。\n#536D60 · #EEE9DC · #C89E62",
@@ -56,10 +61,4 @@ export function initialClips(): Clip[] {
     created: now - i * 180000,
     pinned: false,
   }));
-}
-
-// The first visit introduces only the three supported clipboard kinds.
-export function welcomeClips(): Clip[] {
-  const clips = initialClips();
-  return [clips[0], clips[1], clips[5]];
 }

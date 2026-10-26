@@ -4,7 +4,7 @@
 
 [English](README.md)
 
-网页体验按 Swift 的许愿树布局与按键分发实现，首屏等比缩放展示。浏览器保留快捷键和系统集成受网页环境限制，详见[网页实现说明](website/README.md#native-interaction-reference)。
+网页体验按 Swift 的许愿树布局与按键分发实现，首屏即显示原生每组八条的完整布局。浏览器保留快捷键和系统集成受网页环境限制，详见[网页实现说明](website/README.md#native-interaction-reference)。
 
 macOS 菜单栏剪贴板历史工具。按 **⇧⌘V** 在桌面许愿树中搜索文本、图片和文件路径，再按回车粘贴到原应用。支持本地 OCR、Mac 间 iCloud 同步和局域网手机访问。
 

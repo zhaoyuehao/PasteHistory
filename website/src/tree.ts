@@ -46,6 +46,7 @@ export class TreeStage {
   private reduced = matchMedia("(prefers-reduced-motion: reduce)");
   layoutEditing = false;
   onSelect: (id: string) => void = () => {};
+  onFocus: () => void = () => {};
   onDrag: (id: string) => void = () => {};
   onDragEnd: () => void = () => {};
   onLayout: () => void = () => {};
@@ -254,6 +255,8 @@ export class TreeStage {
           let dragged = false,
             down: { x: number; y: number } | null = null;
           el.addEventListener("pointerdown", (e) => {
+            if (e.button !== 0 || this.layoutEditing) return;
+            this.onFocus();
             down = { x: e.clientX, y: e.clientY };
             dragged = false;
           });
@@ -383,6 +386,12 @@ export class TreeStage {
         : N.tilts[c.slot % 8] +
           (phone ? 0 : this.direction * 5 * Math.sin(p * Math.PI));
       c.opacity = phone ? 1 : reduced ? clamp(elapsed / N.fade, 0, 1) : p;
+      c.el.style.setProperty(
+        "--body-lines",
+        String(
+          Math.max(1, Math.floor((c.height - 37 - (selected ? 15 : 0)) / 15.5)),
+        ),
+      );
       c.el.classList.toggle("is-selected", selected);
       c.el.setAttribute("aria-pressed", String(selected));
       Object.assign(c.el.style, {

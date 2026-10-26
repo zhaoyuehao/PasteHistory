@@ -29,7 +29,15 @@ export class NativePreview {
   private reduced = matchMedia("(prefers-reduced-motion: reduce)");
   onClosed: () => void = () => {};
   onCollapse: () => void = () => {};
-  constructor(private host: HTMLElement) {
+  constructor(
+    private host: HTMLElement,
+    private bounds = () => ({
+      left: 0,
+      top: 30,
+      right: innerWidth,
+      bottom: innerHeight,
+    }),
+  ) {
     this.face = host.querySelector(".preview-face")!;
     this.compact = host.querySelector(".preview-compact")!;
     let down: { x: number; y: number } | null = null;
@@ -164,13 +172,14 @@ export class NativePreview {
     this.wake();
   }
   private maximum() {
+    const bounds = this.bounds();
     return Math.min(
       2,
       Math.max(
         1,
         Math.min(
-          (innerWidth - 24) / this.base.width,
-          (innerHeight - 54) / this.base.height,
+          (bounds.right - bounds.left - 24) / this.base.width,
+          (bounds.bottom - bounds.top - 24) / this.base.height,
         ),
       ),
     );
@@ -200,18 +209,28 @@ export class NativePreview {
     this.retarget(true, 0.15);
   }
   private readingPose(): Pose {
+    const bounds = this.bounds();
     const fit = Math.min(
       1,
-      (innerWidth - 24) / (this.base.width * this.zoom),
-      (innerHeight - 54) / (this.base.height * this.zoom),
+      (bounds.right - bounds.left - 24) / (this.base.width * this.zoom),
+      (bounds.bottom - bounds.top - 24) / (this.base.height * this.zoom),
     );
     const width = this.base.width * this.zoom * fit,
       height = this.base.height * this.zoom * fit,
       inset = 7 * this.zoom * fit;
     const x =
-      clamp(this.source.x - width / 2, 12, innerWidth - width - 12) + width / 2;
+      clamp(
+        this.source.x - width / 2,
+        bounds.left + 12,
+        bounds.right - width - 12,
+      ) +
+      width / 2;
     const y =
-      clamp(this.source.y - inset, 42, innerHeight - height - 12) + inset;
+      clamp(
+        this.source.y - inset,
+        bounds.top + 12,
+        bounds.bottom - height - 12,
+      ) + inset;
     return { x, y, width, height, angle: 0, inset };
   }
   update(
@@ -243,7 +262,7 @@ export class NativePreview {
         clone.removeAttribute("aria-hidden");
         const width = parseFloat(clone.style.width),
           height = parseFloat(clone.style.height);
-        clone.style.cssText = `position:absolute;left:0;top:0;width:${width}px;height:${height}px;transform:scale(${this.source.width / width});transform-origin:0 0;opacity:1`;
+        clone.style.cssText = `--body-lines:${clone.style.getPropertyValue("--body-lines") || "2"};position:absolute;left:0;top:0;width:${width}px;height:${height}px;transform:scale(${this.source.width / width});transform-origin:0 0;opacity:1`;
         this.compact.replaceChildren(clone);
       }
     }

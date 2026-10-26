@@ -7,6 +7,7 @@ export type Clip = {
   pinned: boolean;
   image?: string;
   ocr?: string;
+  paths?: string[];
 };
 export const PAGE_SIZE = 8;
 export class HistoryStore {
@@ -23,7 +24,9 @@ export class HistoryStore {
     const q = this.query.toLocaleLowerCase().trim();
     return this.clips
       .filter((c) =>
-        `${c.text} ${c.source} ${c.ocr ?? ""}`.toLocaleLowerCase().includes(q),
+        `${c.text} ${c.source} ${c.ocr ?? ""} ${c.paths?.join(" ") ?? ""}`
+          .toLocaleLowerCase()
+          .includes(q),
       )
       .sort(
         (a, b) => Number(b.pinned) - Number(a.pinned) || b.created - a.created,
