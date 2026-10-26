@@ -109,3 +109,63 @@ test("offline uses last successful cache, and no evidence reports unavailable", 
     else Reflect.deleteProperty(globalThis, "localStorage");
   }
 });
+
+test("a download request bypasses fresh statistics cache and selects the newly published installer", async () => {
+  const priorFetch = globalThis.fetch;
+  const priorStorage = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "localStorage",
+  );
+  const old = aggregate(2, [release("v1", "2026-01-01", 5)]);
+  let saved = JSON.stringify(old);
+  let requests = 0;
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: {
+      getItem: () => saved,
+      setItem: (_: string, value: string) => {
+        saved = value;
+      },
+    },
+  });
+  globalThis.fetch = async (input) => {
+    requests++;
+    return String(input).includes("/releases")
+      ? Response.json([
+          release("v2-beta", "2026-02-01", 1),
+          release("v1", "2026-01-01", 5),
+        ])
+      : Response.json({ stargazers_count: 2 });
+  };
+  try {
+    assert.equal((await loadStats("/snapshot")).stats?.version, "v1");
+    assert.equal(requests, 0);
+    const refreshed = await loadStats("/snapshot", { refresh: true });
+    assert.equal(
+      refreshed.stats?.downloadUrl,
+      `${REPO}/releases/download/v2-beta/PasteHistory-v2-beta-arm64.zip`,
+    );
+    assert.equal(refreshed.stale, false);
+    assert.equal(requests, 2);
+    assert.equal(JSON.parse(saved).version, "v2-beta");
+  } finally {
+    globalThis.fetch = priorFetch;
+    if (priorStorage)
+      Object.defineProperty(globalThis, "localStorage", priorStorage);
+    else Reflect.deleteProperty(globalThis, "localStorage");
+  }
+});
+
+test("a newer announcement without an installer does not replace a real download", () => {
+  const newest = { ...release("v3", "2026-03-01", 0), assets: [] };
+  const stats = aggregate(2, [
+    release("v1", "2026-01-01", 3),
+    newest,
+    release("v2", "2026-02-01", 4),
+  ]);
+  assert.equal(stats.version, "v2");
+  assert.equal(
+    stats.downloadUrl,
+    `${REPO}/releases/download/v2/PasteHistory-v2-arm64.zip`,
+  );
+});

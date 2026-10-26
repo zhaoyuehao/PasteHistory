@@ -28,6 +28,30 @@ export function setLocale(value: string) {
 }
 // Simplified Chinese keys, followed by English, Traditional Chinese, Japanese and Korean.
 const messages: Record<string, readonly [string, string, string, string]> = {
+  "正在获取下载…": [
+    "Getting download…",
+    "正在取得下載…",
+    "ダウンロードを取得中…",
+    "다운로드 확인 중…",
+  ],
+  安装包尚未发布: [
+    "Installer not released yet",
+    "安裝檔尚未發布",
+    "インストーラは未公開です",
+    "설치 파일이 아직 공개되지 않았어요",
+  ],
+  下载暂不可用: [
+    "Download unavailable",
+    "下載暫不可用",
+    "ダウンロードできません",
+    "다운로드를 사용할 수 없어요",
+  ],
+  "无法检查更新，将下载已知版本": [
+    "Cannot check for updates; downloading the last known version",
+    "無法檢查更新，將下載已知版本",
+    "更新を確認できないため、取得済みのバージョンをダウンロードします",
+    "업데이트를 확인할 수 없어 마지막으로 확인된 버전을 다운로드합니다",
+  ],
   复制样例: ["Copy samples", "複製範例", "コピーのサンプル", "복사 예제"],
   复制到树: ["Copy to tree", "複製到樹", "木にコピー", "나무에 복사"],
   "拖到这里，或直接粘贴。": [
@@ -117,7 +141,6 @@ const messages: Record<string, readonly [string, string, string, string]> = {
   ],
   预览: ["Preview", "預覽", "プレビュー", "미리보기"],
   纸签预览: ["Clip preview", "紙籤預覽", "紙札のプレビュー", "클립 미리보기"],
-  关闭说明: ["Close details", "關閉說明", "説明を閉じる", "설명 닫기"],
   常用快捷键: [
     "Keyboard shortcuts",
     "常用快捷鍵",
@@ -225,18 +248,6 @@ const messages: Record<string, readonly [string, string, string, string]> = {
     "클립보드 접근이 거부되었지만 데모 메모에는 붙여넣을 수 있어요.",
   ],
   纸签已删除: ["Clip deleted", "紙籤已刪除", "削除しました", "삭제했어요"],
-  "给你的桌面，种一棵树。": [
-    "A little tree for your desktop.",
-    "給你的桌面，種一棵樹。",
-    "デスクトップに、一本の木を。",
-    "데스크톱에 작은 나무 한 그루.",
-  ],
-  "Apple Silicon · macOS 14 或更新版本": [
-    "Apple Silicon · macOS 14 or later",
-    "Apple Silicon · macOS 14 或更新版本",
-    "Apple Silicon · macOS 14 以降",
-    "Apple Silicon · macOS 14 이상",
-  ],
   "预览版，未经 Apple 公证。使用 Apple Development 签名，下载后可能受到 macOS 系统拦截。":
     [
       "Preview, not notarized by Apple. Signed with Apple Development; macOS may block the downloaded app.",
@@ -251,24 +262,6 @@ const messages: Record<string, readonly [string, string, string, string]> = {
       "展開した PasteHistory.app を「アプリケーション」に移動します。他のアプリに貼り付けるには、システム設定でアクセシビリティを許可してください。",
       "압축을 풀고 PasteHistory.app을 응용 프로그램 폴더로 옮기세요. 다른 앱에 붙여넣으려면 시스템 설정에서 손쉬운 사용 권한을 허용하세요.",
     ],
-  "下载 Apple Silicon 预览版 ↓": [
-    "Download Apple Silicon preview ↓",
-    "下載 Apple Silicon 預覽版 ↓",
-    "Apple Silicon プレビュー版をダウンロード ↓",
-    "Apple Silicon 미리보기 다운로드 ↓",
-  ],
-  "查看发布进度 ↗": [
-    "View releases ↗",
-    "查看發布進度 ↗",
-    "リリースを確認 ↗",
-    "릴리스 확인 ↗",
-  ],
-  "安装包尚未发布。你现在就可以体验网页中的许愿树。": [
-    "The installer is not available yet. Try the clipboard tree here in your browser.",
-    "安裝檔尚未發布。你現在就可以體驗網頁中的許願樹。",
-    "インストーラはまだ公開されていません。ブラウザで木を体験できます。",
-    "설치 파일이 아직 공개되지 않았어요. 브라우저에서 클립보드 나무를 체험해 보세요.",
-  ],
   "可拖入 PNG、JPEG、GIF、WebP、AVIF 或 BMP 图片": [
     "Drop PNG, JPEG, GIF, WebP, AVIF or BMP images",
     "可拖入 PNG、JPEG、GIF、WebP、AVIF 或 BMP 圖片",

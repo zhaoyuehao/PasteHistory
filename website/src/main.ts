@@ -45,7 +45,7 @@ $("#app").innerHTML = `
  <main id="desktop-main">
   <section class="hero-heading"><p>PasteHistory</p><h1>复制过的，随时找回。</h1></section>
   <section id="tree-area" aria-label="许愿树剪贴板"><div id="tree-stage"></div><div id="empty" hidden>枝头暂时空了。<br><small>换个关键词，或复制一条新灵感。</small></div><p class="tree-hint">点一张纸签，试试看。</p><div class="tree-controls"><span class="search-cord"></span><div class="search-tag"><span class="search-hole"></span>${icon("search")}<input id="search" aria-label="搜索剪贴板" autocomplete="off" spellcheck="false"><span id="page-label"></span></div></div></section>
-  <section class="download-area" aria-label="下载 PasteHistory"><button id="download-button" class="download-button">${icon("download")} 下载 Mac 版</button><p>Apple Silicon · macOS 14+</p><small>预览版 · 未经 Apple 公证</small></section>
+  <section class="download-area" aria-label="下载 PasteHistory"><a id="download-button" class="download-button" tabindex="0" role="link" aria-disabled="true">${icon("download")}<span id="download-label">下载 Mac 版</span></a><p>Apple Silicon · macOS 14+</p><small>预览版 · 未经 Apple 公证</small><small id="download-state" role="status" aria-live="polite"></small></section>
   <section id="browser" class="window browser-window" aria-label="素材浏览器"><div class="titlebar">${lights()}<span>复制样例</span></div><div class="browser-body"><div class="sample-tabs" role="tablist" aria-label="素材类型"><button role="tab" aria-selected="true" data-sample="text">文字</button><button role="tab" aria-selected="false" data-sample="image">图片</button><button role="tab" aria-selected="false" data-sample="file">文件</button></div><div id="sample-content"></div><button id="collect" class="collect-button">${icon("copy")} 复制到树</button></div></section>
   <section id="notes" class="window notes-window" aria-label="备忘录"><div class="titlebar"><div class="traffic" aria-hidden="true"><span class="red"></span><span class="yellow"></span><span class="green"></span></div><span>备忘录</span><button id="clear-note" aria-label="清空备忘录">${icon("trash")}</button></div><div class="notes-body"><div id="note-editor" role="textbox" aria-label="备忘录内容" contenteditable="true" aria-multiline="true" data-placeholder="拖到这里，或直接粘贴。"></div></div><span id="note-status" class="sr-only" role="status" aria-live="polite"></span></section>
  </main>
@@ -53,7 +53,6 @@ $("#app").innerHTML = `
 
  <div id="preview" class="preview" hidden aria-label="纸签预览"><div class="preview-compact"></div><div class="preview-face"><div class="preview-hole"></div><div class="preview-heading"><span id="preview-source"></span></div><div id="preview-content"></div><div id="preview-date"></div></div></div>
  <div id="toast" role="status" aria-live="polite"></div>
- <dialog id="info-dialog"><button class="dialog-close" aria-label="关闭说明">${icon("close")}</button><div id="info-content"></div></dialog>
 </div>`;
 const store = new HistoryStore(initialClips());
 
@@ -186,8 +185,8 @@ document.addEventListener("focusin", captureInputTarget);
 document.addEventListener("selectionchange", captureInputTarget);
 document.addEventListener("focusout", captureInputTarget, true);
 let toastTimer: ReturnType<typeof setTimeout>;
-let downloadUrl: string | null = null;
-let latestVersion: string | null = null;
+let downloadPending = false;
+let downloadRequested = false;
 // One golden-ratio composition owns window sizes, spacing and placement.
 const PHI = (1 + Math.sqrt(5)) / 2;
 function placeNativeTree() {
@@ -745,22 +744,57 @@ function deleteSelected() {
   render();
   toast("纸签已删除");
 }
-function modal(html: string) {
-  $("#info-content").innerHTML = html;
-  bindLabels($("#info-content"));
-  $<HTMLDialogElement>("#info-dialog").showModal();
-}
-$("#download-button").onclick = () => {
-  modal(
-    `<span class="eyebrow">PASTEHISTORY FOR MAC</span><h2>给你的桌面，种一棵树。</h2><p>Apple Silicon · macOS 14 或更新版本</p><p class="release-warning">预览版，未经 Apple 公证。使用 Apple Development 签名，下载后可能受到 macOS 系统拦截。</p><p>解压后将 PasteHistory.app 放入「应用程序」。首次使用需在系统设置中允许辅助功能，才能粘贴到其他应用。</p><a id="release-link" class="primary-link" target="_blank" rel="noopener"></a><p class="muted" id="release-details"></p>`,
+const statsSnapshot = `${import.meta.env.BASE_URL}github-stats.json`;
+function renderDownload() {
+  const link = $<HTMLAnchorElement>("#download-button");
+  const stats = lastStats?.stats;
+  if (stats?.downloadUrl) link.href = stats.downloadUrl;
+  else link.removeAttribute("href");
+  link.setAttribute(
+    "aria-disabled",
+    String(!stats?.downloadUrl || downloadPending),
   );
-  const link = $<HTMLAnchorElement>("#release-link");
-  link.href = downloadUrl ?? `${REPO}/releases`;
-  link.textContent = downloadUrl
-    ? t("下载 Apple Silicon 预览版 ↓")
-    : t("查看发布进度 ↗");
-  $("#release-details").textContent =
-    latestVersion ?? t("安装包尚未发布。你现在就可以体验网页中的许愿树。");
+  link.setAttribute("aria-busy", String(downloadPending));
+  link.title = stats?.version ?? "";
+  $("#download-label").textContent = t(
+    downloadPending ? "正在获取下载…" : "下载 Mac 版",
+  );
+  $("#download-state").textContent =
+    downloadPending || !lastStats || stats?.downloadUrl
+      ? ""
+      : t(stats ? "安装包尚未发布" : "下载暂不可用");
+}
+$("#download-button").onkeydown = (event) => {
+  if (event.key === "Enter" && !$("#download-button").hasAttribute("href")) {
+    event.preventDefault();
+    $("#download-button").click();
+  }
+};
+$("#download-button").onclick = async (event) => {
+  // Preserve ordinary link behavior for a known attachment when opening a new tab.
+  if (
+    (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) &&
+    lastStats?.stats?.downloadUrl
+  )
+    return;
+  event.preventDefault();
+  if (downloadPending) return;
+  downloadRequested = true;
+  downloadPending = true;
+  renderDownload();
+  try {
+    // Download clicks bypass the statistics cache so newly published versions win.
+    lastStats = await loadStats(statsSnapshot, { refresh: true });
+    renderStats();
+    const url = lastStats.stats?.downloadUrl;
+    if (url) {
+      if (lastStats.stale) toast("无法检查更新，将下载已知版本");
+      window.location.assign(url);
+    }
+  } finally {
+    downloadPending = false;
+    renderDownload();
+  }
 };
 $("#collect").onclick = collect;
 document.querySelectorAll<HTMLButtonElement>("[data-sample]").forEach(
@@ -780,11 +814,6 @@ search.addEventListener("input", () => {
 search.addEventListener("focus", () => (keyboardCards = false));
 search.addEventListener("pointerdown", () => (keyboardCards = false));
 $("#menu-tree").onclick = () => (store.visible ? closeTree() : presentTree());
-$(".dialog-close").onclick = () => $<HTMLDialogElement>("#info-dialog").close();
-$("#info-dialog").onclick = (e) => {
-  if (e.target === $("#info-dialog"))
-    $<HTMLDialogElement>("#info-dialog").close();
-};
 $("#clear-note").onclick = () => {
   clearNotes();
   updateNoteStatus("粘贴目标 · 保留光标位置");
@@ -877,14 +906,7 @@ document.addEventListener("compositionend", () => {
 // PanelController + HistoryKeyboardState dispatch order. Browser/system shortcuts
 // can be intercepted before keydown; all actions also have explicit controls.
 document.addEventListener("keydown", (e) => {
-  if (
-    draggingCard ||
-    composing ||
-    e.isComposing ||
-    e.keyCode === 229 ||
-    $<HTMLDialogElement>("#info-dialog").open
-  )
-    return;
+  if (draggingCard || composing || e.isComposing || e.keyCode === 229) return;
   const target = e.target as HTMLElement;
   const editing =
     target.isContentEditable ||
@@ -1040,6 +1062,7 @@ function clock() {
 clock();
 setInterval(clock, 60000);
 function renderStats() {
+  renderDownload();
   if (!lastStats) return;
   const { stats, stale } = lastStats;
   for (const id of ["stars", "downloads"]) {
@@ -1053,14 +1076,11 @@ function renderStats() {
       : t("GitHub 数据暂不可用");
   }
 }
-void loadStats(`${import.meta.env.BASE_URL}github-stats.json`).then(
-  (result) => {
-    lastStats = result;
-    downloadUrl = result.stats?.downloadUrl ?? null;
-    latestVersion = result.stats?.version ?? null;
-    renderStats();
-  },
-);
+void loadStats(statsSnapshot).then((result) => {
+  if (downloadRequested) return;
+  lastStats = result;
+  renderStats();
+});
 bindLabels($("#app"));
 document.documentElement.lang = locale;
 document.title = `PasteHistory — ${t("复制过的，随时找回。")}`;

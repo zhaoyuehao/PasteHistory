@@ -1172,3 +1172,17 @@ kbd {
 .native-desktop .notes-rail .shortcut-guide {
   flex-shrink: 0;
 }
+.download-button {
+  text-decoration: none;
+  cursor: pointer;
+}
+.download-button[aria-busy="true"] {
+  cursor: progress;
+}
+#download-state {
+  display: block;
+  margin-top: 5px;
+}
+#download-state:empty {
+  display: none;
+}

@@ -827,12 +827,6 @@ dialog::backdrop {
   background: #26384935;
   backdrop-filter: blur(9px);
 }
-.dialog-close {
-  position: absolute;
-  right: 15px;
-  top: 15px;
-  color: #78818a;
-}
 dialog h2 {
   font-size: 25px;
   font-weight: 600;
@@ -871,22 +865,6 @@ dialog dd {
   margin-top: 10px;
   font-size: 12px;
   color: #0071e3;
-}
-.release-warning {
-  padding: 12px 14px;
-  background: #f2ead9;
-  color: #7c6745;
-  border-radius: 7px;
-}
-.primary-link {
-  display: block;
-  margin-top: 22px;
-  padding: 12px;
-  text-align: center;
-  border-radius: 7px;
-  background: #007aff;
-  color: white;
-  font-size: 13px;
 }
 @media (min-height: 1000px) {
   #tree-area {

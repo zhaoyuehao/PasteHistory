@@ -68,6 +68,7 @@ export async function fetchStats(
     const r = await fetcher(url, {
       headers: { Accept: "application/vnd.github+json" },
       signal: AbortSignal.timeout(8000),
+      cache: "no-store",
     });
     if (!r.ok) throw new Error(`GitHub ${r.status}`);
     return r;
@@ -91,6 +92,7 @@ export async function fetchStats(
 }
 export async function loadStats(
   snapshotUrl: string,
+  options: { refresh?: boolean } = {},
 ): Promise<{ stats: Stats | null; stale: boolean }> {
   let cached: Stats | null = null;
   try {
@@ -101,7 +103,11 @@ export async function loadStats(
   } catch {
     /* Storage can be blocked. */
   }
-  if (cached && Date.now() - Date.parse(cached.updatedAt) < 30 * 60 * 1000)
+  if (
+    !options.refresh &&
+    cached &&
+    Date.now() - Date.parse(cached.updatedAt) < 30 * 60 * 1000
+  )
     return { stats: cached, stale: false };
   try {
     const stats = await fetchStats();
