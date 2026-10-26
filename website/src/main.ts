@@ -92,7 +92,7 @@ function displaySample() {
   } else if (sampleKind === "image") {
     const img = document.createElement("img");
     img.src = sampleImage;
-    img.alt = "山野来信，秋日明信片";
+    img.alt = "布莱埃斯湖的湖水、木屋与山峰，Luca Bravo 摄影";
     host.append(img);
   } else {
     const p = document.createElement("div");
@@ -145,14 +145,12 @@ function collect() {
       sampleKind === "text"
         ? $<HTMLTextAreaElement>("#sample-text").value
         : sampleKind === "image"
-          ? "山野来信 · 秋日明信片"
+          ? "山野来信 · 布莱埃斯湖.jpg"
           : "设计灵感 / 秋日色板.fig",
     source: sampleKind === "file" ? "访达" : "Safari",
     created: Date.now(),
     pinned: false,
-    ...(sampleKind === "image"
-      ? { image: sampleImage, ocr: "山野来信 慢一点，灵感会追上来。" }
-      : {}),
+    ...(sampleKind === "image" ? { image: sampleImage } : {}),
   };
   if (!clip.text.trim()) {
     toast("先写下一点灵感吧");
@@ -243,7 +241,9 @@ function updatePreview() {
         img.alt = clip.text;
         content.append(img);
         const label = document.createElement("small");
-        label.textContent = "预置 OCR 示例文字";
+        label.textContent = clip.ocr
+          ? "预置 OCR 示例文字"
+          : "真实摄影 · Luca Bravo · 布莱埃斯湖";
         content.append(label);
       }
       const p = document.createElement("p");
