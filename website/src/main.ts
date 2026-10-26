@@ -753,9 +753,9 @@ function renderDownload() {
     downloadPending ? "正在获取下载…" : "下载 Mac 版",
   );
   $("#download-state").textContent =
-    downloadPending || !lastStats || stats?.downloadUrl
+    downloadPending || !lastStats || stats
       ? ""
-      : t(stats ? "安装包尚未发布" : "下载暂不可用");
+      : t("下载暂不可用");
 }
 $("#download-button").onkeydown = (event) => {
   if (event.key === "Enter" && !$("#download-button").hasAttribute("href")) {

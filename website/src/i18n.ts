@@ -37,12 +37,6 @@ const messages: Record<string, readonly [string, string, string, string]> = {
     "ダウンロードを取得中…",
     "다운로드 확인 중…",
   ],
-  安装包尚未发布: [
-    "Installer not released yet",
-    "安裝檔尚未發布",
-    "インストーラは未公開です",
-    "설치 파일이 아직 공개되지 않았어요",
-  ],
   下载暂不可用: [
     "Download unavailable",
     "下載暫不可用",
