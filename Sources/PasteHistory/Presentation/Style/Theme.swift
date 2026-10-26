@@ -51,8 +51,6 @@ enum Rhythm {
 enum Preview {
     /// 原图解码的最大边长：预览窗就 640 宽，8000px 整图进内存是风扇测试
     static let maxImagePixel: CGFloat = 1600
-    /// 超长文本只渲染前 N 字符，底部亮截断提示
-    static let maxTextLength: Int = 100_000
 }
 
 // MARK: - 语义色
