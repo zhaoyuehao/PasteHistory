@@ -17,7 +17,7 @@ import SwiftUI
 /// 生命周期挂在面板下面：面板收起它一定收起，预览窗从不单独存活。
 /// 位置每次唤出按面板当前位置重算，不记忆——和面板同一条设计原则。
 @MainActor
-final class PreviewPanelController: NSObject, NSWindowDelegate {
+final class PreviewPanelController: NSObject {
     private let model: HistoryViewModel
     private let mediaLoader: PreviewMediaLoader
     private weak var owner: PanelController?
@@ -25,19 +25,6 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     private var hosting: NSHostingController<PreviewContentView>?
     /// 淡出进行中：窗口还没 orderOut，但逻辑上已经算关了
     private var isClosing = false
-    /// 关窗动画的代际号：关到一半又开（连按空格）时，作废在排队的 orderOut
-    private var closeGeneration = 0
-    /// 在途的程序化 frame 动画数。**animator().setFrame 会成对发 live-resize
-    /// 通知**（实测 WILL-START / DID-END 都会来，「程序化 setFrame 不经过
-    /// live resize」只对非动画版本成立），windowDidEndLiveResize 必须忽略它们：
-    /// 关窗缩回面板几何的那次动画会把 previewSize 记成「400 宽 × 面板当前高度」，
-    /// 下一次开窗的目标尺寸就跟着面板的避让收缩一起变——「预览窗口一会大
-    /// 一会小」的根因。连按空格时开/关动画重叠，用计数而不是布尔，
-    /// 全部动画落地后才重新接受用户拖边
-    private var frameAnimationsInFlight = 0
-    /// 预览窗当前尺寸：默认 640×400（黄金矩形），用户拖边后记住（会话内）。
-    /// 程序化 setFrame 不经过 live resize，关窗缩回锚点不会污染它
-    private var previewSize = NSSize(width: Preview.width, height: Preview.height)
     private var sink: Any?
     private let paperFlight = PaperPreviewFlight()
     private let paperFollow = PaperPreviewFollow()
@@ -58,7 +45,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         self.mediaLoader = PreviewMediaLoader(imagesDirectory: model.store.imagesDirectory)
         self.owner = owner
         super.init()
-        // 预览开着时列表发生了删除 / 清空 / 过滤：跟随下一条；列表空了就收窗，
+        // 预览开着时记录发生了删除 / 清空 / 过滤：跟随下一条；记录空了就收窗，
         // 不做孤儿窗口。objectWillChange 是改前通知，转一道主队列再看，读到的一定是改后状态
         sink = model.objectWillChange
             .receive(on: DispatchQueue.main)
@@ -70,87 +57,20 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     }
 
     func open() {
-        guard model.current != nil else { return }   // 列表空不开窗
+        guard model.current != nil else { return }   // 记录空不开窗
         if panel == nil { buildPanel() }
         guard let panel else { return }
-        closeGeneration += 1
         isClosing = false
         panel.ignoresMouseEvents = false
-        let resuming = owner?.previewBesideTree == true && paperFlight.visiblePose != nil && previewedID == model.current?.id
+        let resuming = paperFlight.visiblePose != nil && previewedID == model.current?.id
         if !resuming { configureAppearance() }
-        if owner?.previewBesideTree == true {
-            openFromPaper(panel, continuing: resuming)
-            return
-        }
-
-        // 出现：从面板的几何长出来，就地把面板放大成预览——视线零移动。
-        // （侧边落位会把视线拽到面板旁边，用户明确不要）
-        // 「长出来」是幅度最大的动效：frame 插值本身就是那个在动的东西，
-        // 内容 scale 就不再叠加了，叠两层会过
-        let target = targetFrame()
-        // 「减少动态效果」开启时跳过 frame 插值：直接就位 + 淡入（规范 5.5）
-        if let anchor = owner?.previewAnchorFrame, anchor.width > 0, !Motion.reduceMotion,
-           owner?.previewBesideTree != true {
-            panel.setFrame(anchor, display: false)
-        } else {
-            panel.setFrame(target, display: false)
-        }
-        panel.alphaValue = 0
-        // 不 makeKey：键盘焦点始终留在面板，↑↓ 空格 Esc 全都照旧走面板
-        panel.orderFrontRegardless()
-        frameAnimationsInFlight += 1
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.22
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            if !Motion.reduceMotion {
-                panel.animator().setFrame(target, display: true)
-            }
-            panel.animator().alphaValue = 1
-        } completionHandler: { [weak self] in
-            Task { @MainActor in
-                guard let self else { return }
-                self.frameAnimationsInFlight = max(0, self.frameAnimationsInFlight - 1)
-            }
-        }
+        openFromPaper(panel, continuing: resuming)
     }
 
     func close() {
         guard let panel, panel.isVisible, !isClosing else { return }
-        closeGeneration += 1
-        let generation = closeGeneration
         isClosing = true
-        if owner?.previewBesideTree == true {
-            closeToPaper(panel)
-            return
-        }
-        // 预览窗可能因为点选文字拿到过键盘焦点：关窗前还给面板，
-        // 否则面板看着开着、却没有键窗口，按键全部落空
-        if panel.isKeyWindow, let owner, owner.previewAnchorVisible {
-            owner.makePanelKeyAgain()
-        }
-        // 消失：缩回面板的几何 + 渐隐——开窗是「长出来」，关窗就是「收回去」，
-        // 一来一回是同一趟旅程。普通的缩小消失会读出「弹回」很廉价，
-        // 但缩回「我出发的地方」有语义，跟 Finder Quick Look 收回图标同款
-        frameAnimationsInFlight += 1
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.15
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            // 「减少动态效果」开启时跳过缩回插值，只保留渐隐
-            if let anchor = owner?.previewAnchorFrame, anchor.width > 0, !Motion.reduceMotion,
-           owner?.previewBesideTree != true {
-                panel.animator().setFrame(anchor, display: true)
-            }
-            panel.animator().alphaValue = 0
-        } completionHandler: { [weak self] in
-            Task { @MainActor in
-                guard let self else { return }
-                self.frameAnimationsInFlight = max(0, self.frameAnimationsInFlight - 1)
-                guard self.closeGeneration == generation, let panel = self.panel else { return }
-                panel.orderOut(nil)
-                panel.alphaValue = 1
-                self.isClosing = false
-            }
-        }
+        closeToPaper(panel)
     }
 
     /// Animate a lightweight paper snapshot, not a resizing text layout. The
@@ -169,7 +89,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
             paperMagnification = 1
             gestureMagnification = 1
         }
-        (panel as? PaperPreviewPanel)?.beginPaperPinch()
+        (panel as? PaperPreviewPanel)?.beginPaperInteraction()
         (panel.contentView as? PaperPreviewSurface)?.readingSize = paperSessionSize
         let target = targetFrame()
         let paper = owner?.previewPaper
@@ -198,7 +118,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     }
 
     private func closeToPaper(_ panel: NSPanel) {
-        (panel as? PaperPreviewPanel)?.endPaperPinch()
+        (panel as? PaperPreviewPanel)?.endPaperInteraction()
         let followVelocity = paperFollow.currentVelocity
         paperFollow.cancel()
         paperScaleReturn.cancel()
@@ -241,8 +161,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     }
 
     func closeImmediately() {
-        (panel as? PaperPreviewPanel)?.endPaperPinch()
-        closeGeneration += 1
+        (panel as? PaperPreviewPanel)?.endPaperInteraction()
         paperFlight.cancel()
         paperFollow.cancel()
         paperScaleReturn.cancel()
@@ -257,28 +176,19 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
 
     private func configureAppearance() {
         guard let panel else { return }
-        let paper = owner?.previewBesideTree == true
-        if !paper {
-            (panel.contentView as? PaperPreviewSurface)?.readingSize = nil
-            (panel as? PaperPreviewPanel)?.endPaperPinch()
-        }
-        hosting?.rootView = PreviewContentView(model: model, mediaLoader: mediaLoader, paperStyle: paper)
-        panel.styleMask = paper ? [.borderless, .nonactivatingPanel]
-            : [.titled, .closable, .fullSizeContentView, .nonactivatingPanel, .resizable]
-        panel.minSize = paper ? NSSize(width: 1, height: 1) : NSSize(width: Preview.minWidth, height: Preview.minHeight)
-        panel.isMovable = !paper
-        panel.isMovableByWindowBackground = !paper
-        panel.isOpaque = !paper
-        panel.backgroundColor = paper ? .clear : .windowBackgroundColor
-        panel.appearance = paper ? NSAppearance(named: .aqua) : nil
+        hosting?.rootView = PreviewContentView(model: model, mediaLoader: mediaLoader)
+        panel.styleMask = [.borderless, .nonactivatingPanel]
+        panel.minSize = NSSize(width: 1, height: 1)
+        panel.isMovable = false
+        panel.isMovableByWindowBackground = false
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.appearance = NSAppearance(named: .aqua)
         panel.hasShadow = true
         panel.contentView?.wantsLayer = true
-        panel.contentView?.layer?.backgroundColor = paper ? NSColor.clear.cgColor : nil
-        panel.contentView?.layer?.cornerRadius = paper ? IvoryPaperStyle.radius : 0
-        panel.contentView?.layer?.masksToBounds = paper
-        panel.standardWindowButton(.closeButton)?.isHidden = true
-        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        panel.standardWindowButton(.zoomButton)?.isHidden = true
+        panel.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
+        panel.contentView?.layer?.cornerRadius = IvoryPaperStyle.radius
+        panel.contentView?.layer?.masksToBounds = true
     }
 
     /// Keep the hole on the branch while the paper unfolds below it. Only
@@ -311,7 +221,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     }
 
     func followPaper() {
-        guard owner?.previewBesideTree == true, isVisible, !isClosing,
+        guard isVisible, !isClosing,
               owner?.previewPaper != nil, let panel else { return }
         if paperFlight.visibleFrame != nil {
             // A new page may not have laid out its paper when selection changes.
@@ -331,79 +241,40 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         self.hosting = hosting
         let panel = PaperPreviewPanel(contentRect: .zero, styleMask: [.nonactivatingPanel], backing: .buffered, defer: false)
         panel.contentView = PaperPreviewSurface(document: hosting.view)
+        panel.onCollapse = { [weak self] in self?.close() }
         panel.onMagnify = { [weak self] delta, phase in self?.magnifyPaper(by: delta, phase: phase) ?? false }
-        // 与面板同一套窗口语言：透明标题栏、藏红绿灯、可拖动背景——一张卡片，不是一扇窗户
-        panel.styleMask = [.titled, .closable, .fullSizeContentView, .nonactivatingPanel, .resizable]
-        panel.titleVisibility = .hidden
-        panel.titlebarAppearsTransparent = true
         // 标题不画出来，但读屏要有名字——VO 念「Untitled」等于没念
         panel.title = L10n.previewTitle
-        panel.standardWindowButton(.closeButton)?.isHidden = true
-        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        panel.standardWindowButton(.zoomButton)?.isHidden = true
         panel.isFloatingPanel = true
         // 比面板高一级：同层时 orderFront 的先后才不会互相盖
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.hidesOnDeactivate = false
-        panel.isMovableByWindowBackground = true
         panel.isReleasedWhenClosed = false
-        panel.backgroundColor = NSColor.windowBackgroundColor
-        panel.setContentSize(NSSize(width: Preview.width, height: Preview.height))
-        // 可拖边调整（会话内记住）；下限 400×247 ≈ 默认 ÷ φ²，缩到底仍在黄金系
-        panel.minSize = NSSize(width: Preview.minWidth, height: Preview.minHeight)
-        panel.maxSize = NSSize(width: 940, height: 1200)
-        panel.delegate = self
         self.panel = panel
     }
 
     // MARK: - 落位
 
-    /// 目标几何：**以面板为中心就地放大**——盖在面板上方，与面板同心。
-    /// 用户的视线就在面板上，侧边落位会把视线拽走（用户明确不要）。
-    /// 面板中心拿不到才退当前屏居中。屏幕放不下就收高，不挪中心。
+    /// Expand from the selected paper's pin, clamped to its display.
     private func targetFrame() -> NSRect {
-        let paper = owner?.previewBesideTree == true ? owner?.previewPaper : nil
+        let paper = owner?.previewPaper
         let anchor = paper?.frame ?? owner?.previewAnchorFrame
         let screen = anchor.flatMap { a in
             NSScreen.screens.first { $0.frame.intersects(a) }
         } ?? NSScreen.main ?? NSScreen.screens.first
-        guard let screen else {
-            return NSRect(x: 0, y: 0, width: previewSize.width, height: previewSize.height)
-        }
+        let base = paperSessionSize ?? Self.paperSize(for: nil)
+        guard let screen else { return NSRect(origin: .zero, size: base) }
         let visible = screen.visibleFrame
-        if owner?.previewBesideTree == true {
-            let pin = paper?.paperPin ?? anchor.map { NSPoint(x: $0.midX, y: $0.maxY - IvoryPaperStyle.pinInset) }
-                ?? NSPoint(x: visible.midX, y: visible.midY)
-            let base = paperSessionSize ?? Self.paperSize(for: nil)
-            return Self.paperFrame(pin: pin, visible: visible,
-                size: NSSize(width: base.width * paperMagnification, height: base.height * paperMagnification),
-                magnification: paperMagnification)
-        }
-
-        // 窗高：用户拖边后的尺寸或默认 640×400（黄金矩形）；塞不下收到恰好放得下
-        let wanted = previewSize.height
-        let available = visible.height - Preview.margin * 2
-        let height = min(wanted, max(Preview.minHeight, available))
-        let width = previewSize.width
-
-        // 同心：中心对中心，视线在面板的哪里，预览就在哪里
-        let cx = anchor.map { $0.midX } ?? visible.midX
-        let cy = anchor.map { $0.midY } ?? visible.midY
-        var x = cx - width / 2
-        var y = cy - height / 2
-        // 夹回屏幕内：挪的是边缘，不是中心
-        x = min(max(x, visible.minX + Preview.margin),
-                visible.maxX - Preview.margin - width)
-        y = min(max(y, visible.minY + Preview.margin),
-                visible.maxY - Preview.margin - height)
-        return NSRect(x: x, y: y, width: width, height: height)
+        let pin = paper?.paperPin ?? anchor.map { NSPoint(x: $0.midX, y: $0.maxY - IvoryPaperStyle.pinInset) }
+            ?? NSPoint(x: visible.midX, y: visible.midY)
+        return Self.paperFrame(pin: pin, visible: visible,
+            size: NSSize(width: base.width * paperMagnification, height: base.height * paperMagnification),
+            magnification: paperMagnification)
     }
 
-    // MARK: - 跟随列表
-
     private func magnifyPaper(by delta: CGFloat, phase: NSEvent.Phase) -> Bool {
-        guard owner?.previewBesideTree == true, isVisible, !isClosing,
+        guard isVisible, !isClosing,
               let panel, let base = paperSessionSize else { return false }
         // Let an unfinished unfold complete before taking over its geometry.
         // Consume the gesture so descendants cannot start a second zoom layer.
@@ -447,7 +318,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     private func syncAfterModelChange() {
         if isVisible, previewedID != model.current?.id {
             previewedID = model.current?.id
-            if owner?.previewBesideTree == true { owner?.setExpandedPaper(previewedID) }
+            owner?.setExpandedPaper(previewedID)
             paperReturnPose = owner?.previewPaper?.paperPose ?? paperReturnPose
             // Retarget an unfinished unfold from its visible sheet, never reveal
             // the full-size window at the previous card's location.
@@ -455,35 +326,9 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         }
         guard (panel?.isVisible ?? false), !isClosing else { return }
         guard model.current != nil else {
-            close()   // 列表被删空 / 过滤后无结果：预览不孤儿化
+            close()   // 记录被删空 / 过滤后无结果：预览不孤儿化
             return
         }
         followPaper()
-        // 窗高不随内容形态切换（默认 640×400 黄金矩形，用户拖边后为其尺寸）——
-        // 条目增删后预览跟随下一条，列表空了收窗，窗体几何稳定
-    }
-
-    // MARK: - NSWindowDelegate
-
-    /// 用户拖边结束：记住尺寸（会话内）。程序化 setFrame/setContentSize
-    /// 不经过这里；**但 animator().setFrame 会**（实测成对触发 WILL-START /
-    /// DID-END），所以还要看在途动画计数——开/关窗动画的终点帧不是用户选择，
-    /// 记下来 previewSize 就被面板几何污染（预览一会大一会小的根因）
-    func windowDidEndLiveResize(_ notification: Notification) {
-        guard let panel, notification.object as? NSWindow === panel else { return }
-        guard frameAnimationsInFlight == 0, owner?.previewBesideTree != true else { return }
-        previewSize = panel.frame.size
-    }
-
-    func windowDidResignKey(_ notification: Notification) {
-        guard owner?.previewBesideTree != true else { return }
-        // 焦点的去向要等一拍才问得出（makeKey 交接有时序）：
-        // 用户点回面板不算离开；真去了别的应用，整组一起收
-        DispatchQueue.main.async { [weak self] in
-            guard let self, let panel = self.panel, panel.isVisible, !self.isClosing else { return }
-            if NSApp.keyWindow == nil {
-                self.owner?.dismissAllFromPreview()
-            }
-        }
     }
 }

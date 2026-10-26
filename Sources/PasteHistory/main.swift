@@ -20,12 +20,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         WebSyncServer.shared.configurePage(html: WebSyncPage.html)
         WebSyncServer.shared.start()
         if Settings.shared.hotKeyEnabled {
-            hotKey.register(id: 1, keyCode: kVK_ANSI_C, carbonModifiers: cmdKey | shiftKey) { [weak self] in
+            hotKey.register(id: 1, keyCode: kVK_ANSI_V, carbonModifiers: cmdKey | shiftKey) { [weak self] in
                 Task { @MainActor in self?.togglePanel() }
-            }
-            // ⇧⌘V：不开面板，直接在时间轴上擦。再按一次撤销、换成更早一条
-            hotKey.register(id: 2, keyCode: kVK_ANSI_V, carbonModifiers: cmdKey | shiftKey) {
-                Task { @MainActor in PasteCycler.shared.advance() }
             }
         }
 
@@ -73,20 +69,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !Settings.shared.launchedBefore {
             Settings.shared.launchedBefore = true
             firstRun()
-        }
-
-        // 仅供冒烟测试：--fake-field x,y,w,h 喂一个假输入框（AX 坐标），验证定位几何
-        let argv = ProcessInfo.processInfo.arguments
-        if let i = argv.firstIndex(of: "--fake-field"), i + 1 < argv.count {
-            let n = argv[i + 1].split(separator: ",").compactMap { Double($0) }
-            if n.count == 4 { PanelController.debugField = CGRect(x: n[0], y: n[1], width: n[2], height: n[3]) }
-        }
-
-        // 仅供冒烟对比：--panel-size w,h 临时替换面板外框（默认 400×647 黄金矩形；
-        // --panel-size 520,540 可复现旧框做真机 A/B），不影响默认值
-        if let i = argv.firstIndex(of: "--panel-size"), i + 1 < argv.count {
-            let n = argv[i + 1].split(separator: ",").compactMap { Double($0) }
-            if n.count == 2 { Panel.debugSize = NSSize(width: n[0], height: n[1]) }
         }
 
         // 仅供冒烟测试：--show 启动即打开面板
@@ -199,8 +181,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func togglePanel() {
-        // 打开面板视为「我要找东西」，⇧⌘V 的循环会话到此为止
-        PasteCycler.shared.end()
         PanelController.shared.toggle()
     }
 
@@ -212,7 +192,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = item.button {
             button.image = NSImage(systemSymbolName: "clipboard", accessibilityDescription: L10n.clipboardHistoryAccessibility)
-            button.toolTip = "\(L10n.panelTitle)（⇧⌘C）"
+            button.toolTip = "\(L10n.panelTitle)（⇧⌘V）"
         }
         item.menu = buildMenu()
         statusItem = item
@@ -221,18 +201,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
 
-        let open = NSMenuItem(title: L10n.showClipboard, action: #selector(togglePanel), keyEquivalent: "C")
+        let open = NSMenuItem(title: L10n.showClipboard, action: #selector(togglePanel), keyEquivalent: "V")
         open.keyEquivalentModifierMask = [.command, .shift]
         open.image = Self.menuIcon("clipboard")
         menu.addItem(open)
         let layout = NSMenuItem(title: "调整树布局…", action: #selector(adjustTreeLayout), keyEquivalent: "M")
         layout.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(layout)
-
-        let cycle = NSMenuItem(title: L10n.pasteEarlier, action: #selector(cyclePaste), keyEquivalent: "V")
-        cycle.keyEquivalentModifierMask = [.command, .shift]
-        cycle.image = Self.menuIcon("clock.arrow.circlepath")
-        menu.addItem(cycle)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -248,11 +223,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(syncItem)
 
         menu.addItem(NSMenuItem.separator())
-
-        let anchor = NSMenuItem(title: L10n.anchorPanelToInput, action: #selector(toggleAnchor(_:)), keyEquivalent: "")
-        anchor.state = Settings.shared.anchorPanel ? .on : .off
-        anchor.image = Self.menuIcon("rectangle.bottomthird.inset.filled")
-        menu.addItem(anchor)
 
         let pause = NSMenuItem(title: L10n.pauseRecording, action: #selector(togglePause(_:)), keyEquivalent: "")
         pause.state = Settings.shared.paused ? .on : .off
@@ -309,16 +279,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func togglePause(_ sender: NSMenuItem) {
         Settings.shared.paused.toggle()
         sender.state = Settings.shared.paused ? .on : .off
-    }
-
-    /// 面板跟随输入框：关掉就回到老样子（屏幕中上方居中）
-    @objc private func toggleAnchor(_ sender: NSMenuItem) {
-        Settings.shared.anchorPanel.toggle()
-        sender.state = Settings.shared.anchorPanel ? .on : .off
-    }
-
-    @objc private func cyclePaste() {
-        PasteCycler.shared.advance()
     }
 
     @objc private func retrySync() {

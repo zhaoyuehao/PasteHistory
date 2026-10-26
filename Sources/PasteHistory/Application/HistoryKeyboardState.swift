@@ -4,7 +4,10 @@ struct HistoryKeyboardState {
     private(set) var navigating = false
     mutating func navigate() { navigating = true }
     mutating func edit() { navigating = false }
-    func spacePreviews(query: String, composing: Bool, tree: Bool) -> Bool {
-        !composing && (tree || query.isEmpty)
+    func deleteRemovesCard(query: String, composing: Bool) -> Bool {
+        !composing && (navigating || query.isEmpty)
+    }
+    func spacePreviews(composing: Bool) -> Bool {
+        !composing
     }
 }

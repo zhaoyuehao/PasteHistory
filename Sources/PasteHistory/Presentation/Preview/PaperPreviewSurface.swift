@@ -44,24 +44,89 @@ final class PaperPreviewSurface: NSView {
 /// view recognizers until a click makes it key. Route only this window's events
 /// before that focus gate; the search editor remains the keyboard destination.
 final class PaperPreviewPanel: NSPanel {
+    var onCollapse: (() -> Void)?
+    private var clickOrigin: NSPoint?
+    private var clickGeneration = 0
+    private weak var clickedText: NSTextView?
     var onMagnify: ((CGFloat, NSEvent.Phase) -> Bool)?
-    private var pinchMonitor: Any?
-    var handlesPaperPinch: Bool { pinchMonitor != nil }
+    private var interactionMonitor: Any?
+    var handlesPaperPinch: Bool { interactionMonitor != nil }
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
-    func beginPaperPinch() {
-        guard pinchMonitor == nil else { return }
-        pinchMonitor = NSEvent.addLocalMonitorForEvents(matching: .magnify) { [weak self] event in
-            guard let self, self.routeMagnification(from: event.window, at: event.locationInWindow,
-                                                   delta: event.magnification, phase: event.phase) else { return event }
-            return nil // One owner; do not also zoom a descendant or deliver twice.
+    func beginPaperInteraction() {
+        cancelClick()
+        guard interactionMonitor == nil else { return }
+        interactionMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.magnify, .leftMouseDown, .leftMouseDragged, .leftMouseUp, .scrollWheel, .keyDown]
+        ) { [weak self] event in
+            guard let self else { return event }
+            self.trackClick(event)
+            if event.type == .magnify,
+               self.routeMagnification(from: event.window, at: event.locationInWindow,
+                                       delta: event.magnification, phase: event.phase) {
+                return nil // One zoom owner; do not also magnify a descendant.
+            }
+            return event // Text selection and scrolling keep their native events.
         }
     }
-    func endPaperPinch() {
-        if let pinchMonitor { NSEvent.removeMonitor(pinchMonitor) }
-        pinchMonitor = nil
+    func endPaperInteraction() {
+        cancelClick()
+        if let interactionMonitor { NSEvent.removeMonitor(interactionMonitor) }
+        interactionMonitor = nil
     }
+    private func cancelClick() {
+        clickOrigin = nil
+        clickedText = nil
+        clickGeneration += 1
+    }
+
+    /// Observe the completed click, including mouse-up consumed by NSTextView's
+    /// tracking loop. Never intercept selection drags or scrollbar interaction.
+    func trackClick(_ event: NSEvent) {
+        let point = event.locationInWindow
+        let inside = event.window === self && isVisible && alphaValue > 0 && !ignoresMouseEvents
+            && NSRect(origin: .zero, size: frame.size).contains(point)
+        switch event.type {
+        case .leftMouseDown:
+            cancelClick()
+            guard handlesPaperPinch, inside, event.clickCount == 1,
+                  event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty,
+                  let contentView else { return }
+            let hitPoint = contentView.superview?.convert(point, from: nil) ?? point
+            var hit = contentView.hitTest(hitPoint)
+            while let view = hit {
+                if view is NSControl { return }
+                if let text = view as? NSTextView { clickedText = text }
+                hit = view.superview
+            }
+            clickOrigin = point
+        case .leftMouseDragged:
+            if let origin = clickOrigin,
+               hypot(point.x - origin.x, point.y - origin.y) > 5 { cancelClick() }
+        case .leftMouseUp:
+            guard inside, event.clickCount == 1, let origin = clickOrigin,
+                  hypot(point.x - origin.x, point.y - origin.y) <= 5 else {
+                cancelClick()
+                return
+            }
+            clickOrigin = nil
+            let generation = clickGeneration
+            // Let native selection finish before deciding whether this was a click.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.clickGeneration == generation, self.handlesPaperPinch,
+                      self.isVisible, !self.ignoresMouseEvents,
+                      (self.clickedText?.selectedRange().length ?? 0) == 0 else { return }
+                self.cancelClick()
+                self.onCollapse?()
+            }
+        case .scrollWheel, .magnify, .keyDown:
+            cancelClick()
+        default:
+            break
+        }
+    }
+
     /// Exact window identity and physical window coordinates bound the input.
     /// Never redirect an event from another card, search window, or application.
     func routeMagnification(from source: NSWindow?, at point: NSPoint, delta: CGFloat, phase: NSEvent.Phase) -> Bool {

@@ -27,11 +27,10 @@ enum L10n {
     }
 
     static var treeActions: String { value("记录操作", "記錄操作", "Record Actions") }
+    static var treeUnavailable: String { value("许愿树资源无法加载，请重新安装应用。仍可搜索并按空格预览。", "許願樹資源無法載入，請重新安裝應用程式。仍可搜尋並按空白鍵預覽。", "The tree resource could not load. Reinstall the app. Search and Space to preview remain available.") }
     static var wishTree: String { value("许愿树", "許願樹", "Wish Tree") }
-    static var treeShowList: String { value("列表视图", "列表檢視", "List View") }
     static var treeHint: String { value("拖动旋转 · 点击枝头卡片", "拖動旋轉 · 點擊枝頭卡片", "Drag to rotate · Select a hanging card") }
     static var treeReset: String { value("重置视角", "重設視角", "Reset View") }
-    static var treeUnavailable: String { value("模型加载失败，请切回列表", "模型載入失敗，請切回列表", "Model unavailable. Switch to List View.") }
     static var treePrevious: String { value("上一组", "上一組", "Previous Group") }
     static var treeNext: String { value("下一组", "下一組", "Next Group") }
     static var treePreviousItem: String { value("上一条", "上一條", "Previous") }
@@ -45,11 +44,9 @@ enum L10n {
     static var search: String { value("搜索", "搜尋", "Search") }
     static var clear: String { value("清空", "清除", "Clear") }
     static var showClipboard: String { value("显示剪贴板", "顯示剪貼簿", "Show Clipboard") }
-    static var pasteEarlier: String { value("粘贴更早一条", "貼上較早內容", "Paste Earlier") }
     static var phoneSync: String { value("手机同步", "手機同步", "Phone Sync") }
     static var iCloudUnsynced: String { value("iCloud 未同步", "iCloud 未同步", "iCloud Not Synced") }
     static var pauseRecording: String { value("暂停记录", "暫停記錄", "Pause Recording") }
-    static var anchorPanelToInput: String { value("面板跟随输入框", "面板跟隨輸入框", "Anchor Panel to Input") }
     static var clearHistory: String { value("清空历史…", "清除歷史記錄…", "Clear History…") }
     static var quit: String { value("退出 PasteHistory", "結束 PasteHistory", "Quit PasteHistory") }
     static var clipboardHistoryAccessibility: String { value("剪贴板历史", "剪貼簿歷史", "Clipboard history") }
@@ -79,7 +76,7 @@ enum L10n {
     }
     static var noHistory: String { value("你的剪贴板还没有记忆。", "你的剪貼簿還沒有記錄。", "Your clipboard history is empty.") }
     static var noMatch: String { value("没找到。", "找不到。", "No matches.") }
-    static var copySomething: String { value("⌘C 复制点什么，⇧⌘C 回来", "⌘C 複製內容，再按 ⇧⌘C 回來", "Copy something with ⌘C, then press ⇧⌘C") }
+    static var copySomething: String { value("⌘C 复制点什么，⇧⌘V 回来", "⌘C 複製內容，再按 ⇧⌘V 回來", "Copy something with ⌘C, then press ⇧⌘V") }
     static var tryAnother: String { value("换个词试试", "換個關鍵字試試", "Try another search") }
 
     static var phoneSyncSubtitle: String { value("同一 Wi-Fi 下扫码连接", "在同一 Wi-Fi 下掃描連線", "Scan to connect on the same Wi-Fi") }
@@ -90,7 +87,7 @@ enum L10n {
 
     static var firstRunTitle: String { value("PasteHistory 已在菜单栏运行", "PasteHistory 已在選單列執行", "PasteHistory is running in the menu bar") }
     static var firstRunInfo: String {
-        value("⇧⌘V 直接粘贴上一条，再按一次换成更早一条；要找东西时按 ⇧⌘C 打开面板搜索。\n\n自动粘贴需要在「系统设置 → 隐私与安全性 → 辅助功能」中允许 PasteHistory；未授权时只会把内容复制到剪贴板，自行按 ⌘V 即可。", "⇧⌘V 直接貼上上一筆，再按一次換成更早一筆；要找內容時按 ⇧⌘C 開啟面板搜尋。\n\n自動貼上需要在「系統設定 → 隱私權與安全性 → 輔助使用」中允許 PasteHistory；未授權時只會將內容複製到剪貼簿，請自行按 ⌘V。", "Press ⇧⌘V to paste the previous item, and press it again for an earlier item. Press ⇧⌘C to search your history.\n\nAutomatic pasting requires PasteHistory to be allowed in System Settings → Privacy & Security → Accessibility. Without access, the item is copied to the clipboard so you can press ⌘V yourself.")
+        value("⇧⌘V 打开历史面板搜索，单击卡片预览，回车粘贴，Delete 删除选中的卡片。\n\n自动粘贴需要在「系统设置 → 隐私与安全性 → 辅助功能」中允许 PasteHistory；未授权时只会把内容复制到剪贴板，自行按 ⌘V 即可。", "⇧⌘V 開啟歷史面板搜尋，按一下卡片預覽，Return 貼上，Delete 刪除選取的卡片。\n\n自動貼上需要在「系統設定 → 隱私權與安全性 → 輔助使用」中允許 PasteHistory；未授權時只會將內容複製到剪貼簿，請自行按 ⌘V。", "Press ⇧⌘V to search your history. Click a card to preview, press Return to paste, or Delete to remove the selected card.\n\nAutomatic pasting requires PasteHistory to be allowed in System Settings → Privacy & Security → Accessibility. Without access, the item is copied to the clipboard so you can press ⌘V yourself.")
     }
     static var ok: String { value("好", "好", "OK") }
     static var clearHistoryTitle: String { value("清空全部剪贴板记录？", "清除全部剪貼簿記錄？", "Clear all clipboard history?") }

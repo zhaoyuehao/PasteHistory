@@ -374,7 +374,7 @@ final class IvoryTreePaperView: NSView {
             item.setAccessibilityLabel(entry.title)
             item.setAccessibilityValue(entry.source)
             item.setAccessibilityParent(self)
-            item.action = { [weak self] in self?.onSelect?(entry.id) }
+            item.action = { [weak self] in self?.onPreview?(entry.id) }
             return item
         }
         setAccessibilityElement(false)
@@ -402,7 +402,6 @@ final class TreePaperSurface: NSView, NSDraggingSource {
     private var dragOwner: HistoryPanel?
     private var down = NSPoint.zero
     private var dragged = false
-    private var selectionAtDown: (() -> Void)?
     private var previewAtDown: (() -> Void)?
     override var isFlipped: Bool { true }
     override var isOpaque: Bool { false }
@@ -411,7 +410,7 @@ final class TreePaperSurface: NSView, NSDraggingSource {
     override func accessibilityRole() -> NSAccessibility.Role? { .button }
     override func isAccessibilityElement() -> Bool { true }
     override func accessibilityPerformPress() -> Bool {
-        guard enabled else { return false }; onSelect?(); return true
+        guard enabled else { return false }; onPreview?(); return true
     }
     override func mouseDown(with event: NSEvent) {
         guard enabled else { return }
@@ -420,7 +419,6 @@ final class TreePaperSurface: NSView, NSDraggingSource {
         dragPayload = recordID.flatMap { owner.prepareDrag?($0) }
         down = event.locationInWindow
         dragged = false
-        selectionAtDown = onSelect
         previewAtDown = onPreview
         (window as? TreeInteractionPanel)?.owner?.focusSearch()
     }
@@ -455,12 +453,12 @@ final class TreePaperSurface: NSView, NSDraggingSource {
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
         let owner = dragOwner
         dragOwner = nil
-        downEvent = nil; dragPayload = nil; selectionAtDown = nil; previewAtDown = nil
+        downEvent = nil; dragPayload = nil; previewAtDown = nil
         owner?.finishPaperDrag(operation: operation)
     }
     override func mouseUp(with event: NSEvent) {
-        defer { selectionAtDown = nil; previewAtDown = nil; downEvent = nil; dragPayload = nil }
+        defer { previewAtDown = nil; downEvent = nil; dragPayload = nil }
         guard enabled, window?.isVisible == true, !dragged, bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
-        if event.clickCount == 2 { previewAtDown?() } else { selectionAtDown?() }
+        previewAtDown?()
     }
 }

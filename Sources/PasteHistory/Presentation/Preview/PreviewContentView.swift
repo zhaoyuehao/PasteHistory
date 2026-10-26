@@ -6,18 +6,14 @@ import SwiftUI
 struct PreviewContentView: View {
     @ObservedObject var model: HistoryViewModel
     let mediaLoader: PreviewMediaLoader
-    var paperStyle = false
     private let viewportSession = UUID()
     private struct ViewportID: Hashable { let record: UUID?; let session: UUID }
 
-    /// 切换动画的方向：+1 新内容从下浮入（按 ↓），-1 从上（按 ↑）
-    @State private var direction: Int = 1
-    @State private var contentOffset: CGFloat = 0
     @State private var contentOpacity: Double = 1
     /// 驱动切换动画的内容身份。model 的变化不经过我们的事务，
     /// 切换动画必须由这里的 withAnimation 挂上去
     @State private var displayedID: UUID?
-    /// 边界橡皮筋：与列表共用同一个 bounceTick，两边同步下沉再弹回
+    /// 边界橡皮筋：到达边界时下沉再弹回
     @State private var bounceOffset: CGFloat = 0
     /// 原图（后台降采样解码完）；解码期间先用 DB 缩略图顶着，到了原位替换
     @State private var fullImage: NSImage?
@@ -26,7 +22,6 @@ struct PreviewContentView: View {
     /// 预览图文件字节数（与像素尺寸一样在后台读，body 里不再做磁盘 I/O）
     @State private var fileBytes: Int?
     /// 当前条目对应的预览图文件：`previewImageURL` 里有 fileExists（磁盘 I/O），
-    /// 以前散在 headerMeta / filesContent 里每次 body 都 stat 一遍，
     /// 现在只在切换条目时解析一次
     @State private var imageURL: URL?
 
@@ -40,45 +35,37 @@ struct PreviewContentView: View {
     var body: some View {
         if let item = displayedItem {
             VStack(spacing: 0) {
-                if paperStyle { paperHeader(item) }
-                else { header(item); hairline }
+                paperHeader(item)
                 ZStack {
                     content(item)
-                        // 身份变化驱动切换：旧内容淡出，新内容从按键方向浮入。
-                        // 不用交叉淡化——中间没有任何东西在移动，人眼几乎无感，
-                        // 和选中高亮用 matchedGeometryEffect 是同一个理由
+                        // 切换记录重置阅读视口，整张纸的移动由预览控制器负责。
                         .id(ViewportID(record: displayedID, session: viewportSession))
-                        .offset(y: contentOffset)
                         .opacity(contentOpacity)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
-                // 撞到顶/底：预览内容与面板列表一起被推——像一个整体
+                // 撞到顶/底：预览内容被推后回弹
                 .offset(y: bounceOffset)
-                if paperStyle {
-                    Text(item.createdAt.formatted(date: .abbreviated, time: .shortened))
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color(IvoryPaperStyle.meta))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, Rhythm.xxl).padding(.bottom, Rhythm.xl)
-                }
+                Text(item.createdAt.formatted(date: .abbreviated, time: .shortened))
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color(IvoryPaperStyle.meta))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Rhythm.xxl).padding(.bottom, Rhythm.xl)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .ignoresSafeArea()
-            .background(Color(paperStyle ? IvoryPaperStyle.fill : NSColor.windowBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: paperStyle ? IvoryPaperStyle.radius : 0))
+            .background(Color(IvoryPaperStyle.fill))
+            .clipShape(RoundedRectangle(cornerRadius: IvoryPaperStyle.radius))
             .overlay {
-                if paperStyle {
-                    RoundedRectangle(cornerRadius: IvoryPaperStyle.radius)
-                        .strokeBorder(Color(IvoryPaperStyle.edge), lineWidth: 1.5)
-                        .allowsHitTesting(false)
-                }
+                RoundedRectangle(cornerRadius: IvoryPaperStyle.radius)
+                    .strokeBorder(Color(IvoryPaperStyle.edge), lineWidth: 1.5)
+                    .allowsHitTesting(false)
             }
             .task(id: model.current?.id) {
                 await step(to: model.current)
             }
             .onChange(of: model.bounceTick) { _, _ in
-                // 与 HistoryView 同一套规则：弹簧没停稳不叠推；「减少动态效果」
+                // 弹簧没停稳不叠推；「减少动态效果」
                 // 开启时整段推送跳过。先瞬间推出去，再让弹簧拉回来
                 guard !Motion.reduceMotion, bounceOffset == 0 else { return }
                 bounceOffset = CGFloat(model.bounceDirection) * Motion.bounceDistance
@@ -96,7 +83,6 @@ struct PreviewContentView: View {
             // 首次呈现：直接就位，不做切换动画
             displayedID = item.id
         } else if displayedID != item.id {
-            direction = Self.moveDirection(from: displayedID, to: item.id, in: model.results)
             // 连按压短弹簧，不是关掉——连续移动恰恰最需要阻尼
             // Replace the old view immediately: rapid navigation must not retain several
             // expensive text layouts in an outgoing transition.
@@ -104,15 +90,13 @@ struct PreviewContentView: View {
             transaction.disablesAnimations = true
             withTransaction(transaction) {
                 displayedID = item.id
-                // In tree mode the whole paper already travels between branches.
+                // The whole paper already travels between branches.
                 // A second inner slide would make the contents appear to jerk.
-                contentOffset = (Motion.reduceMotion || paperStyle) ? 0 : CGFloat(direction) * Preview.slideDistance
                 contentOpacity = Motion.reduceMotion ? 0.6 : 1
             }
             await Task.yield()
             guard !Task.isCancelled else { return }
             withAnimation(Motion.selectionFast) {
-                contentOffset = 0
                 contentOpacity = 1
             }
         }
@@ -133,17 +117,9 @@ struct PreviewContentView: View {
         fileBytes = asset.bytes
     }
 
-    private static func moveDirection(from old: UUID?, to new: UUID, in results: [ClipItem]) -> Int {
-        guard let old,
-              let oldIndex = results.firstIndex(where: { $0.id == old }),
-              let newIndex = results.firstIndex(where: { $0.id == new }) else { return 1 }
-        return newIndex > oldIndex ? 1 : -1
-    }
-
     // MARK: - 头部
 
-    /// 标题栏即元信息：类型图标 + 摘要 + 来源·时间·尺寸。
-    /// 这三样正是扫列表时的抓手，大窗里保持在场。切换时头部保持稳定，只有内容在走
+    /// 挂孔下保留纸签序号、置顶状态和来源。
     private func paperHeader(_ item: ClipItem) -> some View {
         VStack(spacing: 0) {
             Circle().fill(Color(IvoryPaperStyle.meta).opacity(0.7))
@@ -160,67 +136,8 @@ struct PreviewContentView: View {
         }
     }
 
-    private func header(_ item: ClipItem) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: Self.kindSymbol(item.kind))
-                .font(.system(size: Icon.action))
-                .foregroundStyle(Palette.meta)
-                .accessibilityLabel(item.kind == .text ? L10n.text : item.kind == .image ? L10n.image : L10n.files)
-            Text(item.summary)
-                .font(.system(size: Scale.body, weight: .medium))
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer(minLength: 12)
-            Text(headerMeta(item))
-                .font(.system(size: Scale.meta))
-                .foregroundStyle(Palette.meta)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-        }
-        .padding(.horizontal, Rhythm.xl)
-        .frame(height: 44)
-        .background(Color(NSColor.controlBackgroundColor))
-    }
-
-    private func headerMeta(_ item: ClipItem) -> String {
-        var parts: [String] = []
-        if let app = item.sourceApp { parts.append(app) }
-        parts.append(RelativeTime.string(from: item.createdAt))
-        switch item.kind {
-        case .text:
-            parts.append(L10n.charCount((item.text ?? "").count))
-        case .image:
-            // 像素尺寸 / 字节数由后台解码回填（originalPixels / fileBytes），
-            // 没到就先不显示，body 里不做磁盘 I/O
-            if let pixels = originalPixels {
-                parts.append(L10n.pixelSize(Int(pixels.width), Int(pixels.height)))
-            }
-            if let bytes = fileBytes {
-                parts.append(Self.formatBytes(bytes))
-            }
-        case .files:
-            parts.append(L10n.fileCount((item.filePaths ?? []).count))
-        }
-        return parts.joined(separator: " · ")
-    }
-
-    private static func kindSymbol(_ kind: ClipKind) -> String {
-        switch kind {
-        case .text: return "doc.text"
-        case .image: return "photo"
-        case .files: return "folder"
-        }
-    }
-
     private static func formatBytes(_ bytes: Int) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
-    }
-
-    /// 全界面唯一一条线（与面板同款）
-    private var hairline: some View {
-        Rectangle()
-            .fill(Color(NSColor.separatorColor).opacity(0.6))
-            .frame(height: 0.5)
     }
 
     // MARK: - 内容
@@ -239,7 +156,7 @@ struct PreviewContentView: View {
     private func textContent(_ item: ClipItem) -> some View {
         let text = item.text ?? ""
         let isTruncated = text.count > Preview.maxTextLength
-        return PreviewTextView(text: String(text.prefix(Preview.maxTextLength)), identity: item.id, paperStyle: paperStyle)
+        return PreviewTextView(text: String(text.prefix(Preview.maxTextLength)), identity: item.id)
         .overlay(alignment: .bottom) {
             if isTruncated { truncatedBar }
         }
@@ -266,7 +183,7 @@ struct PreviewContentView: View {
     private func imageContent(_ item: ClipItem) -> some View {
         PreviewImageDocument(image: fullImage ?? item.thumbnail,
             details: String(ClipPresentation(item: item).imageDetails.prefix(Preview.maxTextLength)),
-            identity: item.id, paperStyle: paperStyle)
+            identity: item.id)
     }
 
     private func filesContent(_ item: ClipItem) -> some View {
@@ -283,7 +200,7 @@ struct PreviewContentView: View {
                                 .padding(.bottom, 12)
                         }
                     }
-                hairline
+                Divider()
             }
             ScrollView {
                 VStack(spacing: 2) {
@@ -300,7 +217,7 @@ struct PreviewContentView: View {
     private var imageStage: some View {
         if let item = displayedItem {
             PreviewImageDocument(image: fullImage ?? item.thumbnail, details: "",
-                                 identity: item.id, paperStyle: paperStyle)
+                                 identity: item.id)
         }
     }
 
@@ -324,7 +241,6 @@ struct PreviewContentView: View {
 private struct PreviewTextView: NSViewRepresentable {
     let text: String
     let identity: UUID
-    var paperStyle = false
     final class Coordinator { var identity: UUID?; var text = "" }
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeNSView(context: Context) -> NSScrollView {
@@ -335,9 +251,9 @@ private struct PreviewTextView: NSViewRepresentable {
         view.isEditable = false
         view.isSelectable = true
         view.drawsBackground = false
-        view.font = .systemFont(ofSize: paperStyle ? 15 : Scale.body)
-        view.textColor = paperStyle ? IvoryPaperStyle.ink : .labelColor
-        view.textContainerInset = NSSize(width: Rhythm.xxl, height: paperStyle ? Rhythm.l : Rhythm.xxl)
+        view.font = .systemFont(ofSize: 15)
+        view.textColor = IvoryPaperStyle.ink
+        view.textContainerInset = NSSize(width: Rhythm.xxl, height: Rhythm.l)
         view.isVerticallyResizable = true
         view.isHorizontallyResizable = false
         view.autoresizingMask = [.width]
@@ -348,11 +264,11 @@ private struct PreviewTextView: NSViewRepresentable {
         return scroll
     }
     func updateNSView(_ scroll: NSScrollView, context: Context) {
-        scroll.allowsMagnification = !paperStyle
+        scroll.allowsMagnification = false
         if let view = scroll.documentView as? NSTextView {
-            view.font = .systemFont(ofSize: paperStyle ? 15 : Scale.body)
-            view.textColor = paperStyle ? IvoryPaperStyle.ink : .labelColor
-            view.textContainerInset = NSSize(width: Rhythm.xxl, height: paperStyle ? Rhythm.l : Rhythm.xxl)
+            view.font = .systemFont(ofSize: 15)
+            view.textColor = IvoryPaperStyle.ink
+            view.textContainerInset = NSSize(width: Rhythm.xxl, height: Rhythm.l)
         }
         guard context.coordinator.identity != identity || context.coordinator.text != text,
               let view = scroll.documentView as? NSTextView else { return }
@@ -434,7 +350,7 @@ private struct PreviewFileRow: View {
         if let icon {
             Image(nsImage: icon)
                 .resizable()
-                .frame(width: 34, height: 34)   // Fib 档，与主列表缩略图同档
+                .frame(width: 34, height: 34)   // Fib 档
         } else {
             Color.clear
                 .frame(width: 34, height: 34)

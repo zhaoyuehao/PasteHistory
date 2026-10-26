@@ -10,7 +10,8 @@ struct TreeUISmoke {
         checkPaperMotion()
         // This harness has its own bundle ID. Disable external sync before any action.
         Settings.shared.iCloudSync = false
-        UserDefaults.standard.set(true, forKey: "showDesktopTree")
+        // Legacy list preference must not restore the removed UI.
+        UserDefaults.standard.set(false, forKey: "showDesktopTree")
         UserDefaults.standard.removeObject(forKey: "desktopTreeScale")
         UserDefaults.standard.removeObject(forKey: "desktopTreeOrigin")
         let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -110,12 +111,11 @@ struct TreeUISmoke {
         let root = HistoryView(
             store: store, model: model,
             onPaste: { pasted = $0.id }, onCopyOnly: { copied = $0.id },
-            onClose: { window.orderOut(nil) }, onPreview: {},
-            onTreeModeChanged: { window.applyPresentation(tree: $0) })
+            onClose: { window.orderOut(nil) }, onPreview: {})
         let hosting = NSHostingView(rootView: root)
         window.title = "PasteHistory — Desktop Tree Preview"
         window.contentView = hosting
-        window.applyPresentation(tree: true)
+        window.configureTree()
         window.makeKeyAndOrderFront(nil)
         app.activate(ignoringOtherApps: true)
         func run(_ seconds: Double = 0.4) { RunLoop.main.run(until: Date().addingTimeInterval(seconds)) }
@@ -143,12 +143,12 @@ struct TreeUISmoke {
         precondition(
             surface.colorAt(x: 0, y: 0)!.alphaComponent < 0.01, "Hosting view must not add an opaque panel")
         var keyboard = HistoryKeyboardState()
-        precondition(keyboard.spacePreviews(query: "two words", composing: false, tree: true))
+        precondition(keyboard.spacePreviews(composing: false))
         keyboard.navigate()
-        precondition(keyboard.spacePreviews(query: "two words", composing: false, tree: true))
-        precondition(!keyboard.spacePreviews(query: "two words", composing: true, tree: true))
+        precondition(keyboard.spacePreviews(composing: false))
+        precondition(!keyboard.spacePreviews(composing: true))
         keyboard.edit()
-        precondition(keyboard.spacePreviews(query: "two words", composing: false, tree: true))
+        precondition(keyboard.spacePreviews(composing: false))
         let first = model.current!.id
         post(.phMoveDown)
         precondition(model.safeSelection == 1)
@@ -160,14 +160,6 @@ struct TreeUISmoke {
         post(.phPin)
         precondition(model.results.first?.id == pinned && model.results.first?.pinned == true)
         post(.phPin)
-        model.select(1); run()
-        post(.phToggleTree)
-        precondition(scene(in: hosting) == nil, "List toggle must remove 3D renderer")
-        precondition(model.safeSelection == 1)
-        precondition(window.isOpaque && window.styleMask.contains(.titled))
-        post(.phToggleTree)
-        precondition(scene(in: hosting) != nil)
-        precondition(!window.isOpaque && !window.styleMask.contains(.titled))
         store.query = "设计草稿"
         run(0.8)
         precondition(!model.results.isEmpty && model.results.allSatisfy { $0.summary.contains("设计草稿") })
@@ -340,9 +332,34 @@ struct TreeUISmoke {
         paperSurface.mouseUp(with: mouse(.leftMouseUp, view: paperSurface, point: middle))
         run(0.2)
         precondition(controller.panelModel.current?.id == clickedID, "Filtered paper click must select")
+        precondition(controller.isPreviewVisible, "A single paper click must open preview")
+        run(0.2)
+        let clickablePreview = NSApp.windows.first { $0.isVisible && $0.title == L10n.previewTitle } as! PaperPreviewPanel
+        let previewFace = clickablePreview.contentView!
+        let previewCenter = NSPoint(x: previewFace.bounds.midX, y: previewFace.bounds.midY)
+        let previewDragEnd = NSPoint(x: previewCenter.x + 30, y: previewCenter.y)
+        clickablePreview.trackClick(mouse(.leftMouseDown, view: previewFace, point: previewCenter))
+        clickablePreview.trackClick(mouse(.leftMouseDragged, view: previewFace, point: previewDragEnd))
+        clickablePreview.trackClick(mouse(.leftMouseUp, view: previewFace, point: previewDragEnd))
+        run(0.1)
+        precondition(controller.isPreviewVisible, "Selecting text by dragging must not collapse preview")
+        let previewText = zoomViews(in: previewFace).first!.documentView as! NSTextView
+        let textPoint = NSPoint(x: 30, y: 15)
+        clickablePreview.trackClick(mouse(.leftMouseDown, view: previewText, point: textPoint))
+        previewText.setSelectedRange(NSRange(location: 0, length: 1))
+        clickablePreview.trackClick(mouse(.leftMouseUp, view: previewText, point: textPoint))
+        run(0.1)
+        precondition(controller.isPreviewVisible, "Even a short text selection must keep preview open")
+        previewText.setSelectedRange(NSRange(location: 0, length: 0))
+        clickablePreview.trackClick(mouse(.leftMouseDown, view: previewFace, point: previewCenter))
+        clickablePreview.trackClick(mouse(.leftMouseUp, view: previewFace, point: previewCenter))
+        run(0.3)
+        precondition(!controller.isPreviewVisible && controller.isVisible,
+                     "Clicking the expanded paper must collapse it without dismissing the tree")
+        precondition(controller.panelModel.current?.id == clickedID && controller.previewPaper?.alphaValue == 1,
+                     "Click collapse must restore the same source card")
         _ = key(49, chars: " ")
         run(0.3)
-        precondition(controller.isPreviewVisible, "Preview missing: tree visible=\(controller.isVisible), front=\(NSWorkspace.shared.frontmostApplication?.localizedName ?? "nil")")
         _ = key(49, chars: " ")
         run(0.25)
         let sourcePaper = controller.previewPaper!.frame
@@ -535,6 +552,14 @@ struct TreeUISmoke {
             && abs(textZoom.documentVisibleRect.width - textWidth) < 1,
             "Text keeps its logical layout; there is no second document zoom")
         precondition(NSApp.keyWindow === keyBeforePinch, "Pinch must not require or steal keyboard focus")
+        let enlargedText = textZoom.documentView as! NSTextView
+        let enlargedTextPoint = NSPoint(x: 30, y: 15)
+        zoomPanel.trackClick(mouse(.leftMouseDown, view: enlargedText, point: enlargedTextPoint))
+        enlargedText.setSelectedRange(NSRange(location: 0, length: 1))
+        zoomPanel.trackClick(mouse(.leftMouseUp, view: enlargedText, point: enlargedTextPoint))
+        run(0.1)
+        precondition(controller.isPreviewVisible, "Text selection must remain protected after paper scaling")
+        enlargedText.setSelectedRange(NSRange(location: 0, length: 0))
         let scaledPin = controller.previewPaper!.paperPin!
         let scaledTarget = PreviewPanelController.paperFrame(pin: scaledPin, visible: screen.visibleFrame,
             size: expanded.frame.size, magnification: 1.5)
@@ -699,6 +724,7 @@ struct TreeUISmoke {
         currentPaper.mouseUp(with: mouse(.leftMouseUp, view: currentPaper, point: moved))
         run(0.1)
         precondition(treeWindow.frame == originalFrame)
+        precondition(!controller.isPreviewVisible, "Dragging must not also trigger click preview")
         treeWindow.prepareDrag = prepareDrag
         // Freeze the source while the native session owns it. A result refresh
         // during dragging must be reconciled even after rendering has settled.
@@ -759,6 +785,30 @@ struct TreeUISmoke {
         precondition(!controller.layoutEditing && controller.isVisible)
         store.query = ""
         run(0.5)
+        // Delete follows card navigation, but search editing and IME keep their key.
+        let deleteCandidate = controller.panelModel.current!.id
+        precondition(key(51) == nil)
+        run(0.3)
+        precondition(store.syncDatabase.get(id: deleteCandidate) == nil, "Plain Delete removes the selected card")
+        store.query = "设计"
+        run(0.6)
+        _ = key(0, chars: "a") // text input returns keyboard routing to search
+        let searchCount = store.totalCount
+        precondition(key(51) != nil && key(117) != nil, "Delete must edit a nonempty search query")
+        precondition(store.totalCount == searchCount)
+        _ = key(125)
+        let filteredCandidate = controller.panelModel.current!.id
+        let searchWindow = treeWindow.islands.first { $0.role == .search }!
+        treeWindow.focusSearch()
+        let editor = searchWindow.firstResponder as! NSTextView
+        editor.setMarkedText("拼", selectedRange: NSRange(location: 1, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
+        precondition(key(51) != nil && store.totalCount == searchCount, "IME Delete cannot remove a card")
+        editor.unmarkText()
+        precondition(key(117) == nil)
+        run(0.3)
+        precondition(store.syncDatabase.get(id: filteredCandidate) == nil, "Forward Delete removes the navigated search result")
+        store.query = ""
+        run(0.5)
         // Render the native display and bounded child surfaces into one synthetic-data artifact.
         let rendered = NSImage(size: treeWindow.frame.size)
         rendered.lockFocus()
@@ -777,25 +827,14 @@ struct TreeUISmoke {
         rendered.unlockFocus()
         let bitmap = NSBitmapImageRep(data: rendered.tiffRepresentation!)!
         try bitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: ".build/tree-boundary-preview.png"))
-        // The shared hosting container must also retain the ordinary list preview.
-        _ = key(37, chars: "l", mods: [.command])
-        run(0.4)
-        _ = key(49, chars: " ")
+        let selectedBeforeShortcut = controller.panelModel.current?.id
+        precondition(key(37, chars: "l", mods: [.command]) != nil)
         run(0.3)
-        precondition(controller.isPreviewVisible && !zoomPanel.magnifyPaper(by: 0.5, phase: .began),
-                     "Whole-paper gestures belong only to tree previews")
-        let listSurface = expanded.contentView as! PaperPreviewSurface
-        precondition(listSurface.readingSize == nil && abs(listSurface.bounds.width - listSurface.frame.width) < 1,
-                     "List previews must not inherit the tree's scaled coordinate system")
-        precondition(!zoomPanel.handlesPaperPinch, "List previews must not intercept native document pinch")
-        precondition(zoomViews(in: expanded.contentView!).allSatisfy { $0.allowsMagnification },
-                     "List previews retain their native document magnification")
-        _ = key(53)
-        run(0.3)
-        _ = key(37, chars: "l", mods: [.command])
-        run(0.4)
+        precondition(scene(in: treeWindow.contentView!) != nil && !treeWindow.isOpaque,
+                     "The removed list shortcut must leave the tree visible")
+        precondition(controller.panelModel.current?.id == selectedBeforeShortcut)
         print(
-            "PASS: borderless transparent key window, filtered search, packaged resource, shared selection/copy/paste/pin/delete, list/tree toggle, page selection, lazy loading, empty search, query reset, compact panel, OS click-through, bounded paper/search windows, drag payload round trips, paper-origin preview and interruptible return, explicit move/size mode, clean dismissal"
+            "PASS: borderless transparent key window, filtered search, packaged resource, shared selection/copy/paste/pin/delete, tree-only presentation with legacy preferences, page selection, lazy loading, empty search, query reset, compact panel, OS click-through, bounded paper/search windows, drag payload round trips, paper-origin preview and interruptible return, explicit move/size mode, clean dismissal"
         )
         fflush(stdout)
         if CommandLine.arguments.contains("--interactive") {

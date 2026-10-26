@@ -27,8 +27,7 @@ struct IvoryTreeView: View {
         .accessibilityValue(model.current?.summary ?? L10n.noMatch)
         .onReceive(NotificationCenter.default.publisher(for: .phResetTree)) { _ in resetToken += 1 }
         .onChange(of: unavailable) { _, failed in
-            // Preserve access to history if the resource cannot be loaded.
-            if failed { NotificationCenter.default.post(name: .phToggleTree, object: nil) }
+            if failed { Toast.show(L10n.treeUnavailable, duration: 5) }
         }
         .onAppear { loadMoreIfNeeded() }
         .onChange(of: model.safeSelection) { _, _ in loadMoreIfNeeded() }
