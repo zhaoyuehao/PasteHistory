@@ -13,7 +13,17 @@ struct TreeUISmoke {
         // Legacy list preference must not restore the removed UI.
         UserDefaults.standard.set(false, forKey: "showDesktopTree")
         UserDefaults.standard.removeObject(forKey: "desktopTreeScale")
-        UserDefaults.standard.removeObject(forKey: "desktopTreeOrigin")
+        // A legacy saved position must never override centered presentation.
+        UserDefaults.standard.set("{9999, -9999}", forKey: "desktopTreeOrigin")
+        for available in [NSRect(x: 0, y: 25, width: 1440, height: 850),
+                          NSRect(x: -1920, y: -200, width: 1920, height: 1080),
+                          NSRect(x: 1440, y: 900, width: 800, height: 600)] {
+            for scale in [0.82, 1.0, 1.14] {
+                let frame = PanelController.centeredTreeFrame(in: available, scale: scale)
+                precondition(abs(frame.midX - available.midX) < 0.01 && abs(frame.midY - available.midY) < 0.01)
+                precondition(available.contains(frame), "Entire tree must fit on small and offset screens")
+            }
+        }
         let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
             "ivory-ui-" + UUID().uuidString)
         let store = ClipStore(directory: temporary)
@@ -200,6 +210,12 @@ struct TreeUISmoke {
         // tree, keep the full silhouette, and never replay individual folds.
         let entranceTree = NSApp.windows.first { $0 is HistoryPanel && $0.isVisible } as! HistoryPanel
         let restingFrame = entranceTree.frame
+        func assertCentered(_ frame: NSRect) {
+            let available = (NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main)!.visibleFrame
+            precondition(abs(frame.midX - available.midX) < 1 && abs(frame.midY - available.midY) < 1,
+                         "Every presentation must center the whole tree on the current screen")
+        }
+        assertCentered(restingFrame)
         controller.hide(restoreFocus: false)
         run(0.2)
         controller.show()
@@ -782,6 +798,7 @@ struct TreeUISmoke {
                      "Layout invoked while hidden must still create controls")
         controller.endTreeLayout()
         run(0.3)
+        assertCentered(treeWindow.frame)
         precondition(!controller.layoutEditing && controller.isVisible)
         store.query = ""
         run(0.5)
