@@ -92,6 +92,24 @@ const messages: Record<string, readonly [string, string, string, string]> = {
     "クリップボードの木",
     "클립보드 나무",
   ],
+  移动端剪贴板历史: [
+    "Clipboard history on your phone",
+    "手機上的剪貼簿歷史",
+    "スマホのクリップボード履歴",
+    "휴대폰 클립보드 기록",
+  ],
+  "自动保存你复制过的文字、图片和文件，随时搜索、复制，或拖到备忘录。": [
+    "Keep copied text, images and files ready to search, copy or drag into Notes.",
+    "保存複製過的文字、圖片和檔案，隨時搜尋、複製，或拖到備忘錄。",
+    "コピーしたテキスト、画像、ファイルを保存し、検索、コピー、メモへドラッグできます。",
+    "복사한 텍스트, 이미지, 파일을 저장해 검색하거나 복사하고 메모로 끌어올 수 있어요.",
+  ],
+  "点一下搜索，长按纸签拖到备忘录": [
+    "Tap Search, or long-press a paper and drag it to Notes",
+    "點一下搜尋，長按紙籤拖到備忘錄",
+    "検索をタップ、または紙を長押ししてメモへドラッグ",
+    "검색을 누르거나 종이를 길게 눌러 메모로 끌어오세요",
+  ],
   "枝头暂时空了。": [
     "No clips on these branches.",
     "枝頭暫時空了。",
@@ -110,6 +128,7 @@ const messages: Record<string, readonly [string, string, string, string]> = {
     "クリップボードを検索",
     "클립보드 검색",
   ],
+  搜索: ["Search", "搜尋", "検索", "검색"],
   "下载 PasteHistory": [
     "Download PasteHistory",
     "下載 PasteHistory",
