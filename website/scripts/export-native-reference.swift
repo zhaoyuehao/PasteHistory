@@ -46,6 +46,6 @@ let shot = renderer.snapshot(atTime:0,with:CGSize(width:1760,height:1840),antial
 let bitmap = NSBitmapImageRep(data:shot.tiffRepresentation!)!
 try bitmap.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent("tree-native.png"))
 func xyz(_ p:SCNVector3)->[CGFloat] {[p.x,p.y,p.z]}
-let data:[String:Any] = ["source":"Sources/PasteHistory/Presentation/Tree/IvoryTreeScene.swift", "referenceCommit":"0765399", "width":880,"height":920,"cameraZ":distance,"anchors":anchors.map {xyz(sculpture.convertPosition($0,to:scene.rootNode))},"root":xyz(sculpture.convertPosition(SCNVector3(0,0.25,0),to:scene.rootNode))]
+let data:[String:Any] = ["source":"Sources/PasteHistory/Presentation/Tree/IvoryTreeScene.swift", "referenceCommit":"ivory-v2", "width":880,"height":920,"cameraZ":distance,"anchors":anchors.map {xyz(sculpture.convertPosition($0,to:scene.rootNode))},"root":xyz(sculpture.convertPosition(SCNVector3(0,0.25,0),to:scene.rootNode))]
 try JSONSerialization.data(withJSONObject:data,options:[.prettyPrinted,.sortedKeys]).write(to:output.appendingPathComponent("native-tree.json"))
 print("Exported native SceneKit pixels and nine surface anchors")
