@@ -1,8 +1,36 @@
 import AppKit
 
-/// Drag pasteboards are independent from the system clipboard. Only copy is
-/// advertised, including when Option/Command modifiers change during the drag.
+/// Drag pasteboards are independent from the system clipboard. External drops
+/// advertise copy, while the app's private card type also enables merge drops.
 enum ClipDragPayload {
+    /// Private drag type used when a history card is dropped onto another
+    /// history card. Standard pasteboard representations remain alongside it
+    /// so dragging into another app continues to copy the record as before.
+    static let mergeType = NSPasteboard.PasteboardType("com.verdent.pastehistory.merge-card")
+
+    static func writersWithMergeType(_ writers: [NSPasteboardWriting], id: UUID) -> [NSPasteboardWriting] {
+        writers.map { MergeWriter(base: $0, id: id) }
+    }
+
+    private final class MergeWriter: NSObject, NSPasteboardWriting {
+        let base: NSPasteboardWriting
+        let id: UUID
+
+        init(base: NSPasteboardWriting, id: UUID) {
+            self.base = base
+            self.id = id
+        }
+
+        func writableTypes(for pasteboard: NSPasteboard) -> [NSPasteboard.PasteboardType] {
+            base.writableTypes(for: pasteboard) + [mergeType]
+        }
+
+        func pasteboardPropertyList(forType type: NSPasteboard.PasteboardType) -> Any? {
+            if type == mergeType { return id.uuidString }
+            return base.pasteboardPropertyList(forType: type)
+        }
+    }
+
     private static func pruneOldExports(in directory: URL) {
         DispatchQueue.global(qos: .utility).async {
             let manager = FileManager.default

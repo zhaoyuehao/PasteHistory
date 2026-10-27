@@ -15,6 +15,7 @@ final class HistoryPanel: NSPanel {
     }
     var layoutEditing = false
     var prepareDrag: ((UUID) -> (() -> [NSPasteboardWriting]?)?)?
+    var mergeCards: ((UUID, UUID) -> Bool)?
     var onDragUnavailable: (() -> Void)?
     var onDragBegan: (() -> Void)?
     var onDragEnded: ((NSDragOperation) -> Void)?

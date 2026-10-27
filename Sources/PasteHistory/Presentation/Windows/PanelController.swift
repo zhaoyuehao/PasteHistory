@@ -215,11 +215,29 @@ final class PanelController: NSObject, NSWindowDelegate {
             let directory = self.store.imagesDirectory
             return { ClipDragPayload.writers(for: item, imagesDirectory: directory) }
         }
+        panel.mergeCards = { [weak self] sourceID, targetID in
+            guard let self else { return false }
+            let merged = self.store.merge(primaryID: targetID, secondaryID: sourceID)
+            if merged {
+                Toast.show(L10n.mergeSucceeded, duration: 2)
+                self.panelModel.rebuildResults()
+                if let index = self.panelModel.results.firstIndex(where: { $0.id == targetID }) {
+                    self.panelModel.select(index)
+                }
+            } else {
+                Toast.show(L10n.mergeUnsupported, duration: 2.5)
+            }
+            return merged
+        }
         panel.onPaperLayout = { [weak self] in self?.previewStorage?.followPaper() }
         panel.onDragUnavailable = { Toast.show("原内容不可读取，无法拖出", duration: 2) }
         panel.onDragBegan = { [weak self] in self?.preview.closeImmediately() }
         panel.onDragEnded = { [weak self] operation in
             guard let self else { return }
+            if operation == .link {
+                self.panel?.focusSearch()
+                return
+            }
             let external = NSWorkspace.shared.frontmostApplication?.processIdentifier != ProcessInfo.processInfo.processIdentifier
             if !operation.isEmpty || external { self.hide(restoreFocus: false) }
             else { self.panel?.focusSearch() }
