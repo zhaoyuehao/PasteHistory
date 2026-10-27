@@ -32,7 +32,7 @@ final class PaperFaceLayers {
     }
     func place(_ pose: PaperPose, canvas: NSRect, expansion: CGFloat,
                compactColor: NSColor = IvoryPaperStyle.fill, backingScale: CGFloat = 2,
-               liveReading: Bool = false) {
+               liveReading: Bool = false, opening: Bool = true) {
         CATransaction.begin(); CATransaction.setDisableActions(true)
         root.frame = NSRect(origin: .zero, size: canvas.size)
         let size = pose.size
@@ -42,7 +42,7 @@ final class PaperFaceLayers {
         paper.setAffineTransform(CGAffineTransform(rotationAngle: pose.angle))
         let scale = pose.inset/IvoryPaperStyle.pinInset
         paper.cornerRadius = IvoryPaperStyle.radius*scale
-        let blend = liveReading ? Self.blend(expansion) : 0
+        let blend = liveReading ? Self.blend(expansion, opening: opening) : 0
         paper.backgroundColor = (compactColor.blended(withFraction: blend, of: IvoryPaperStyle.fill)
             ?? IvoryPaperStyle.fill).cgColor
         compact.isHidden = compactImage == nil
@@ -77,10 +77,13 @@ final class PaperFaceLayers {
             .max(by: { $0.pixelsWide < $1.pixelsWide }) { return bitmap.cgImage }
         return image.cgImage(forProposedRect: nil, context: nil, hints: nil)
     }
-    static func blend(_ t: CGFloat) -> CGFloat {
-        // Keep the compact face during the initial travel, then reveal the live
-        // document through the remaining expansion instead of finishing at 85%.
-        let u = min(1, max(0, (t-Motion.paperContentRevealStart)/(1-Motion.paperContentRevealStart)))
+    static func blend(_ t: CGFloat, opening: Bool = true) -> CGFloat {
+        // One document on the paper: the handover happens where the sheet is
+        // either still near card size (opening) or still about half open
+        // (closing), never in the frames where it is already at rest.
+        let start = opening ? Motion.paperContentRevealStart : Motion.paperContentHideStart
+        let span = opening ? Motion.paperContentRevealWindow : Motion.paperContentHideWindow
+        let u = min(1, max(0, (t-start)/span))
         return u*u*(3-2*u)
     }
 }

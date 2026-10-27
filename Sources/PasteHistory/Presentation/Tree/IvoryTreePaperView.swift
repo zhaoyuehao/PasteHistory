@@ -113,13 +113,20 @@ final class IvoryTreePaperView: NSView {
             if let cached, cached.entry == card.entry, cached.size == faceSize, cached.selected == selected {
                 image = cached.image
             } else {
-                image = NSImage(size: faceSize)
+                // Rasterize at the display's pixel density: the same face is
+                // enlarged while a preview opens, and a 1x bitmap turns to mush.
+                let density = min(2, max(1, window?.backingScaleFactor ?? 2))
+                image = NSImage(size: NSSize(width: faceSize.width*density, height: faceSize.height*density))
                 image.lockFocusFlipped(true)
-                NSGraphicsContext.current?.cgContext.translateBy(x: -card.rect.minX, y: -card.rect.minY)
+                if let context = NSGraphicsContext.current?.cgContext {
+                    context.scaleBy(x: density, y: density)
+                    context.translateBy(x: -card.rect.minX, y: -card.rect.minY)
+                }
                 var faceCard = card
                 faceCard.rect.size = faceSize
                 drawPaper(faceCard)
                 image.unlockFocus()
+                image.size = faceSize
                 faceCache[id] = (card.entry, faceSize, selected, image)
             }
             panel.onReleasePreview = { [weak self] in self?.syncIslands() }

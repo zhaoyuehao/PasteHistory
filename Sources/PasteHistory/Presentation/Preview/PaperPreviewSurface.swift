@@ -14,6 +14,19 @@ final class PaperPreviewSurface: NSView {
         layoutSubtreeIfNeeded()
     }
 
+    /// A scaled layer keeps reusing the bitmap it rasterized last time unless it
+    /// is told which resolution to draw at. Match the on-screen scale so glyphs
+    /// are drawn for their displayed size instead of being stretched.
+    func applyRasterizationScale(_ scale: CGFloat) {
+        guard let layer else { return }
+        apply(scale, to: layer)
+        setNeedsDisplay(bounds)
+    }
+    private func apply(_ scale: CGFloat, to layer: CALayer) {
+        layer.contentsScale = scale
+        for sublayer in layer.sublayers ?? [] { apply(scale, to: sublayer) }
+    }
+
     init(document: NSView) {
         self.document = document
         super.init(frame: document.frame)
