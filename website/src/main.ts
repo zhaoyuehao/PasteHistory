@@ -42,11 +42,19 @@ $("#app").innerHTML = `
  <div class="wallpaper" aria-hidden="true"></div>
  <header class="menubar"><button class="brand" id="menu-tree">${icon("tree")}<b>PasteHistory</b></button><div class="menu-spacer"></div><label class="language-control"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><ellipse cx="10" cy="10" rx="3.2" ry="7.5"/><path d="M2.5 10h15"/></svg><span id="language-name" aria-hidden="true"></span><svg class="language-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3"/></svg><select id="site-language" aria-label="语言"></select></label><span class="system-status" aria-hidden="true">⌁ &nbsp; ▰</span><time id="clock"></time></header>
  <main id="desktop-main">
-  <nav id="mobile-nav" aria-label="移动端视图">
-   <button type="button" data-mobile-view="tree" aria-pressed="true">许愿树剪贴板</button>
-   <button type="button" data-mobile-view="browser" aria-pressed="false">复制样例</button>
-   <button type="button" data-mobile-view="notes" aria-pressed="false">备忘录</button>
+  <nav id="mobile-nav" aria-label="移动端操作">
+   <button id="mobile-notes-drop" type="button" data-mobile-view="notes" aria-pressed="false">
+    <span class="mobile-drop-icon">${icon("note")}</span>
+    <span class="mobile-drop-copy"><strong>备忘录</strong><small>长按纸签，拖到这里保存</small></span>
+    <span class="mobile-drop-open">打开 →</span>
+   </button>
+   <button id="mobile-samples-action" type="button" data-mobile-view="browser" aria-pressed="false"><span>复制样例</span><small>打开</small></button>
   </nav>
+  <section id="mobile-intro" aria-label="移动端剪贴板历史">
+   <div class="mobile-intro-icon">${icon("copy")}</div>
+   <div class="mobile-intro-copy"><strong>移动端剪贴板历史</strong><p>自动保存你复制过的文字、图片和文件，随时搜索、复制，或拖到备忘录。</p><small>点一下搜索，长按纸签拖到备忘录</small></div>
+   <button id="mobile-search-action" type="button" aria-label="搜索剪贴板">${icon("search")}<span>搜索</span></button>
+  </section>
   <section class="hero-heading"><p>PasteHistory</p><h1>复制过的，随时找回。</h1></section>
   <section id="tree-area" aria-label="许愿树剪贴板"><div id="tree-stage"></div><div id="empty" hidden>枝头暂时空了。<br><small>换个关键词，或复制一条新灵感。</small></div><p class="tree-hint">点一张纸签，试试看。</p><div class="tree-controls"><span class="search-cord"></span><div class="search-tag"><span class="search-hole"></span>${icon("search")}<input id="search" aria-label="搜索剪贴板" autocomplete="off" spellcheck="false"><span id="page-label"></span></div></div></section>
   <section class="download-area" aria-label="下载 PasteHistory"><a id="download-button" class="download-button" tabindex="0" role="link" aria-disabled="true">${icon("download")}<span id="download-label">下载 Mac 版</span></a><p>Apple Silicon · macOS 14+</p><small>预览版 · 未经 Apple 公证</small><small id="download-state" role="status" aria-live="polite"></small></section>
@@ -112,6 +120,8 @@ samplesRail.className = "samples-rail";
 samplesRail.append($("#browser"));
 $(".desktop").append(samplesRail);
 const mobileNav = $<HTMLElement>("#mobile-nav");
+const mobileIntro = $<HTMLElement>("#mobile-intro");
+const mobileSearchAction = $<HTMLButtonElement>("#mobile-search-action");
 const mobileViewButtons = Array.from(
   mobileNav.querySelectorAll<HTMLButtonElement>("[data-mobile-view]"),
 );
@@ -131,7 +141,12 @@ function setMobileView(view: "tree" | "browser" | "notes") {
   }
 }
 for (const button of mobileViewButtons)
-  button.onclick = () => showWindow(button.dataset.mobileView as "tree" | "browser" | "notes");
+  button.onclick = () => {
+    const view = button.dataset.mobileView as "tree" | "browser" | "notes";
+    if (view === "notes" && $(".desktop").dataset.mobileView === "notes")
+      return showWindow("tree");
+    showWindow(view);
+  };
 const reopenTree = document.createElement("button");
 reopenTree.id = "reopen-tree";
 reopenTree.setAttribute("aria-keyshortcuts", "Meta+Shift+V");
@@ -215,6 +230,7 @@ function placeNativeTree() {
   const stacked = viewportWidth < 760;
   const mobileView = desktop.dataset.mobileView ?? "tree";
   const mobileNavHeight = stacked ? mobileNav.offsetHeight || 54 : 0;
+  const mobileIntroHeight = stacked ? mobileIntro.offsetHeight || 104 : 0;
   const rootHeight = rootLinks.offsetHeight;
   const logicalWidth = 880;
   const logicalHeight = 920;
@@ -233,7 +249,7 @@ function placeNativeTree() {
     windowWidth = Math.min(viewportWidth - margin * 2, 377);
     gap = windowWidth / PHI ** 4;
     treeWidth = Math.min(viewportWidth - margin * 2, logicalWidth);
-    treeTop = menuHeight + gap;
+    treeTop = menuHeight + mobileIntroHeight + gap;
     treeLeft = (viewportWidth - treeWidth) / 2;
     samplesLeft = notesLeft = (viewportWidth - windowWidth) / 2;
     const treeHeight = (treeWidth * logicalHeight) / logicalWidth;
@@ -408,7 +424,7 @@ treeStageElement.addEventListener("pointerdown", (event) => {
     startY: event.clientY,
     offsetX: event.clientX - rect.left,
     offsetY: event.clientY - rect.top,
-    timer: window.setTimeout(() => beginMobileTouchDrag(state, paper), 420),
+    timer: window.setTimeout(() => beginMobileTouchDrag(state, paper), 320),
     active: false,
     ghost: null,
   };
@@ -479,10 +495,15 @@ nativePreview.onCollapse = () => {
   focusSearch();
   render();
 };
-function focusSearch() {
-  if (isMobileLayout()) return;
+function focusSearch(allowMobile = false) {
+  if (isMobileLayout() && !allowMobile) return;
   search.focus({ preventScroll: true });
 }
+mobileSearchAction.onclick = () => {
+  setMobileView("tree");
+  if (!store.visible) presentTree();
+  focusSearch(true);
+};
 function presentTree() {
   captureInputTarget();
   if (store.visible) {
