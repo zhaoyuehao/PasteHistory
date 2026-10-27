@@ -21,6 +21,8 @@ final class IvoryTreePaperView: NSView {
     private var outgoing: [Card] = []
     private var selectedID: UUID?
     private var images: [UUID: NSImage] = [:]
+    // Text is rasterized at a stable logical height. The animated paper may
+    // grow/shrink, but its face is clipped rather than re-rendered every frame.
     private var faceCache: [UUID: (entry: IvoryTreeEntry, size: NSSize, selected: Bool, image: NSImage)] = [:]
     private var turnStart: CFTimeInterval = 0
     private var turnDirection: CGFloat = 1
@@ -97,17 +99,28 @@ final class IvoryTreePaperView: NSView {
             panel.paperAngle = -a
             let selected = card.entry.id == selectedID
             let color = selected ? IvoryPaperStyle.fill : NSColor(red: 0.79, green: 0.77, blue: 0.71, alpha: 1)
+            let faceHeight: CGFloat
+            if card.entry.isPermanent {
+                faceHeight = card.rect.height
+            } else if card.entry.imageFirst {
+                faceHeight = IvoryTreeLayout.selectedImageHeight
+            } else {
+                faceHeight = IvoryTreeLayout.selectedHeight
+            }
+            let faceSize = NSSize(width: card.rect.width, height: faceHeight)
             let cached = faceCache[id]
             let image: NSImage
-            if let cached, cached.entry == card.entry, cached.size == card.rect.size, cached.selected == selected {
+            if let cached, cached.entry == card.entry, cached.size == faceSize, cached.selected == selected {
                 image = cached.image
             } else {
-                image = NSImage(size: card.rect.size)
+                image = NSImage(size: faceSize)
                 image.lockFocusFlipped(true)
                 NSGraphicsContext.current?.cgContext.translateBy(x: -card.rect.minX, y: -card.rect.minY)
-                drawPaper(card)
+                var faceCard = card
+                faceCard.rect.size = faceSize
+                drawPaper(faceCard)
                 image.unlockFocus()
-                faceCache[id] = (card.entry, card.rect.size, selected, image)
+                faceCache[id] = (card.entry, faceSize, selected, image)
             }
             panel.onReleasePreview = { [weak self] in self?.syncIslands() }
             panel.paperColor = color
