@@ -46,6 +46,7 @@ final class PaperFlightView: NSView {
     private var canvas = NSRect.zero
     private(set) var readingSurface: PaperPreviewSurface?
     var acceptsReadingInput = false
+    var opening = true
     var measuresRenderingWork = false
     private(set) var windowUpdateWork = 0.0
     private(set) var faceUpdateWork = 0.0
@@ -53,6 +54,7 @@ final class PaperFlightView: NSView {
     private var readingLogicalSize: NSSize?
     private var readingDisplaySize: NSSize?
     private var readingAngle: CGFloat?
+    private var readingRasterScale: CGFloat?
 
     func attachReading(_ surface: PaperPreviewSurface) {
         guard readingSurface !== surface else { return }
@@ -61,6 +63,7 @@ final class PaperFlightView: NSView {
         readingLogicalSize = nil
         readingDisplaySize = nil
         readingAngle = nil
+        readingRasterScale = nil
         addSubview(surface)
         updateFaces()
         surface.prepareReadingLayout()
@@ -101,7 +104,8 @@ final class PaperFlightView: NSView {
         CATransaction.begin(); CATransaction.setDisableActions(true)
         faces.image(compactImage)
         faces.place(pose, canvas: canvas, expansion: expansion, compactColor: compactColor,
-                    backingScale: window?.backingScaleFactor ?? 2, liveReading: readingSurface != nil)
+                    backingScale: window?.backingScaleFactor ?? 2, liveReading: readingSurface != nil,
+                    opening: opening)
         if let surface = readingSurface {
             let logical = surface.readingSize ?? pose.size
             let scale = min(pose.size.width / logical.width, pose.size.height / logical.height)
@@ -122,7 +126,14 @@ final class PaperFlightView: NSView {
                 y: logical.height - IvoryPaperStyle.pinInset), to: self)
             surface.setFrameOrigin(NSPoint(x: surface.frame.origin.x + pose.pin.x - canvas.minX - pin.x,
                 y: surface.frame.origin.y + pose.pin.y - canvas.minY - pin.y))
-            surface.alphaValue = PaperFaceLayers.blend(expansion)
+            // Redraw only when the displayed size actually moves: a fraction of a
+            // percent of scale change is invisible, but a full redraw is not free.
+            let raster = (window?.backingScaleFactor ?? 2) * scale
+            if readingRasterScale.map({ abs($0-raster) > raster*0.004 }) ?? true {
+                readingRasterScale = raster
+                surface.applyRasterizationScale(raster)
+            }
+            surface.alphaValue = PaperFaceLayers.blend(expansion, opening: opening)
         }
         CATransaction.commit()
     }
@@ -211,6 +222,7 @@ final class PaperPreviewFlight {
         trace.begin(opening: opening, refreshRate: window?.screen?.maximumFramesPerSecond ?? 60)
         self.opening = opening
         self.completion = completion
+        sheet.opening = opening
         reduced = reduceMotion()
         if motion == nil { motion = newMotion(sheet.pose.channels + [sheet.expansion]) }
         motion?.retarget(pose.channels + [opening ? 1 : 0])
@@ -277,6 +289,21 @@ final class PaperPreviewFlight {
         }
         let frameGeneration = generation
         let began = observeFrame == nil && !trace.enabled ? 0 : CACurrentMediaTime()
+        // Closing flies back to a branch that is still settling into its resting
+        // layout. Follow real moves, but ignore the tree's sway: re-targeting on
+        // it would keep the motion from ever settling.
+        if flying, !opening, let branch = (panel as? TreeInteractionPanel)?.paperPose,
+           let destination = motion?.destination {
+            let settling = PaperPose(channels: Array(destination.prefix(7)))
+            if abs(settling.pin.x-branch.pin.x) > 0.5 || abs(settling.pin.y-branch.pin.y) > 0.5
+                || abs(settling.size.width-branch.size.width) > 0.5
+                || abs(settling.size.height-branch.size.height) > 0.5 {
+                if var current = motion {
+                    current.retarget(branch.channels + [0])
+                    motion = current
+                }
+            }
+        }
         motion?.advance(by: frame.delta)
         fadeElapsed += frame.delta
         let finished = flying && reduced

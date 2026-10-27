@@ -26,7 +26,17 @@ enum Motion {
     static let paperFadeDuration: TimeInterval = 0.12
     static let paperFrequency: CGFloat = 20
     static let paperAnchorTime: CGFloat = 0.020
-    static let paperContentRevealStart: CGFloat = 0.25
+    /// The card bitmap and the live document carry different typography, so the
+    /// handover finishes while the sheet is still close to its card size. Letting
+    /// both share the paper for most of the expansion reads as a double image.
+    static let paperContentRevealStart: CGFloat = 0.04
+    static let paperContentRevealWindow: CGFloat = 0.10
+    /// Closing runs the same handover backwards, so it must not land in the last
+    /// frames where the sheet already rests on its branch: give the paper back to
+    /// the card face while it is still about half open and let that typography
+    /// shrink into place.
+    static let paperContentHideStart: CGFloat = 0.35
+    static let paperContentHideWindow: CGFloat = 0.20
     static let paperReadingExpansion: CGFloat = 0.98
 
     /// 选中态与跟随滚动：dampingFraction 0.78 有约 4% 过冲，滑过头再回来

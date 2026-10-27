@@ -72,8 +72,10 @@ final class PreviewPanelController: NSObject {
         guard let paper = owner?.previewPaper,
               let visual = (paper.contentView as? TreePaperSurface)?.visual else { return }
         let continuing = previewedID != nil
-        // A different card starts at its own tree pose with no inherited motion.
-        // Reversing this same card's close is handled above without resetting it.
+        // A paging move keeps the sheet expanded at its current pose: the window
+        // is already a preview, so it glides to the next record instead of
+        // collapsing onto a branch and re-expanding from a tiny card pose.
+        let previousPose = continuing ? paperFlight.currentPose : nil
         releasePaper()
         if continuing && showingPhone != presentation.phoneSyncSelected { paperSessionSize = selectedPaperSize }
         if !continuing {
@@ -94,8 +96,12 @@ final class PreviewPanelController: NSObject {
         paper.onCollapse = { [weak self] in self?.toggle() }
         paper.onMagnify = { [weak self] delta, phase in self?.magnifyPaper(by: delta, phase: phase) ?? false }
         configureAppearance()
-        visual.expansion = 0
-        if let pose = paper.paperPose { visual.place(pose, in: paper) }
+        visual.expansion = continuing ? 1 : 0
+        // The card window may still be mid-entrance with a partial opacity. The
+        // tree stops updating it once the preview owns its geometry, so the sheet
+        // would stay as translucent as that animation left it.
+        visual.alphaValue = 1
+        if let pose = continuing ? previousPose : paper.paperPose { visual.place(pose, in: paper) }
         if let readingSurface {
             readingSurface.readingSize = paperSessionSize
             visual.attachReading(readingSurface)
@@ -107,7 +113,11 @@ final class PreviewPanelController: NSObject {
         // final settling tail, without taking keyboard focus from search.
         paper.enabled = true
         paper.beginPaperInteraction()
-        animateOpen()
+        if continuing {
+            paperFlight.moveLive(paper, to: readingPose(frame: targetFrame()))
+        } else {
+            animateOpen()
+        }
     }
 
     private func animateOpen() {
@@ -141,17 +151,23 @@ final class PreviewPanelController: NSObject {
         isClosing = true
         panel.acceptsKeyboardFocus = false
         if panel.isKeyWindow, owner?.previewAnchorVisible == true { owner?.makePanelKeyAgain() }
-        let destination = panel.paperPose ?? paperReturnPose ?? readingPose(frame: panel.frame)
+        // Let the branch start returning the card to its resting height now. The
+        // sheet must fly to the pose the card will actually land in, not to the
+        // taller pose it holds while it is the expanded paper.
+        owner?.setExpandedPaper(nil)
+        let destination = paperReturnPose ?? panel.paperPose ?? readingPose(frame: panel.frame)
         let id = previewedID
         paperFlight.animate(to: destination, opening: false) { [weak self] in
             guard let self, self.isClosing, self.previewedID == id else { return }
-            self.releasePaper()
+            // Rest on the pose the animation actually reached. Re-reading the
+            // branch pose here can jump by the tree's sway.
+            self.releasePaper(restingPose: self.paperFlight.currentPose)
         }
     }
 
     /// The collapsed card remains visible in its original window. At expansion
     /// zero removing the transparent reading child cannot exchange the paper.
-    private func releasePaper() {
+    private func releasePaper(restingPose: PaperPose? = nil) {
         paperFlight.cancel()
         let released = panel
         if let panel {
@@ -162,7 +178,7 @@ final class PreviewPanelController: NSObject {
             if let visual = (panel.contentView as? TreePaperSurface)?.visual {
                 visual.acceptsReadingInput = false
                 visual.expansion = 0
-                if let pose = panel.paperPose ?? paperReturnPose { visual.place(pose, in: panel) }
+                if let pose = restingPose ?? panel.paperPose ?? paperReturnPose { visual.place(pose, in: panel) }
                 visual.detachReading()
             }
             panel.previewOwnsGeometry = false

@@ -70,7 +70,10 @@ struct PreviewContentView: View {
         fullImage = imageURL.flatMap { mediaLoader.cachedImage(at: $0) }
         originalPixels = nil
         fileBytes = nil
-        contentOpacity = changesRecord && Motion.reduceMotion ? 0.6 : 1
+        // A record change swaps the document under a steady sheet; soften the
+        // swap with a short fade-in instead of a hard cut, whichever way the
+        // system's motion setting leans.
+        contentOpacity = changesRecord ? 0.6 : 1
         if contentOpacity < 1 {
             await Task.yield()
             guard !Task.isCancelled, model.current?.id == item.id else { return }
