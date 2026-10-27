@@ -1226,3 +1226,88 @@ kbd {
 .native-desktop .search-tag {
   height: calc(116px / var(--phi));
 }
+#mobile-nav {
+  display: none;
+}
+
+@media (max-width: 759px) {
+  #mobile-nav {
+    position: fixed;
+    z-index: 30;
+    left: 12px;
+    right: 12px;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    padding: 4px;
+    border: 1px solid #ffffff55;
+    border-radius: 13px;
+    background: #182633cc;
+    box-shadow: 0 8px 24px #10202f55;
+    backdrop-filter: blur(18px);
+  }
+  #mobile-nav button {
+    min-width: 0;
+    min-height: 38px;
+    padding: 0 6px;
+    border-radius: 9px;
+    color: #eef4f7;
+    font-size: 11px;
+    white-space: nowrap;
+    transition: background 0.18s, color 0.18s;
+  }
+  #mobile-nav button[aria-pressed="true"] {
+    background: #f2eee2;
+    color: #2d3b43;
+  }
+  .native-desktop[data-mobile-view="tree"] #tree-area {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: none;
+  }
+  .native-desktop:not([data-mobile-view="tree"]) #tree-area {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .native-desktop[data-mobile-view="tree"] .samples-rail,
+  .native-desktop[data-mobile-view="tree"] .notes-rail,
+  .native-desktop[data-mobile-view="browser"] .notes-rail,
+  .native-desktop[data-mobile-view="notes"] .samples-rail {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .native-desktop[data-mobile-view="browser"] .samples-rail,
+  .native-desktop[data-mobile-view="notes"] .notes-rail {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+  .native-desktop[data-mobile-view="tree"] .root-links {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+  .native-desktop:not([data-mobile-view="tree"]) .root-links {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .native-desktop .samples-rail,
+  .native-desktop .notes-rail {
+    left: 16px;
+    right: 16px;
+    max-height: none;
+    overflow: visible;
+  }
+  .native-desktop .notes-rail #notes,
+  .native-desktop .samples-rail #browser {
+    width: 100%;
+  }
+  .native-desktop .notes-rail .notes-window,
+  .native-desktop .samples-rail .browser-window {
+    height: 100%;
+  }
+}
