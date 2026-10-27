@@ -232,6 +232,12 @@ const messages: Record<string, readonly [string, string, string, string]> = {
     "メモに貼り付けました",
     "메모에 붙여넣었어요",
   ],
+  "拖到备忘录后松手": [
+    "Drag to Notes and release",
+    "拖到備忘錄後放開",
+    "メモまでドラッグして離します",
+    "메모로 끌어온 뒤 놓으세요",
+  ],
   图片无法显示: [
     "Image unavailable",
     "圖片無法顯示",
