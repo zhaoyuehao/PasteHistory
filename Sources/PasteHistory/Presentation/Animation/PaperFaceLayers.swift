@@ -47,7 +47,10 @@ final class PaperFaceLayers {
             ?? IvoryPaperStyle.fill).cgColor
         compact.isHidden = compactImage == nil
         if let image = compactImage {
-            let fit = min(size.width/max(1,image.size.width), size.height/max(1,image.size.height))
+            // Keep text at one logical scale while the card's animated height
+            // changes. The paper layer clips the stable face instead of
+            // repeatedly scaling/rasterizing glyphs during selection and paging.
+            let fit = size.width/max(1,image.size.width)
             compact.bounds = NSRect(origin: .zero, size: image.size)
             compact.anchorPoint = CGPoint(x: 0.5, y: 1-IvoryPaperStyle.pinInset/image.size.height)
             compact.position = CGPoint(x: size.width/2, y: size.height-pose.inset)
