@@ -1,5 +1,7 @@
 """Run in Blender with the editable Ivory_Tree.blend open and export_path set.
-Exports six smooth meshes; the original scene remains untouched.
+Exports the tree, five bird bodies, and five small bird accent meshes; the
+original scene remains untouched. Bird controllers are exported with their
+current transforms so depth staging in the authoring file survives packaging.
 """
 import bpy
 import math
@@ -11,7 +13,14 @@ def depth(x, z):
 source = next(s for s in bpy.data.scenes if any(o.name.startswith('白枝 ·') for o in s.objects))
 groups = [('Tree', [o for o in source.objects if o.name.startswith('白枝 ·')])]
 for root in sorted([o for o in source.objects if o.type == 'EMPTY' and o.name.startswith('Bird ')], key=lambda o: o.name):
-    groups.append((root.name.split(' ·')[0].replace(' ', '_'), list(root.children)))
+    bird_name = root.name.split(' ·')[0].replace(' ', '_')
+    children = list(root.children)
+    # Keep small high-contrast details as a separate mesh so the native
+    # renderer can give the bird a restrained graphite/amber material split.
+    accents = [o for o in children if any(token in o.name for token in ('尖嘴', '眼', '足', '趾'))]
+    body = [o for o in children if o not in accents]
+    groups.append((bird_name, body))
+    groups.append((bird_name + '_accent', accents))
 count = 0
 total = 0
 with bpy.context.temp_override(scene=source, view_layer=source.view_layers[0]):

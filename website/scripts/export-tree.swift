@@ -6,6 +6,11 @@ let root = URL(fileURLWithPath: CommandLine.arguments[1])
 let output = URL(fileURLWithPath: CommandLine.arguments[2])
 let scene = try SCNScene(url: root)
 var binary = Data()
+let materials = [
+    ["name":"Tree ivory", "pbrMetallicRoughness":["baseColorFactor":[0.86,0.82,0.73,1.0],"metallicFactor":0,"roughnessFactor":0.74]],
+    ["name":"Bird graphite", "pbrMetallicRoughness":["baseColorFactor":[0.31,0.37,0.39,1.0],"metallicFactor":0,"roughnessFactor":0.58]],
+    ["name":"Bird amber accents", "pbrMetallicRoughness":["baseColorFactor":[0.72,0.42,0.16,1.0],"metallicFactor":0,"roughnessFactor":0.48]],
+]
 var views = [[String: Any]](), accessors = [[String: Any]](), meshes = [[String: Any]](), nodes = [[String: Any]]()
 func append<T>(_ array: [T]) -> Int {
     while binary.count % 4 != 0 { binary.append(0) }
@@ -45,10 +50,12 @@ scene.rootNode.enumerateChildNodes { node, _ in
     accessors.append(["bufferView":append(positions),"componentType":5126,"count":pos.vectorCount,"type":"VEC3","min":[lo.x,lo.y,lo.z],"max":[hi.x,hi.y,hi.z]])
     accessors.append(["bufferView":append(normals),"componentType":5126,"count":pos.vectorCount,"type":"VEC3"])
     accessors.append(["bufferView":append(indices),"componentType":5125,"count":indices.count,"type":"SCALAR"])
-    meshes.append(["name":node.name ?? "Ivory","primitives":[["attributes":["POSITION":pa,"NORMAL":pa+1],"indices":pa+2,"material":0]]])
+    let nodeName = node.name ?? "Ivory"
+    let material = nodeName.hasSuffix("_accent") ? 2 : (nodeName.hasPrefix("Bird_") ? 1 : 0)
+    meshes.append(["name":nodeName,"primitives":[["attributes":["POSITION":pa,"NORMAL":pa+1],"indices":pa+2,"material":material]]])
     nodes.append(["name":node.name ?? "Ivory","mesh":meshes.count-1])
 }
-let document: [String:Any] = ["asset":["version":"2.0","generator":"PasteHistory native mesh export"],"scene":0,"scenes":[["nodes":Array(nodes.indices)]],"nodes":nodes,"meshes":meshes,"materials":[["name":"Ivory porcelain","pbrMetallicRoughness":["baseColorFactor":[0.92,0.90,0.83,1.0],"metallicFactor":0,"roughnessFactor":0.63],"doubleSided":true]],"buffers":[["byteLength":binary.count]],"bufferViews":views,"accessors":accessors]
+let document: [String:Any] = ["asset":["version":"2.0","generator":"PasteHistory native mesh export"],"scene":0,"scenes":[["nodes":Array(nodes.indices)]],"nodes":nodes,"meshes":meshes,"materials":materials.map { var m = $0; m["doubleSided"] = true; return m },"buffers":[["byteLength":binary.count]],"bufferViews":views,"accessors":accessors]
 var json = try JSONSerialization.data(withJSONObject: document, options:[.sortedKeys])
 while json.count % 4 != 0 { json.append(32) }
 while binary.count % 4 != 0 { binary.append(0) }

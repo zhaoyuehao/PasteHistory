@@ -16,9 +16,9 @@ The tree presents eight history cards per group and one permanent Phone Sync car
 
 ## Model
 
-[`ivory_tree.scn`](../Sources/PasteHistory/Resources/ivory_tree.scn) is the active SceneKit asset: a tree and five separate bird groups, with depth and surface-snapped attachment points. AppKit renders readable paper cards over the SceneKit scene. The build script packages the SwiftPM resource bundle under `Contents/Resources`; development uses `Bundle.module`.
+[`ivory_tree.scn`](../Sources/PasteHistory/Resources/ivory_tree.scn) is the active SceneKit asset: a deeper tree volume and five separately staged bird groups, with depth and surface-snapped attachment points. The export keeps three restrained material roles—warm ivory tree, graphite birds, and amber beaks/feet/eyes—so depth reads without turning the tree into a multicolour illustration. AppKit renders readable paper cards over the SceneKit scene. The build script packages the SwiftPM resource bundle under `Contents/Resources`; development uses `Bundle.module`.
 
-The editable `Ivory_Tree.blend` is **not in this repository**. The checked-in `.scn` is enough to build and run; changing the model requires the original authoring file. Blender is not a runtime dependency.
+The editable `Ivory_Tree.blend` is **not in this repository**. The checked-in `.scn` is enough to build and run; changing the model requires the original authoring file. The current export is the `ivory-v2` pass: a slightly broader trunk and explicit front/back staging for the five bird controllers. Blender is not a runtime dependency.
 
 ## Export
 
@@ -35,7 +35,7 @@ Then, from the repository root:
 swift scripts/convert_ivory_tree.swift .build/ivory-export/parts Sources/PasteHistory/Resources/ivory_tree.scn
 ```
 
-The exporter uses temporary meshes, adds branch depth, shifts birds with their perches, and reduces mesh density without modifying the authoring scene. After changing depth or branch positions, check `IvoryTreeSceneView.anchor` search seeds and surface snapping.
+The exporter uses temporary meshes, adds branch depth, shifts birds with their perches, splits bird accents for material separation, and reduces mesh density without modifying the authoring scene. After changing depth or branch positions, check `IvoryTreeSceneView.anchor` search seeds and surface snapping.
 
 ## Geometry check
 
