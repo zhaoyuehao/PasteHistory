@@ -21,6 +21,8 @@ final class IvoryTreePaperView: NSView {
     private var outgoing: [Card] = []
     private var selectedID: UUID?
     private var images: [UUID: NSImage] = [:]
+    // Text is rasterized at a stable logical height. The animated paper may
+    // grow/shrink, but its face is clipped rather than re-rendered every frame.
     private var faceCache: [UUID: (entry: IvoryTreeEntry, size: NSSize, selected: Bool, image: NSImage)] = [:]
     private var turnStart: CFTimeInterval = 0
     private var turnDirection: CGFloat = 1
@@ -97,17 +99,28 @@ final class IvoryTreePaperView: NSView {
             panel.paperAngle = -a
             let selected = card.entry.id == selectedID
             let color = selected ? IvoryPaperStyle.fill : NSColor(red: 0.79, green: 0.77, blue: 0.71, alpha: 1)
+            let faceHeight: CGFloat
+            if card.entry.isPermanent {
+                faceHeight = card.rect.height
+            } else if card.entry.imageFirst {
+                faceHeight = IvoryTreeLayout.selectedImageHeight
+            } else {
+                faceHeight = IvoryTreeLayout.selectedHeight
+            }
+            let faceSize = NSSize(width: card.rect.width, height: faceHeight)
             let cached = faceCache[id]
             let image: NSImage
-            if let cached, cached.entry == card.entry, cached.size == card.rect.size, cached.selected == selected {
+            if let cached, cached.entry == card.entry, cached.size == faceSize, cached.selected == selected {
                 image = cached.image
             } else {
-                image = NSImage(size: card.rect.size)
+                image = NSImage(size: faceSize)
                 image.lockFocusFlipped(true)
                 NSGraphicsContext.current?.cgContext.translateBy(x: -card.rect.minX, y: -card.rect.minY)
-                drawPaper(card)
+                var faceCard = card
+                faceCard.rect.size = faceSize
+                drawPaper(faceCard)
                 image.unlockFocus()
-                faceCache[id] = (card.entry, card.rect.size, selected, image)
+                faceCache[id] = (card.entry, faceSize, selected, image)
             }
             panel.onReleasePreview = { [weak self] in self?.syncIslands() }
             panel.paperColor = color
@@ -431,8 +444,11 @@ private final class IvoryPaperAccessibility: NSAccessibilityElement {
 /// Native dragging owns the pointer after the threshold. The payload is captured
 /// from the pressed record, never from the changing keyboard selection.
 final class TreePaperSurface: NSView, NSDraggingSource {
+    private let mergeType = ClipDragPayload.mergeType
     var recordID: UUID?
-    var draggable = true
+    var draggable = true {
+        didSet { if !draggable { mergeHover = false } }
+    }
     var paint: (() -> Void)?
     private(set) var visual: PaperFlightView?
     func present(image: NSImage, pose: PaperPose, canvas: NSRect, color: NSColor, opacity: CGFloat) {
@@ -455,12 +471,27 @@ final class TreePaperSurface: NSView, NSDraggingSource {
     var onSelect: (() -> Void)?
     var onPreview: (() -> Void)?
     var enabled = true { didSet { setAccessibilityEnabled(enabled) } }
+    private var mergeHover = false {
+        didSet {
+            layer?.borderColor = mergeHover ? NSColor.systemBlue.withAlphaComponent(0.9).cgColor : NSColor.clear.cgColor
+            layer?.backgroundColor = mergeHover ? NSColor.systemBlue.withAlphaComponent(0.08).cgColor : NSColor.clear.cgColor
+        }
+    }
     private var dragPayload: (() -> [NSPasteboardWriting]?)?
     private var downEvent: NSEvent?
     private var dragOwner: HistoryPanel?
     private var down = NSPoint.zero
     private var dragged = false
     private var previewAtDown: (() -> Void)?
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.cornerRadius = 8
+        layer?.borderWidth = 2
+        layer?.borderColor = NSColor.clear.cgColor
+        registerForDraggedTypes([mergeType])
+    }
+    required init?(coder: NSCoder) { fatalError() }
     override var isFlipped: Bool { true }
     override var isOpaque: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -491,7 +522,10 @@ final class TreePaperSurface: NSView, NSDraggingSource {
               let owner = (window as? TreeInteractionPanel)?.owner, !owner.layoutEditing,
               hypot(event.locationInWindow.x-down.x, event.locationInWindow.y-down.y) > 5 else { return }
         dragged = true
-        guard let writers = dragPayload?(), !writers.isEmpty else { owner.onDragUnavailable?(); return }
+        guard let baseWriters = dragPayload?(), !baseWriters.isEmpty,
+              let recordID else { owner.onDragUnavailable?(); return }
+        let writers = ClipDragPayload.writersWithMergeType(baseWriters, id: recordID)
+        guard !writers.isEmpty else { owner.onDragUnavailable?(); return }
         let image = paperImage()
         let items = writers.enumerated().map { index, writer in
             let item = NSDraggingItem(pasteboardWriter: writer)
@@ -513,13 +547,44 @@ final class TreePaperSurface: NSView, NSDraggingSource {
         image.unlockFocus()
         return image
     }
-    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation { .copy }
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation { [.copy, .link] }
     func ignoreModifierKeys(for session: NSDraggingSession) -> Bool { true }
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
         let owner = dragOwner
         dragOwner = nil
         downEvent = nil; dragPayload = nil; previewAtDown = nil
         owner?.finishPaperDrag(operation: operation)
+    }
+
+    private func mergeSourceID(_ info: NSDraggingInfo) -> UUID? {
+        guard let raw = info.draggingPasteboard.string(forType: mergeType) else { return nil }
+        return UUID(uuidString: raw)
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard enabled, draggable,
+              let sourceID = mergeSourceID(sender), let targetID = recordID, sourceID != targetID,
+              (window as? TreeInteractionPanel)?.previewOwnsGeometry != true else {
+            mergeHover = false
+            return []
+        }
+        mergeHover = true
+        return .link
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        draggingEntered(sender)
+    }
+
+    override func draggingExited(_ sender: NSDraggingInfo?) {
+        mergeHover = false
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        defer { mergeHover = false }
+        guard let sourceID = mergeSourceID(sender), let targetID = recordID, sourceID != targetID,
+              let owner = (window as? TreeInteractionPanel)?.owner else { return false }
+        return owner.mergeCards?(sourceID, targetID) ?? false
     }
     override func mouseUp(with event: NSEvent) {
         defer { previewAtDown = nil; downEvent = nil; dragPayload = nil }

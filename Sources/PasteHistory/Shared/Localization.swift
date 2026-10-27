@@ -38,6 +38,8 @@ enum L10n {
     static var treePreview: String { value("预览", "預覽", "Preview") }
     static var treeCopy: String { value("复制", "複製", "Copy") }
     static var treePaste: String { value("粘贴", "貼上", "Paste") }
+    static var mergeSucceeded: String { value("已合并两张卡片", "已合併兩張卡片", "Cards merged") }
+    static var mergeUnsupported: String { value("这两张卡片的内容无法合并", "這兩張卡片的內容無法合併", "These cards cannot be merged") }
 
     static let appName = "PasteHistory"
     static var panelTitle: String { value("剪贴板历史", "剪貼簿歷史", "Clipboard History") }

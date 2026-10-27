@@ -155,6 +155,122 @@ final class ClipStore: ObservableObject {
         iCloudSync.shared.exportDelete(id: id)
     }
 
+    /// Combines two history records into the first record and removes the
+    /// second one. The operation is intentionally performed as one user action
+    /// so iCloud receives the replacement before the deletion tombstone.
+    @discardableResult
+    func merge(primaryID: UUID, secondaryID: UUID) -> Bool {
+        guard primaryID != secondaryID,
+              let primary = syncDatabase.get(id: primaryID),
+              let secondary = syncDatabase.get(id: secondaryID),
+              let merged = mergedItem(primary: primary, secondary: secondary) else { return false }
+
+        let oldPrimaryImage = primary.imageFile
+        let oldSecondaryImage = secondary.imageFile
+        guard syncDatabase.replace(merged) else { return false }
+        syncDatabase.delete(id: secondaryID)
+
+        if let oldPrimaryImage, oldPrimaryImage != merged.imageFile { deleteImageFile(oldPrimaryImage) }
+        if let oldSecondaryImage, oldSecondaryImage != merged.imageFile { deleteImageFile(oldSecondaryImage) }
+        refresh()
+        iCloudSync.shared.exportClip(merged)
+        iCloudSync.shared.exportDelete(id: secondaryID)
+        return true
+    }
+
+    private func mergedItem(primary: ClipItem, secondary: ClipItem) -> ClipItem? {
+        let createdAt = Date()
+        let source = primary.sourceApp ?? secondary.sourceApp
+
+        switch (primary.kind, secondary.kind) {
+        case (.text, .text):
+            return ClipItem(id: primary.id, kind: .text,
+                            text: Self.joinText(primary.text, secondary.text),
+                            sourceApp: source, createdAt: createdAt,
+                            pinned: primary.pinned || secondary.pinned,
+                            pinnedAt: Self.latestPinnedAt(primary.pinnedAt, secondary.pinnedAt))
+
+        case (.files, .files):
+            var paths = primary.filePaths ?? []
+            for path in secondary.filePaths ?? [] where !paths.contains(path) { paths.append(path) }
+            guard !paths.isEmpty else { return nil }
+            return ClipItem(id: primary.id, kind: .files, filePaths: paths,
+                            sourceApp: source, createdAt: createdAt,
+                            pinned: primary.pinned || secondary.pinned,
+                            pinnedAt: Self.latestPinnedAt(primary.pinnedAt, secondary.pinnedAt))
+
+        case (.image, .text):
+            return ClipItem(id: primary.id, kind: .image, text: Self.joinText(primary.text, secondary.text),
+                            imageFile: primary.imageFile, sourceApp: source, createdAt: createdAt,
+                            pinned: primary.pinned || secondary.pinned,
+                            pinnedAt: Self.latestPinnedAt(primary.pinnedAt, secondary.pinnedAt),
+                            thumbnailData: primary.thumbnailData, ocrText: primary.ocrText)
+
+        case (.text, .image):
+            return ClipItem(id: primary.id, kind: .image, text: Self.joinText(primary.text, secondary.text),
+                            imageFile: secondary.imageFile, sourceApp: source, createdAt: createdAt,
+                            pinned: primary.pinned || secondary.pinned,
+                            pinnedAt: Self.latestPinnedAt(primary.pinnedAt, secondary.pinnedAt),
+                            thumbnailData: secondary.thumbnailData, ocrText: secondary.ocrText)
+
+        case (.image, .image):
+            guard let first = primary.imageFile.flatMap({ image(named: $0) }),
+                  let second = secondary.imageFile.flatMap({ image(named: $0) }),
+                  let saved = saveImage(combinedImage(first, second)) else { return nil }
+            return ClipItem(id: primary.id, kind: .image,
+                            text: Self.joinText(primary.text, secondary.text),
+                            imageFile: saved.name, sourceApp: source, createdAt: createdAt,
+                            pinned: primary.pinned || secondary.pinned,
+                            pinnedAt: Self.latestPinnedAt(primary.pinnedAt, secondary.pinnedAt),
+                            thumbnailData: saved.thumbnail,
+                            ocrText: Self.joinText(primary.ocrText, secondary.ocrText))
+
+        default:
+            // A file card and an image/text card have incompatible clipboard
+            // payloads; leaving both intact is safer than silently discarding
+            // one of them.
+            return nil
+        }
+    }
+
+    private static func joinText(_ first: String?, _ second: String?) -> String? {
+        let values = [first, second].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return values.isEmpty ? nil : values.joined(separator: "\n\n")
+    }
+
+    private static func latestPinnedAt(_ first: Date?, _ second: Date?) -> Date? {
+        switch (first, second) {
+        case let (a?, b?): return max(a, b)
+        case let (a?, nil): return a
+        case let (nil, b?): return b
+        case (nil, nil): return nil
+        }
+    }
+
+    private func combinedImage(_ first: NSImage, _ second: NSImage) -> NSImage {
+        let maxWidth: CGFloat = 2048
+        let width = min(max(max(first.size.width, second.size.width), 1), maxWidth)
+        func fitted(_ image: NSImage) -> NSSize {
+            let scale = min(1, width / max(image.size.width, 1))
+            return NSSize(width: max(1, image.size.width * scale), height: max(1, image.size.height * scale))
+        }
+        let firstSize = fitted(first)
+        let secondSize = fitted(second)
+        let canvas = NSImage(size: NSSize(width: width, height: firstSize.height + secondSize.height))
+        canvas.lockFocusFlipped(true)
+        NSColor.white.setFill()
+        NSBezierPath(rect: NSRect(origin: .zero, size: canvas.size)).fill()
+        first.draw(in: NSRect(x: (width - firstSize.width) / 2, y: 0,
+                              width: firstSize.width, height: firstSize.height),
+                   from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        second.draw(in: NSRect(x: (width - secondSize.width) / 2, y: firstSize.height,
+                               width: secondSize.width, height: secondSize.height),
+                    from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        canvas.unlockFocus()
+        return canvas
+    }
+
     func clearAll() {
         let victims = syncDatabase.all()
         for item in victims where item.imageFile != nil {
