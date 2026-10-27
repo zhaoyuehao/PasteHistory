@@ -8,7 +8,9 @@ The web demo follows the Swift tree layout and keyboard dispatch, with the full 
 
 Copy Samples and Notes use concise copy; the top bar only retains a compact language picker and no auxiliary Actions or Reset controls.
 
-Copy Samples and Notes remain visible, with shortcuts inside Notes and a clickable ⇧⌘V reminder when the tree closes. The entire demo follows the browser language, with a menu-bar override for English, Simplified Chinese, Traditional Chinese, Japanese and Korean.
+On desktop, Copy Samples and Notes remain visible, with shortcuts inside Notes and a clickable ⇧⌘V reminder when the tree closes. The entire demo follows the browser language, with a menu-bar override for English, Simplified Chinese, Traditional Chinese, Japanese and Korean.
+
+On narrow mobile screens, the tree search stays unfocused on entry. A bottom switcher opens the tree, Copy Samples or Notes one at a time so the supporting windows do not form a long page below the tree.
 
 A macOS menu bar clipboard history app. Press **⇧⌘V** to search text, images and file paths on a desktop tree, then press Return to paste into the original app. Includes on-device OCR, iCloud sync between Macs and local-network phone access.
 

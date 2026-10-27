@@ -42,6 +42,11 @@ $("#app").innerHTML = `
  <div class="wallpaper" aria-hidden="true"></div>
  <header class="menubar"><button class="brand" id="menu-tree">${icon("tree")}<b>PasteHistory</b></button><div class="menu-spacer"></div><label class="language-control"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><ellipse cx="10" cy="10" rx="3.2" ry="7.5"/><path d="M2.5 10h15"/></svg><span id="language-name" aria-hidden="true"></span><svg class="language-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3"/></svg><select id="site-language" aria-label="语言"></select></label><span class="system-status" aria-hidden="true">⌁ &nbsp; ▰</span><time id="clock"></time></header>
  <main id="desktop-main">
+  <nav id="mobile-nav" aria-label="移动端视图">
+   <button type="button" data-mobile-view="tree" aria-pressed="true">许愿树剪贴板</button>
+   <button type="button" data-mobile-view="browser" aria-pressed="false">复制样例</button>
+   <button type="button" data-mobile-view="notes" aria-pressed="false">备忘录</button>
+  </nav>
   <section class="hero-heading"><p>PasteHistory</p><h1>复制过的，随时找回。</h1></section>
   <section id="tree-area" aria-label="许愿树剪贴板"><div id="tree-stage"></div><div id="empty" hidden>枝头暂时空了。<br><small>换个关键词，或复制一条新灵感。</small></div><p class="tree-hint">点一张纸签，试试看。</p><div class="tree-controls"><span class="search-cord"></span><div class="search-tag"><span class="search-hole"></span>${icon("search")}<input id="search" aria-label="搜索剪贴板" autocomplete="off" spellcheck="false"><span id="page-label"></span></div></div></section>
   <section class="download-area" aria-label="下载 PasteHistory"><a id="download-button" class="download-button" tabindex="0" role="link" aria-disabled="true">${icon("download")}<span id="download-label">下载 Mac 版</span></a><p>Apple Silicon · macOS 14+</p><small>预览版 · 未经 Apple 公证</small><small id="download-state" role="status" aria-live="polite"></small></section>
@@ -106,6 +111,27 @@ const samplesRail = document.createElement("aside");
 samplesRail.className = "samples-rail";
 samplesRail.append($("#browser"));
 $(".desktop").append(samplesRail);
+const mobileNav = $<HTMLElement>("#mobile-nav");
+const mobileViewButtons = Array.from(
+  mobileNav.querySelectorAll<HTMLButtonElement>("[data-mobile-view]"),
+);
+function isMobileLayout() {
+  return window.matchMedia("(max-width: 759px)").matches;
+}
+function setMobileView(view: "tree" | "browser" | "notes") {
+  $(".desktop").dataset.mobileView = view;
+  for (const button of mobileViewButtons)
+    button.setAttribute(
+      "aria-pressed",
+      String(button.dataset.mobileView === view),
+    );
+  if (isMobileLayout()) {
+    placeNativeTree();
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }
+}
+for (const button of mobileViewButtons)
+  button.onclick = () => showWindow(button.dataset.mobileView as "tree" | "browser" | "notes");
 const reopenTree = document.createElement("button");
 reopenTree.id = "reopen-tree";
 reopenTree.setAttribute("aria-keyshortcuts", "Meta+Shift+V");
@@ -187,6 +213,8 @@ function placeNativeTree() {
   const viewportWidth = desktop.clientWidth;
   const menuHeight = $(".menubar").offsetHeight;
   const stacked = viewportWidth < 760;
+  const mobileView = desktop.dataset.mobileView ?? "tree";
+  const mobileNavHeight = stacked ? mobileNav.offsetHeight || 54 : 0;
   const rootHeight = rootLinks.offsetHeight;
   const logicalWidth = 880;
   const logicalHeight = 920;
@@ -199,6 +227,7 @@ function placeNativeTree() {
   let samplesLeft: number;
   let notesLeft: number;
   let gap: number;
+  let windowHeight: number;
   if (stacked) {
     const margin = 16;
     windowWidth = Math.min(viewportWidth - margin * 2, 377);
@@ -207,13 +236,24 @@ function placeNativeTree() {
     treeTop = menuHeight + gap;
     treeLeft = (viewportWidth - treeWidth) / 2;
     samplesLeft = notesLeft = (viewportWidth - windowWidth) / 2;
-    samplesTop =
-      treeTop +
-      (treeWidth * logicalHeight) / logicalWidth +
-      rootHeight +
-      gap * 2;
-    notesTop = samplesTop + windowWidth * PHI + gap;
-    desktop.style.height = `${notesTop + windowWidth * PHI + gap}px`;
+    const treeHeight = (treeWidth * logicalHeight) / logicalWidth;
+    windowHeight = Math.min(
+      windowWidth * PHI,
+      Math.max(300, window.innerHeight - menuHeight - mobileNavHeight - 24),
+    );
+    if (mobileView === "tree") {
+      samplesTop = notesTop = treeTop + treeHeight + rootHeight + gap * 2;
+      desktop.style.height = `${Math.max(
+        window.innerHeight,
+        treeTop + treeHeight + rootHeight + mobileNavHeight + 16,
+      )}px`;
+    } else {
+      samplesTop = notesTop = menuHeight + 12;
+      desktop.style.height = `${Math.max(
+        window.innerHeight,
+        samplesTop + windowHeight + mobileNavHeight + 16,
+      )}px`;
+    }
   } else {
     desktop.style.removeProperty("height");
     const viewportHeight = desktop.clientHeight;
@@ -238,8 +278,8 @@ function placeNativeTree() {
     samplesLeft = (viewportWidth - occupiedWidth) / 2 - gap - windowWidth;
     notesLeft = (viewportWidth + occupiedWidth) / 2 + gap;
     samplesTop = notesTop = treeTop + (treeHeight - windowWidth * PHI) / 2;
+    windowHeight = windowWidth * PHI;
   }
-  const windowHeight = windowWidth * PHI;
   for (const [rail, left, top] of [
     [samplesRail, samplesLeft, samplesTop],
     [notesRail, notesLeft, notesTop],
@@ -306,6 +346,7 @@ nativePreview.onCollapse = () => {
   render();
 };
 function focusSearch() {
+  if (isMobileLayout()) return;
   search.focus({ preventScroll: true });
 }
 function presentTree() {
@@ -320,7 +361,7 @@ function presentTree() {
   phoneSelected = false;
   store.selectedId = store.results[0]?.id ?? null;
   keyboardCards = false;
-  $(".desktop").dataset.mobileView = "tree";
+  setMobileView("tree");
   placeNativeTree();
   render();
   focusSearch();
@@ -395,19 +436,14 @@ function syncInteraction() {
 }
 function showWindow(name: string) {
   enterExperience();
+  setMobileView(name as "tree" | "browser" | "notes");
   if (name === "tree") return presentTree();
   if (store.visible) closeTree();
   const target = name === "notes" ? note : $("#sample-text");
-  target?.focus({ preventScroll: true });
+  if (!isMobileLayout()) target?.focus({ preventScroll: true });
   if (name === "notes") pasteTarget = note;
   if (innerWidth < 760) {
-    const rail = name === "notes" ? notesRail : samplesRail;
-    window.scrollTo({
-      top: rail.getBoundingClientRect().top + scrollY - 16,
-      behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
-        ? "instant"
-        : "smooth",
-    });
+    placeNativeTree();
   }
 }
 function collect(sampleKind: "text" | "image") {
@@ -1088,4 +1124,4 @@ document
   ?.setAttribute("content", t("复制过的，随时找回。"));
 displaySample();
 render();
-focusSearch();
+if (!isMobileLayout()) focusSearch();
