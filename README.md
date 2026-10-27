@@ -12,6 +12,8 @@ On desktop, Copy Samples and Notes remain visible, with shortcuts inside Notes a
 
 On narrow mobile screens, the tree search stays unfocused on entry. A bottom switcher opens the tree, Copy Samples or Notes one at a time so the supporting windows do not form a long page below the tree.
 
+To copy a history card into the mobile demo Notes, long-press the paper, drag it to the bottom Notes button, and release. A regular tap keeps opening the card preview.
+
 A macOS menu bar clipboard history app. Press **⇧⌘V** to search text, images and file paths on a desktop tree, then press Return to paste into the original app. Includes on-device OCR, iCloud sync between Macs and local-network phone access.
 
 ## Build and run

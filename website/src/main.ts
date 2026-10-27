@@ -317,6 +317,140 @@ new ResizeObserver(placeNativeTree).observe(samplesRail);
 new ResizeObserver(placeNativeTree).observe(notesRail);
 const tree = new TreeStage($("#tree-stage"));
 const note = $("#note-editor");
+const treeStageElement = $("#tree-stage");
+const mobileNotesDropTarget = mobileNav.querySelector<HTMLButtonElement>(
+  '[data-mobile-view="notes"]',
+)!;
+type MobileTouchDrag = {
+  clip: Clip;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  offsetX: number;
+  offsetY: number;
+  timer: number;
+  active: boolean;
+  ghost: HTMLElement | null;
+};
+let mobileTouchDrag: MobileTouchDrag | null = null;
+let suppressTouchClick = false;
+function mobileDragTargetAt(x: number, y: number) {
+  const target = document.elementFromPoint(x, y);
+  return target instanceof Element &&
+    target.closest("#mobile-nav [data-mobile-view=notes]")
+    ? mobileNotesDropTarget
+    : null;
+}
+function updateMobileTouchDrag(state: MobileTouchDrag, x: number, y: number) {
+  if (state.ghost) {
+    state.ghost.style.left = `${x - state.offsetX}px`;
+    state.ghost.style.top = `${y - state.offsetY}px`;
+  }
+  mobileNotesDropTarget.classList.toggle(
+    "drag-over",
+    mobileDragTargetAt(x, y) === mobileNotesDropTarget,
+  );
+}
+function finishMobileTouchDrag(
+  state: MobileTouchDrag,
+  x: number,
+  y: number,
+  commit: boolean,
+) {
+  window.clearTimeout(state.timer);
+  const droppedOnNotes =
+    commit && mobileDragTargetAt(x, y) === mobileNotesDropTarget;
+  state.ghost?.remove();
+  mobileNotesDropTarget.classList.remove("drag-over");
+  mobileNav.classList.remove("touch-dragging");
+  if (state.active) {
+    draggingCard = false;
+    if (droppedOnNotes) insertIntoNotes([state.clip]);
+    window.setTimeout(() => {
+      suppressTouchClick = false;
+    }, 0);
+  }
+  mobileTouchDrag = null;
+}
+function beginMobileTouchDrag(state: MobileTouchDrag, paper: HTMLElement) {
+  if (mobileTouchDrag !== state || state.active) return;
+  state.active = true;
+  suppressTouchClick = true;
+  const rect = paper.getBoundingClientRect();
+  const ghost = paper.cloneNode(true) as HTMLElement;
+  ghost.classList.add("mobile-drag-ghost");
+  Object.assign(ghost.style, {
+    width: `${rect.width}px`,
+    height: `${rect.height}px`,
+    left: `${rect.left}px`,
+    top: `${rect.top}px`,
+  });
+  state.ghost = ghost;
+  document.body.append(ghost);
+  tree.onDrag(state.clip.id);
+  mobileNav.classList.add("touch-dragging");
+  updateMobileTouchDrag(state, state.startX, state.startY);
+  toast("拖到备忘录后松手");
+}
+treeStageElement.addEventListener("pointerdown", (event) => {
+  if (!isMobileLayout() || event.pointerType !== "touch" || event.button !== 0)
+    return;
+  const paper = (event.target as Element).closest<HTMLElement>(".paper");
+  const id = paper?.dataset.clipId;
+  const clip =
+    id && id !== PHONE_ID ? store.clips.find((item) => item.id === id) : null;
+  if (!paper || !clip) return;
+  const rect = paper.getBoundingClientRect();
+  const state: MobileTouchDrag = {
+    clip,
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    offsetX: event.clientX - rect.left,
+    offsetY: event.clientY - rect.top,
+    timer: window.setTimeout(() => beginMobileTouchDrag(state, paper), 420),
+    active: false,
+    ghost: null,
+  };
+  mobileTouchDrag = state;
+  treeStageElement.setPointerCapture(event.pointerId);
+});
+treeStageElement.addEventListener("pointermove", (event) => {
+  const state = mobileTouchDrag;
+  if (!state || state.pointerId !== event.pointerId) return;
+  if (!state.active) {
+    if (
+      Math.hypot(event.clientX - state.startX, event.clientY - state.startY) > 9
+    )
+      finishMobileTouchDrag(state, event.clientX, event.clientY, false);
+    return;
+  }
+  event.preventDefault();
+  updateMobileTouchDrag(state, event.clientX, event.clientY);
+});
+function endMobileTouchDrag(event: PointerEvent, commit: boolean) {
+  const state = mobileTouchDrag;
+  if (!state || state.pointerId !== event.pointerId) return;
+  finishMobileTouchDrag(state, event.clientX, event.clientY, commit);
+  if (treeStageElement.hasPointerCapture(event.pointerId))
+    treeStageElement.releasePointerCapture(event.pointerId);
+}
+treeStageElement.addEventListener("pointerup", (event) =>
+  endMobileTouchDrag(event, true),
+);
+treeStageElement.addEventListener("pointercancel", (event) =>
+  endMobileTouchDrag(event, false),
+);
+treeStageElement.addEventListener(
+  "click",
+  (event) => {
+    if (!suppressTouchClick) return;
+    suppressTouchClick = false;
+    event.preventDefault();
+    event.stopPropagation();
+  },
+  true,
+);
 let noteStatus = "粘贴目标 · 保留光标位置";
 function updateNoteStatus(key = noteStatus) {
   noteStatus = key;

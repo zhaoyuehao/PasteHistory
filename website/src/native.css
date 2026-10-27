@@ -1231,6 +1231,18 @@ kbd {
 }
 
 @media (max-width: 759px) {
+  #tree-stage .paper {
+    touch-action: none;
+  }
+  .mobile-drag-ghost {
+    position: fixed !important;
+    z-index: 100;
+    pointer-events: none !important;
+    opacity: 0.92;
+    transform: rotate(-2deg) scale(1.06) !important;
+    box-shadow: 0 12px 28px #10182066 !important;
+    transition: transform 0.12s ease-out;
+  }
   #mobile-nav {
     position: fixed;
     z-index: 30;
@@ -1260,6 +1272,16 @@ kbd {
   #mobile-nav button[aria-pressed="true"] {
     background: #f2eee2;
     color: #2d3b43;
+  }
+  #mobile-nav.touch-dragging [data-mobile-view="notes"] {
+    background: #007aff;
+    color: #fff;
+    outline: 2px dashed #fff;
+    outline-offset: 2px;
+    transform: scale(1.04);
+  }
+  #mobile-nav.touch-dragging [data-mobile-view="notes"].drag-over {
+    background: #30d158;
   }
   .native-desktop[data-mobile-view="tree"] #tree-area {
     opacity: 1;
