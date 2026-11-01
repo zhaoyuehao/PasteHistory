@@ -7,7 +7,8 @@ The tree presents eight history cards per group and one permanent Phone Sync car
 ## Interaction contracts
 
 - Opening centers the whole tree on the screen under the pointer. Layout mode can move it temporarily and save a size preset; the next opening centers it again.
-- Clicking a card selects and previews it. Clicking the expanded paper closes it, while text selection, scrolling, pinching and pairing buttons remain usable.
+- Single-clicking a card selects and previews it after the system double-click interval. Double-clicking selects that record and uses the Return/Enter confirmation route. The Phone Sync card opens pairing through that same route instead of pasting history.
+- Another click, keyboard input, hiding, detachment or changed record identity cancels a pending single-click preview. Clicking the expanded paper closes it, while native text selection (including double-click word selection), scrolling, pinching and pairing buttons remain usable.
 - History previews unfold from the card's hanging hole, hide the original card during expansion, avoid screen edges and return to the card on close. Their base size stays stable across history navigation; the phone preview uses a separate 340×390 reading layout.
 - Pinching scales the whole paper, keeps search keyboard focus, and settles within 100%–200%, limited by available screen space. Scale survives record changes within the preview session and resets on reopening. Do not stack internal content magnification on top.
 - Decorative windows ignore mouse events; small card/search/layout windows own input. Global mouse observation may close the tree but must not intercept/replay clicks or steal the destination app's focus.

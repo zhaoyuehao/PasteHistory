@@ -155,6 +155,7 @@ final class IvoryTreePaperView: NSView {
             }
             surface.onSelect = { [weak self] in self?.onSelect?(id) }
             surface.onPreview = { [weak self] in self?.onPreview?(id) }
+            surface.onConfirm = { [weak owner] in owner?.confirmPaper?(id) }
             surface.needsDisplay = true
             owner.showIslandIfNeeded(panel)
         }
@@ -452,7 +453,9 @@ private final class IvoryPaperAccessibility: NSAccessibilityElement {
 /// from the pressed record, never from the changing keyboard selection.
 final class TreePaperSurface: NSView, NSDraggingSource {
     private let mergeType = ClipDragPayload.mergeType
-    var recordID: UUID?
+    var recordID: UUID? {
+        didSet { if recordID != oldValue { cancelPendingPreview() } }
+    }
     var draggable = true {
         didSet { if !draggable { mergeHover = false } }
     }
@@ -477,7 +480,13 @@ final class TreePaperSurface: NSView, NSDraggingSource {
     }
     var onSelect: (() -> Void)?
     var onPreview: (() -> Void)?
-    var enabled = true { didSet { setAccessibilityEnabled(enabled) } }
+    var onConfirm: (() -> Void)?
+    var enabled = true {
+        didSet {
+            setAccessibilityEnabled(enabled)
+            if !enabled { cancelPendingPreview() }
+        }
+    }
     private var mergeHover = false {
         didSet {
             layer?.borderColor = mergeHover ? NSColor.systemBlue.withAlphaComponent(0.9).cgColor : NSColor.clear.cgColor
@@ -490,6 +499,20 @@ final class TreePaperSurface: NSView, NSDraggingSource {
     private var down = NSPoint.zero
     private var dragged = false
     private var previewAtDown: (() -> Void)?
+    private var confirmAtDown: (() -> Void)?
+    private var recordAtDown: UUID?
+    private var pendingPreview: DispatchWorkItem?
+    private var clickGeneration = 0
+    func cancelPendingPreview() {
+        clickGeneration += 1
+        pendingPreview?.cancel()
+        pendingPreview = nil
+        downEvent = nil
+        dragPayload = nil
+        previewAtDown = nil
+        confirmAtDown = nil
+        recordAtDown = nil
+    }
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
@@ -516,11 +539,14 @@ final class TreePaperSurface: NSView, NSDraggingSource {
     override func mouseDown(with event: NSEvent) {
         guard enabled, (window as? TreeInteractionPanel)?.previewOwnsGeometry != true else { return }
         guard let owner = (window as? TreeInteractionPanel)?.owner, !owner.layoutEditing else { return }
+        owner.cancelPendingPaperClicks()
         downEvent = event
         dragPayload = recordID.flatMap { owner.prepareDrag?($0) }
         down = event.locationInWindow
         dragged = false
         previewAtDown = onPreview
+        confirmAtDown = onConfirm
+        recordAtDown = recordID
         (window as? TreeInteractionPanel)?.owner?.focusSearch()
     }
     override func mouseDragged(with event: NSEvent) {
@@ -559,7 +585,7 @@ final class TreePaperSurface: NSView, NSDraggingSource {
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
         let owner = dragOwner
         dragOwner = nil
-        downEvent = nil; dragPayload = nil; previewAtDown = nil
+        downEvent = nil; dragPayload = nil; previewAtDown = nil; confirmAtDown = nil; recordAtDown = nil
         owner?.finishPaperDrag(operation: operation)
     }
 
@@ -594,9 +620,29 @@ final class TreePaperSurface: NSView, NSDraggingSource {
         return owner.mergeCards?(sourceID, targetID) ?? false
     }
     override func mouseUp(with event: NSEvent) {
-        defer { previewAtDown = nil; downEvent = nil; dragPayload = nil }
+        defer { previewAtDown = nil; confirmAtDown = nil; recordAtDown = nil; downEvent = nil; dragPayload = nil }
         guard (window as? TreeInteractionPanel)?.previewOwnsGeometry != true,
-              enabled, window?.isVisible == true, !dragged, bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
-        previewAtDown?()
+              enabled, window?.isVisible == true, !dragged,
+              let id = recordAtDown, recordID == id,
+              bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
+        if event.clickCount == 2, downEvent?.clickCount == 2 {
+            confirmAtDown?()
+        } else if event.clickCount == 1, let preview = previewAtDown {
+            // Keep the compact window still until AppKit can distinguish a
+            // single click from a double click. Never intercept another window
+            // to recover a second click after an opening animation has moved it.
+            let generation = clickGeneration
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, self.clickGeneration == generation, self.recordID == id,
+                      self.enabled, let panel = self.window as? TreeInteractionPanel,
+                      panel.isVisible, !panel.previewOwnsGeometry,
+                      let owner = panel.owner, owner.isVisible,
+                      !owner.layoutEditing, !owner.dragInProgress else { return }
+                self.cancelPendingPreview()
+                preview()
+            }
+            pendingPreview = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: work)
+        }
     }
 }

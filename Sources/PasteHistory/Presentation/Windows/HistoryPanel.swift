@@ -16,6 +16,7 @@ final class HistoryPanel: NSPanel {
     var layoutEditing = false
     var prepareDrag: ((UUID) -> (() -> [NSPasteboardWriting]?)?)?
     var mergeCards: ((UUID, UUID) -> Bool)?
+    var confirmPaper: ((UUID) -> Void)?
     var onDragUnavailable: (() -> Void)?
     var onDragBegan: (() -> Void)?
     var onDragEnded: ((NSDragOperation) -> Void)?
@@ -79,12 +80,17 @@ final class HistoryPanel: NSPanel {
     }
     func suspendIslands() {
         presentsIslands = false
+        cancelPendingPaperClicks()
         for island in islands { island.orderOut(nil) }
     }
     override func orderOut(_ sender: Any?) {
         presentsIslands = false
+        cancelPendingPaperClicks()
         for island in islands { island.orderOut(sender) }
         super.orderOut(sender)
+    }
+    func cancelPendingPaperClicks() {
+        for island in islands { (island.contentView as? TreePaperSurface)?.cancelPendingPreview() }
     }
     func configureTree() {
         ignoresMouseEvents = true
