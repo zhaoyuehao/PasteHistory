@@ -35,6 +35,8 @@ Copy content in another app, open the tree and type to search. Each group contai
 
 Click a history card to preview it. Click the expanded paper to close it; text selection, scrolling and pinching do not close it. Pinching inside the preview scales the whole paper without taking keyboard focus from search. Drag a history card into a compatible app to copy it without moving source files, or drop it onto another history card to merge their contents.
 
+Search stays above expanded papers and follows the tree layout at a fixed size. Preview text retains its logical font size while the whole paper scales.
+
 Opening, closing and following the same card share a damped motion state: repeated input redirects the moving paper without restarting it. Switching cards starts the new preview from that card's own position, size and tilt, while preserving the reading zoom. The card keeps the same window and live document through expansion and collapse, with no snapshot-to-document swap at the endpoints. Pinching also works while the paper is opening, and the system Reduce Motion setting remains supported.
 
 | Action | Shortcut |

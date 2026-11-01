@@ -131,7 +131,7 @@ final class PaperFlightView: NSView {
             let raster = (window?.backingScaleFactor ?? 2) * scale
             if readingRasterScale.map({ abs($0-raster) > raster*0.004 }) ?? true {
                 readingRasterScale = raster
-                surface.applyRasterizationScale(raster)
+                surface.invalidateReadingDisplay()
             }
             surface.alphaValue = PaperFaceLayers.blend(expansion, opening: opening)
         }

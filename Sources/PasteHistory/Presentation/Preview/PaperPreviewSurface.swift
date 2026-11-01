@@ -14,17 +14,15 @@ final class PaperPreviewSurface: NSView {
         layoutSubtreeIfNeeded()
     }
 
-    /// A scaled layer keeps reusing the bitmap it rasterized last time unless it
-    /// is told which resolution to draw at. Match the on-screen scale so glyphs
-    /// are drawn for their displayed size instead of being stretched.
-    func applyRasterizationScale(_ scale: CGFloat) {
-        guard let layer else { return }
-        apply(scale, to: layer)
-        setNeedsDisplay(bounds)
+    /// AppKit owns the backing scale of native text and SwiftUI views. Request
+    /// fresh drawing after a transform without overwriting their layer scales:
+    /// those layers may still hold contents rasterized at a different density.
+    func invalidateReadingDisplay() {
+        invalidateDisplay(in: self)
     }
-    private func apply(_ scale: CGFloat, to layer: CALayer) {
-        layer.contentsScale = scale
-        for sublayer in layer.sublayers ?? [] { apply(scale, to: sublayer) }
+    private func invalidateDisplay(in view: NSView) {
+        view.needsDisplay = true
+        for child in view.subviews { invalidateDisplay(in: child) }
     }
 
     init(document: NSView) {
