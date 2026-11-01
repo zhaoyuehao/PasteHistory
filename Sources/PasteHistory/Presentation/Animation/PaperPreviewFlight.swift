@@ -54,19 +54,17 @@ final class PaperFlightView: NSView {
     private var readingLogicalSize: NSSize?
     private var readingDisplaySize: NSSize?
     private var readingAngle: CGFloat?
-    private var readingRasterScale: CGFloat?
 
-    func attachReading(_ surface: PaperPreviewSurface) {
+    func attachReading(_ surface: PaperPreviewSurface, prepareLayout: Bool = true) {
         guard readingSurface !== surface else { return }
         readingSurface?.removeFromSuperview()
         readingSurface = surface
         readingLogicalSize = nil
         readingDisplaySize = nil
         readingAngle = nil
-        readingRasterScale = nil
         addSubview(surface)
         updateFaces()
-        surface.prepareReadingLayout()
+        if prepareLayout { surface.prepareReadingLayout() }
     }
     func detachReading() {
         readingSurface?.removeFromSuperview()
@@ -114,7 +112,9 @@ final class PaperFlightView: NSView {
                 // Translation-only following must not invalidate the document's
                 // scale/rotation. Keep logical bounds fixed while resizing.
                 if surface.frameRotation != 0 { surface.frameRotation = 0 }
-                if readingDisplaySize != displaySize { surface.setFrameSize(displaySize) }
+                // A transferred reading surface can already have this size,
+                // even though this card renderer has no cached geometry yet.
+                if surface.frame.size != displaySize { surface.setFrameSize(displaySize) }
                 if surface.bounds.size != logical { surface.setBoundsSize(logical) }
                 let degrees = pose.angle * 180 / .pi
                 if surface.frameRotation != degrees { surface.frameRotation = degrees }
@@ -126,13 +126,8 @@ final class PaperFlightView: NSView {
                 y: logical.height - IvoryPaperStyle.pinInset), to: self)
             surface.setFrameOrigin(NSPoint(x: surface.frame.origin.x + pose.pin.x - canvas.minX - pin.x,
                 y: surface.frame.origin.y + pose.pin.y - canvas.minY - pin.y))
-            // Redraw only when the displayed size actually moves: a fraction of a
-            // percent of scale change is invisible, but a full redraw is not free.
-            let raster = (window?.backingScaleFactor ?? 2) * scale
-            if readingRasterScale.map({ abs($0-raster) > raster*0.004 }) ?? true {
-                readingRasterScale = raster
-                surface.invalidateReadingDisplay()
-            }
+            // Native frame/bounds changes invalidate drawing as needed. Do not
+            // recursively dirty the document on animation frames or transfers.
             surface.alphaValue = PaperFaceLayers.blend(expansion, opening: opening)
         }
         CATransaction.commit()

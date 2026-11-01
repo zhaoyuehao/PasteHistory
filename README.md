@@ -37,7 +37,7 @@ Click a history card to preview it. Click the expanded paper to close it; text s
 
 Search stays above expanded papers and follows the tree layout at a fixed size. Preview text retains its logical font size while the whole paper scales.
 
-Opening, closing and following the same card share a damped motion state: repeated input redirects the moving paper without restarting it. Switching cards starts the new preview from that card's own position, size and tilt, while preserving the reading zoom. The card keeps the same window and live document through expansion and collapse, with no snapshot-to-document swap at the endpoints. Pinching also works while the paper is opening, and the system Reduce Motion setting remains supported.
+Opening, closing and following the same card share a damped motion state: repeated input redirects the moving paper without restarting it. Switching cards keeps the current expanded pose and reading zoom, then moves the preview toward the new card's anchor. The reading view is reused without first shrinking its content back to card size. The card keeps the same window and live document through expansion and collapse, with no snapshot-to-document swap at the endpoints. Pinching also works while the paper is opening, and the system Reduce Motion setting remains supported.
 
 | Action | Shortcut |
 | --- | --- |

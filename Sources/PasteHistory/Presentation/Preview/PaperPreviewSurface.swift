@@ -14,17 +14,6 @@ final class PaperPreviewSurface: NSView {
         layoutSubtreeIfNeeded()
     }
 
-    /// AppKit owns the backing scale of native text and SwiftUI views. Request
-    /// fresh drawing after a transform without overwriting their layer scales:
-    /// those layers may still hold contents rasterized at a different density.
-    func invalidateReadingDisplay() {
-        invalidateDisplay(in: self)
-    }
-    private func invalidateDisplay(in view: NSView) {
-        view.needsDisplay = true
-        for child in view.subviews { invalidateDisplay(in: child) }
-    }
-
     init(document: NSView) {
         self.document = document
         super.init(frame: document.frame)

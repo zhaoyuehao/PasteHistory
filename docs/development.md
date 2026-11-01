@@ -63,12 +63,17 @@ retains a short in-place content dissolve. Each card keeps its original window,
 renderer, shell and shadow through expansion, reading and collapse. A live reading
 NSView scales and rotates in fixed logical coordinates; there is no reading bitmap
 or endpoint window handoff. AppKit owns native document backing layers; the renderer
-does not recursively override their content scales. Compact face caches refresh
+does not recursively override their content scales or invalidate the whole document
+on animation frames. Native geometry/content changes drive redraws. Compact face caches refresh
 only when content or logical layout changes. The tree updates the compact return
 pose while the preview owns the visible window geometry. Selecting another record
-transfers the live document to that card's existing window, but starts a fresh
-motion state from its own collapsed pose. Reading size and zoom persist across
-records; reversing a close on the same card still preserves its ongoing motion.
+transfers the live document to that card's existing window at the current expanded
+pose. Detach the reading view before restoring the old card's compact geometry.
+Within one reading session, the SwiftUI root follows the observed model without
+being reassigned per record, and an unchanged logical viewport uses deferred native
+layout. First opening and viewport-size changes still prepare layout before motion.
+Reading size and zoom persist across records; reversing a close on the same card
+still preserves its ongoing motion.
 Reading input becomes eligible before final settling once expansion, remaining
 position/size error and speed are sufficiently small; eligibility never activates
 the window. Closing revokes it immediately. The content dissolve spans 25–100%
