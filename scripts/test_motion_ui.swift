@@ -129,7 +129,9 @@ struct PaperMotionSmoke {
         Settings.shared.iCloudSync = false
         let store = ClipStore(directory: directory)
         let entry = ClipItem(kind: .text, text: "Continuous paper\n纸面交接检查：中文 English 123\nA single physical sheet.", sourceApp: "Motion fixture")
-        store.syncDatabase.upsert(entry); store.refresh()
+        let otherEntry = ClipItem(kind: .text, text: "A different branch owns this paper.",
+            sourceApp: "Motion fixture", createdAt: entry.createdAt.addingTimeInterval(-1))
+        store.syncDatabase.upsert(entry); store.syncDatabase.upsert(otherEntry); store.refresh()
         let pairing = PairModel(readConnection: { ("", "") }, startService: {}, renewCode: {})
         let controller = PanelController(store: store, observesDesktopFocus: false, pairing: pairing)
         func settle() {
@@ -161,6 +163,34 @@ struct PaperMotionSmoke {
         precondition(source.isVisible && source.alphaValue == 1 && source.windowNumber == windowNumber)
         precondition(sourceSurface.visual === sourceRenderer && sourceRenderer.expansion == 0)
         precondition(sourceRenderer.readingSurface == nil && !source.handlesPaperPinch)
+
+        controller.togglePreview(); settle()
+        let sessionSize = sourceRenderer.readingSurface!.readingSize
+        let other = controller.previewPaper(for: otherEntry.id)!
+        for destination in [other, source] {
+            let surface = destination.contentView as! TreePaperSurface
+            let compactPose = destination.paperPose!
+            // Exercise the actual card-click route synchronously, before the
+            // first animation tick can hide a wrong starting position.
+            surface.onPreview!()
+            let renderer = surface.visual!
+            precondition(controller.previewWindow === destination)
+            if !Motion.reduceMotion {
+                precondition(renderer.pose.channels == compactPose.channels && renderer.expansion == 0,
+                    "Switching must expand the destination card from its own position, size and tilt")
+            }
+            precondition(renderer.readingSurface?.document === liveDocument
+                && renderer.readingSurface?.readingSize == sessionSize,
+                "Changing the opening origin must retain the live document and logical reading size")
+            settle()
+        }
+        controller.togglePreview(); settle()
+        let returned = sourceRenderer.pose
+        let branch = source.paperPose!
+        precondition(hypot(returned.pin.x-branch.pin.x, returned.pin.y-branch.pin.y) < 1
+            && abs(returned.size.width-branch.size.width) < 1
+            && abs(returned.size.height-branch.size.height) < 1,
+            "Closing after a record switch must return that card to its own current branch pose")
         controller.hide(restoreFocus: false); run(0.25)
         print("PASS: one window/renderer/document through opening, magnification and reversal; same card after close")
     }

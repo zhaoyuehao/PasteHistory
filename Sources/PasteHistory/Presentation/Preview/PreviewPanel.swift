@@ -73,10 +73,8 @@ final class PreviewPanelController: NSObject {
         guard let paper = owner?.previewPaper,
               let visual = (paper.contentView as? TreePaperSurface)?.visual else { return }
         let continuing = previewedID != nil
-        // A paging move keeps the sheet expanded at its current pose: the window
-        // is already a preview, so it glides to the next record instead of
-        // collapsing onto a branch and re-expanding from a tiny card pose.
-        let previousPose = continuing ? paperFlight.currentPose : nil
+        // Reading size and zoom belong to the session; the opening pose belongs
+        // to this card. Never borrow the previous card's expanded geometry.
         releasePaper()
         if continuing && showingPhone != presentation.phoneSyncSelected { paperSessionSize = selectedPaperSize }
         if !continuing {
@@ -97,12 +95,13 @@ final class PreviewPanelController: NSObject {
         paper.onCollapse = { [weak self] in self?.toggle() }
         paper.onMagnify = { [weak self] delta, phase in self?.magnifyPaper(by: delta, phase: phase) ?? false }
         configureAppearance()
-        visual.expansion = continuing ? 1 : 0
+        visual.expansion = 0
+        visual.opening = true
         // The card window may still be mid-entrance with a partial opacity. The
         // tree stops updating it once the preview owns its geometry, so the sheet
         // would stay as translucent as that animation left it.
         visual.alphaValue = 1
-        if let pose = continuing ? previousPose : paper.paperPose { visual.place(pose, in: paper) }
+        if let pose = paper.paperPose { visual.place(pose, in: paper) }
         if let readingSurface {
             // A record switch keeps the same logical viewport. Let native
             // content updates share the normal layout pass before display,
@@ -118,11 +117,7 @@ final class PreviewPanelController: NSObject {
         // final settling tail, without taking keyboard focus from search.
         paper.enabled = true
         paper.beginPaperInteraction()
-        if continuing {
-            paperFlight.moveLive(paper, to: readingPose(frame: targetFrame()))
-        } else {
-            animateOpen()
-        }
+        animateOpen()
     }
 
     private func animateOpen() {
@@ -160,7 +155,7 @@ final class PreviewPanelController: NSObject {
         // sheet must fly to the pose the card will actually land in, not to the
         // taller pose it holds while it is the expanded paper.
         owner?.setExpandedPaper(nil)
-        let destination = paperReturnPose ?? panel.paperPose ?? readingPose(frame: panel.frame)
+        let destination = panel.paperPose ?? paperReturnPose ?? readingPose(frame: panel.frame)
         let id = previewedID
         paperFlight.animate(to: destination, opening: false) { [weak self] in
             guard let self, self.isClosing, self.previewedID == id else { return }
@@ -342,8 +337,8 @@ final class PreviewPanelController: NSObject {
         guard isVisible else { return }
         guard selectionID != nil else { close(); return }
         if previewedID != selectionID {
-            // Transfer the live document at its current expanded pose, keeping
-            // the session's logical reading size and zoom.
+            // Each card opens from its own compact pose while the session's
+            // logical reading size and zoom carry over.
             open()
         } else {
             followPaper()

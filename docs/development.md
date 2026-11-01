@@ -67,8 +67,10 @@ does not recursively override their content scales or invalidate the whole docum
 on animation frames. Native geometry/content changes drive redraws. Compact face caches refresh
 only when content or logical layout changes. The tree updates the compact return
 pose while the preview owns the visible window geometry. Selecting another record
-transfers the live document to that card's existing window at the current expanded
-pose. Detach the reading view before restoring the old card's compact geometry.
+transfers the live document to that card's existing window and starts an opening
+from that card's own compact position, size and tilt, with expansion reset to zero.
+Closing targets the same card's current branch pose, with the saved pose as a fallback.
+Detach the reading view before restoring the old card's compact geometry.
 Within one reading session, the SwiftUI root follows the observed model without
 being reassigned per record, and an unchanged logical viewport uses deferred native
 layout. First opening and viewport-size changes still prepare layout before motion.
