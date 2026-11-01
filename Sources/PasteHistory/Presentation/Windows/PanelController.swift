@@ -209,6 +209,19 @@ final class PanelController: NSObject, NSWindowDelegate {
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.delegate = self
+        panel.confirmPaper = { [weak self] id in
+            guard let self, self.isVisible, !self.layoutEditing,
+                  self.panel?.dragInProgress != true else { return }
+            if id == IvoryTreeEntry.phoneSyncID {
+                self.presentation.phoneSyncSelected = true
+            } else {
+                guard let index = self.panelModel.results.firstIndex(where: { $0.id == id }) else { return }
+                self.presentation.phoneSyncSelected = false
+                self.panelModel.select(index)
+            }
+            // Select the clicked record, then use the exact Return/Enter route.
+            Self.post(.phConfirm)
+        }
         panel.prepareDrag = { [weak self] id in
             guard let self, !self.layoutEditing,
                   let item = self.panelModel.results.first(where: { $0.id == id }) else { return nil }
@@ -335,6 +348,7 @@ final class PanelController: NSObject, NSWindowDelegate {
     /// Shared dispatch path, also exercised by isolated keyboard regression tests.
     func handle(_ event: NSEvent) -> NSEvent? {
         if panel?.dragInProgress == true { return event } // Escape belongs to the native drag session.
+        panel?.cancelPendingPaperClicks()
         if event.type == .leftMouseDown {
             // Clicking back into search returns Delete to the text editor.
             if let content = event.window?.contentView {
