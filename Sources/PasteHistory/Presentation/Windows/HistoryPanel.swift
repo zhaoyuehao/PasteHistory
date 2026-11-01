@@ -49,10 +49,18 @@ final class HistoryPanel: NSPanel {
         guard isVisible, presentsIslands else { return }
         island.alphaValue = treeOpacity
         if island.parent == nil { addChildWindow(island, ordered: .above) }
+        // Apply after attachment: the owner may have changed level since the
+        // portal was created, and an expanded paper sits one level above it.
+        if island.role == .search {
+            let searchLevel = NSWindow.Level(rawValue: level.rawValue + 2)
+            if island.level != searchLevel { island.level = searchLevel }
+        }
         if !island.isVisible { island.orderFrontRegardless() }
     }
     func focusSearch() {
-        guard let search = islands.first(where: { $0.role == .search && $0.isVisible }) else { return }
+        guard isVisible, presentsIslands, !layoutEditing,
+              let search = islands.first(where: { $0.role == .search }) else { return }
+        showIslandIfNeeded(search)
         search.makeKey()
         guard !(search.firstResponder is NSTextView) else { return }
         func field(in view: NSView) -> NSTextField? {

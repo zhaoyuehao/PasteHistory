@@ -73,13 +73,27 @@ final class TreeControlPortalView<Content: View>: NSView {
         host = NSHostingView(rootView: content)
         super.init(frame: .zero)
         host.safeAreaRegions = []
+        // The portal owns the window frame. Content-derived window constraints
+        // can otherwise resize it again after synchronize() has positioned it.
+        host.sizingOptions = []
     }
     required init?(coder: NSCoder) { fatalError() }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
     override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); synchronize() }
     override func layout() { super.layout(); synchronize() }
+    override func setFrameOrigin(_ newOrigin: NSPoint) {
+        super.setFrameOrigin(newOrigin)
+        synchronize()
+    }
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        synchronize()
+    }
     func synchronize() {
         guard let owner = window as? HistoryPanel else { detach(); return }
+        let rect = owner.convertToScreen(convert(bounds, to: nil))
+        guard rect.width > 0, rect.height > 0,
+              [rect.minX, rect.minY, rect.width, rect.height].allSatisfy({ $0.isFinite }) else { return }
         if island?.owner !== owner {
             detach()
             let panel = TreeInteractionPanel(owner: owner, role: role)
@@ -87,12 +101,15 @@ final class TreeControlPortalView<Content: View>: NSView {
             panel.title = role == .search ? "搜索剪贴记录" : "调整树布局"
             island = panel
         }
-        guard bounds.width > 0, bounds.height > 0, let island else { return }
-        let rect = owner.convertToScreen(convert(bounds, to: nil))
+        guard let island else { return }
         if island.frame != rect { island.setFrame(rect, display: true) }
         owner.showIslandIfNeeded(island)
         if role == .search, owner.isVisible, NSApp.keyWindow === owner {
-            DispatchQueue.main.async { [weak owner] in owner?.focusSearch() }
+            DispatchQueue.main.async { [weak self, weak island, weak owner] in
+                guard let self, let island, self.island === island,
+                      island.owner === owner, owner?.isVisible == true else { return }
+                owner?.focusSearch()
+            }
         } else if role == .layout, owner.isVisible, owner.layoutEditing, NSApp.keyWindow === owner {
             DispatchQueue.main.async { [weak island, weak owner] in
                 guard owner?.layoutEditing == true, island?.isVisible == true else { return }
