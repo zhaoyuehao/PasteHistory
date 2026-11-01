@@ -29,6 +29,7 @@ final class PreviewPanelController: NSObject {
     private var readingSurface: PaperPreviewSurface?
     private var hosting: NSHostingController<AnyView>?
     private var viewportSession = UUID()
+    private var configuredViewportSession: UUID?
     /// 缩回进行中；卡片窗口始终可见，空格可反向展开。
     private var isClosing = false
     private var sink: Any?
@@ -103,8 +104,12 @@ final class PreviewPanelController: NSObject {
         visual.alphaValue = 1
         if let pose = continuing ? previousPose : paper.paperPose { visual.place(pose, in: paper) }
         if let readingSurface {
+            // A record switch keeps the same logical viewport. Let native
+            // content updates share the normal layout pass before display,
+            // rather than forcing a second pass inside the selection callback.
+            let prepareLayout = !continuing || readingSurface.readingSize != paperSessionSize
             readingSurface.readingSize = paperSessionSize
-            visual.attachReading(readingSurface)
+            visual.attachReading(readingSurface, prepareLayout: prepareLayout)
         }
         paperFlight.bind(window: paper, sheet: visual)
         owner?.setExpandedPaper(id)
@@ -178,8 +183,11 @@ final class PreviewPanelController: NSObject {
             if let visual = (panel.contentView as? TreePaperSurface)?.visual {
                 visual.acceptsReadingInput = false
                 visual.expansion = 0
-                if let pose = restingPose ?? panel.paperPose ?? paperReturnPose { visual.place(pose, in: panel) }
+                // At zero expansion the reading document is invisible. Detach
+                // before restoring compact geometry so switching never shrinks
+                // and re-lays out the live document just to enlarge it again.
                 visual.detachReading()
+                if let pose = restingPose ?? panel.paperPose ?? paperReturnPose { visual.place(pose, in: panel) }
             }
             panel.previewOwnsGeometry = false
             panel.level = panel.owner?.level ?? .floating
@@ -201,15 +209,22 @@ final class PreviewPanelController: NSObject {
     func closeImmediately() { releasePaper() }
 
     private func configureAppearance() {
+        let contentChanged = showingPhone != presentation.phoneSyncSelected
+            || configuredViewportSession != viewportSession
         showingPhone = presentation.phoneSyncSelected
         if showingPhone { pairing.prepare() }
-        if let hosting { hosting.rootView = detailContent }
+        // PreviewContentView already observes the selection model. Replacing
+        // its root on every arrow key schedules redundant SwiftUI updates.
+        if let hosting {
+            if contentChanged { hosting.rootView = detailContent }
+        }
         else {
             let hosting = NSHostingController(rootView: detailContent)
             hosting.safeAreaRegions = []
             self.hosting = hosting
             readingSurface = PaperPreviewSurface(document: hosting.view)
         }
+        configuredViewportSession = viewportSession
         panel?.appearance = NSAppearance(named: .aqua)
     }
 
@@ -327,8 +342,8 @@ final class PreviewPanelController: NSObject {
         guard isVisible else { return }
         guard selectionID != nil else { close(); return }
         if previewedID != selectionID {
-            // Reuse the live document, but start motion from the next card's
-            // own collapsed pose. Keep the session's reading size and zoom.
+            // Transfer the live document at its current expanded pose, keeping
+            // the session's logical reading size and zoom.
             open()
         } else {
             followPaper()
