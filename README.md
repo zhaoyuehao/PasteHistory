@@ -33,7 +33,7 @@ Allow PasteHistory in **System Settings → Privacy & Security → Accessibility
 
 Copy content in another app, open the tree and type to search. Each group contains eight history cards plus a permanent **Phone Sync** card. The tree opens centered on the screen under the pointer; decorative branches and empty space let clicks pass through.
 
-Single-click a history card to preview it; double-click to paste it into the original app, just like Return. A single click waits for the system double-click interval before expanding so the second click can still hit the same card. Click the expanded paper to close it; text selection, scrolling and pinching do not close it. Pinching inside the preview scales the whole paper without taking keyboard focus from search. Drag a history card into a compatible app to copy it without moving source files, or drop it onto another history card to merge their contents.
+Single-click a history card to preview it; double-click to paste it into the original app, just like Return. Preview starts as soon as the mouse button is released. A second click near the original click position in the same paper window still confirms within the system double-click interval. Click the expanded paper to close it; text selection, scrolling and pinching do not close it. Pinching inside the preview scales the whole paper without taking keyboard focus from search. Drag a history card into a compatible app to copy it without moving source files, or drop it onto another history card to merge their contents.
 
 Search stays above expanded papers and follows the tree layout at a fixed size. Preview text retains its logical font size while the whole paper scales.
 

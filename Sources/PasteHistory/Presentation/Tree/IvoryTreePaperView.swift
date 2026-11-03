@@ -454,7 +454,7 @@ private final class IvoryPaperAccessibility: NSAccessibilityElement {
 final class TreePaperSurface: NSView, NSDraggingSource {
     private let mergeType = ClipDragPayload.mergeType
     var recordID: UUID? {
-        didSet { if recordID != oldValue { cancelPendingPreview() } }
+        didSet { if recordID != oldValue { cancelClick() } }
     }
     var draggable = true {
         didSet { if !draggable { mergeHover = false } }
@@ -484,7 +484,7 @@ final class TreePaperSurface: NSView, NSDraggingSource {
     var enabled = true {
         didSet {
             setAccessibilityEnabled(enabled)
-            if !enabled { cancelPendingPreview() }
+            if !enabled { cancelClick() }
         }
     }
     private var mergeHover = false {
@@ -501,12 +501,8 @@ final class TreePaperSurface: NSView, NSDraggingSource {
     private var previewAtDown: (() -> Void)?
     private var confirmAtDown: (() -> Void)?
     private var recordAtDown: UUID?
-    private var pendingPreview: DispatchWorkItem?
-    private var clickGeneration = 0
-    func cancelPendingPreview() {
-        clickGeneration += 1
-        pendingPreview?.cancel()
-        pendingPreview = nil
+    func cancelClick() {
+        (window as? TreeInteractionPanel)?.cancelOpeningDoubleClick()
         downEvent = nil
         dragPayload = nil
         previewAtDown = nil
@@ -539,7 +535,7 @@ final class TreePaperSurface: NSView, NSDraggingSource {
     override func mouseDown(with event: NSEvent) {
         guard enabled, (window as? TreeInteractionPanel)?.previewOwnsGeometry != true else { return }
         guard let owner = (window as? TreeInteractionPanel)?.owner, !owner.layoutEditing else { return }
-        owner.cancelPendingPaperClicks()
+        owner.cancelPaperClicks()
         downEvent = event
         dragPayload = recordID.flatMap { owner.prepareDrag?($0) }
         down = event.locationInWindow
@@ -628,21 +624,14 @@ final class TreePaperSurface: NSView, NSDraggingSource {
         if event.clickCount == 2, downEvent?.clickCount == 2 {
             confirmAtDown?()
         } else if event.clickCount == 1, let preview = previewAtDown {
-            // Keep the compact window still until AppKit can distinguish a
-            // single click from a double click. Never intercept another window
-            // to recover a second click after an opening animation has moved it.
-            let generation = clickGeneration
-            let work = DispatchWorkItem { [weak self] in
-                guard let self, self.clickGeneration == generation, self.recordID == id,
-                      self.enabled, let panel = self.window as? TreeInteractionPanel,
-                      panel.isVisible, !panel.previewOwnsGeometry,
-                      let owner = panel.owner, owner.isVisible,
-                      !owner.layoutEditing, !owner.dragInProgress else { return }
-                self.cancelPendingPreview()
-                preview()
+            guard let panel = window as? TreeInteractionPanel else { return }
+            // Capture screen coordinates before opening moves the same window.
+            let point = panel.convertPoint(toScreen: event.locationInWindow)
+            let confirm = confirmAtDown
+            preview()
+            if recordID == id, panel.previewOwnsGeometry, let confirm {
+                panel.armOpeningDoubleClick(at: point, timestamp: event.timestamp, confirm: confirm)
             }
-            pendingPreview = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: work)
         }
     }
 }

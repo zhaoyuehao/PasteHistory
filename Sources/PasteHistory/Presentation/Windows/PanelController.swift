@@ -348,7 +348,7 @@ final class PanelController: NSObject, NSWindowDelegate {
     /// Shared dispatch path, also exercised by isolated keyboard regression tests.
     func handle(_ event: NSEvent) -> NSEvent? {
         if panel?.dragInProgress == true { return event } // Escape belongs to the native drag session.
-        panel?.cancelPendingPaperClicks()
+        panel?.cancelPaperClicks(except: event.type == .leftMouseDown ? event.window : nil)
         if event.type == .leftMouseDown {
             // Clicking back into search returns Delete to the text editor.
             if let content = event.window?.contentView {

@@ -52,17 +52,23 @@ class PaperPreviewPanel: NSPanel {
     private weak var clickedText: NSTextView?
     var onMagnify: ((CGFloat, NSEvent.Phase) -> Bool)?
     private var interactionMonitor: Any?
+    private var openingClick: (point: NSPoint, timestamp: TimeInterval, confirm: () -> Void)?
+    private var confirmationOrigin: NSPoint?
+    private var confirmationAction: (() -> Void)?
     var handlesPaperPinch: Bool { interactionMonitor != nil }
     override var canBecomeKey: Bool { acceptsKeyboardFocus }
     override var canBecomeMain: Bool { false }
 
     func beginPaperInteraction() {
         cancelClick()
+        cancelOpeningDoubleClick()
         guard interactionMonitor == nil else { return }
         interactionMonitor = NSEvent.addLocalMonitorForEvents(
-            matching: [.magnify, .leftMouseDown, .leftMouseDragged, .leftMouseUp, .scrollWheel, .keyDown]
+            matching: [.magnify, .leftMouseDown, .leftMouseDragged, .leftMouseUp,
+                       .rightMouseDown, .otherMouseDown, .scrollWheel, .keyDown]
         ) { [weak self] event in
             guard let self else { return event }
+            if self.routeOpeningDoubleClick(event) { return nil }
             self.trackClick(event)
             if event.type == .magnify,
                self.routeMagnification(from: event.window, at: event.locationInWindow,
@@ -74,8 +80,60 @@ class PaperPreviewPanel: NSPanel {
     }
     func endPaperInteraction() {
         cancelClick()
+        cancelOpeningDoubleClick()
         if let interactionMonitor { NSEvent.removeMonitor(interactionMonitor) }
         interactionMonitor = nil
+    }
+
+    /// Only the second click of the compact card's opening gesture confirms.
+    /// Later double clicks in the document retain native word selection.
+    func armOpeningDoubleClick(at point: NSPoint, timestamp: TimeInterval, confirm: @escaping () -> Void) {
+        guard handlesPaperPinch, isVisible else { return }
+        cancelOpeningDoubleClick()
+        openingClick = (point, timestamp, confirm)
+    }
+    func cancelOpeningDoubleClick() {
+        openingClick = nil
+        confirmationOrigin = nil
+        confirmationAction = nil
+    }
+    @discardableResult
+    func routeOpeningDoubleClick(_ event: NSEvent) -> Bool {
+        let sameWindow = event.window === self
+        let point = convertPoint(toScreen: event.locationInWindow)
+        let inside = sameWindow && handlesPaperPinch && isVisible && alphaValue > 0 && !ignoresMouseEvents
+            && NSRect(origin: .zero, size: frame.size).contains(event.locationInWindow)
+        let plain = event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty
+        switch event.type {
+        case .leftMouseDown:
+            let first = openingClick
+            cancelOpeningDoubleClick()
+            guard let first, inside, plain, event.clickCount == 2,
+                  event.timestamp >= first.timestamp,
+                  event.timestamp - first.timestamp <= NSEvent.doubleClickInterval,
+                  hypot(point.x-first.point.x, point.y-first.point.y) <= 5 else { return false }
+            confirmationOrigin = point
+            confirmationAction = first.confirm
+            return true
+        case .leftMouseDragged:
+            guard let origin = confirmationOrigin else { return false }
+            guard sameWindow else { cancelOpeningDoubleClick(); return false }
+            if hypot(point.x-origin.x, point.y-origin.y) > 5 { confirmationAction = nil }
+            return true // Consume the rest of this press even after cancelling it.
+        case .leftMouseUp:
+            guard let origin = confirmationOrigin else { return false }
+            let confirm = confirmationAction
+            cancelOpeningDoubleClick()
+            guard sameWindow else { return false }
+            if inside, plain, event.clickCount == 2,
+               hypot(point.x-origin.x, point.y-origin.y) <= 5 { confirm?() }
+            return true
+        case .keyDown, .scrollWheel, .magnify, .rightMouseDown, .otherMouseDown:
+            cancelOpeningDoubleClick()
+            return false
+        default:
+            return false
+        }
     }
     private func cancelClick() {
         clickOrigin = nil

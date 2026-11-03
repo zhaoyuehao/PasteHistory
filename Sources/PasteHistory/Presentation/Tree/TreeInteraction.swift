@@ -15,7 +15,7 @@ final class TreeInteractionPanel: PaperPreviewPanel {
     }
     var onReleasePreview: (() -> Void)?
     var previewOwnsGeometry = false {
-        didSet { if previewOwnsGeometry { (contentView as? TreePaperSurface)?.cancelPendingPreview() } }
+        didSet { if previewOwnsGeometry { (contentView as? TreePaperSurface)?.cancelClick() } }
     }
     var paperSize: NSSize = .zero
     var paperAngle: CGFloat = 0
@@ -44,7 +44,7 @@ final class TreeInteractionPanel: PaperPreviewPanel {
         owner.register(self)
     }
     func detach() {
-        (contentView as? TreePaperSurface)?.cancelPendingPreview()
+        (contentView as? TreePaperSurface)?.cancelClick()
         owner?.unregister(self)
         orderOut(nil)
     }

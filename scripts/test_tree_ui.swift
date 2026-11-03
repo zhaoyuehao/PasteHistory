@@ -359,7 +359,7 @@ struct TreeUISmoke {
         let middle = NSPoint(x: paperSurface.bounds.midX, y: paperSurface.bounds.midY)
         paperSurface.mouseDown(with: mouse(.leftMouseDown, view: paperSurface, point: middle))
         paperSurface.mouseUp(with: mouse(.leftMouseUp, view: paperSurface, point: middle))
-        run(NSEvent.doubleClickInterval + 0.2)
+        run(0.2)
         precondition(controller.panelModel.current?.id == clickedID, "Filtered paper click must select")
         precondition(controller.isPreviewVisible, "A single paper click must open preview")
         run(0.2); settlePreview()
@@ -890,7 +890,7 @@ struct TreeUISmoke {
         let phoneCenter = NSPoint(x: phoneSurface.bounds.midX, y: phoneSurface.bounds.midY)
         phoneSurface.mouseDown(with: mouse(.leftMouseDown, view: phoneSurface, point: phoneCenter))
         phoneSurface.mouseUp(with: mouse(.leftMouseUp, view: phoneSurface, point: phoneCenter))
-        run(NSEvent.doubleClickInterval + 0.8)
+        run(0.8)
         precondition(controller.isPreviewVisible && controller.previewSelectionID == phoneID && pairingStarts == 1)
         let phonePreview = controller.previewWindow as! PaperPreviewPanel
         precondition(phonePreview === phoneIsland && phoneIsland.alphaValue == 1 && !phoneIsland.ignoresMouseEvents && phonePreview.handlesPaperPinch)

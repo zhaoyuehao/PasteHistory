@@ -80,17 +80,19 @@ final class HistoryPanel: NSPanel {
     }
     func suspendIslands() {
         presentsIslands = false
-        cancelPendingPaperClicks()
+        cancelPaperClicks()
         for island in islands { island.orderOut(nil) }
     }
     override func orderOut(_ sender: Any?) {
         presentsIslands = false
-        cancelPendingPaperClicks()
+        cancelPaperClicks()
         for island in islands { island.orderOut(sender) }
         super.orderOut(sender)
     }
-    func cancelPendingPaperClicks() {
-        for island in islands { (island.contentView as? TreePaperSurface)?.cancelPendingPreview() }
+    func cancelPaperClicks(except window: NSWindow? = nil) {
+        for island in islands where island !== window {
+            (island.contentView as? TreePaperSurface)?.cancelClick()
+        }
     }
     func configureTree() {
         ignoresMouseEvents = true

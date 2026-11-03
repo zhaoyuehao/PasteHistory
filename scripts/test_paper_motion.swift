@@ -98,60 +98,90 @@ func checkPaperMotion() {
     print("PASS: uniform face scaling, persistent window ownership, subpixel pin stability")
 }
 
-/// Click arbitration uses isolated windows and callbacks, never the clipboard.
+/// Click handling uses isolated windows and callbacks, never the clipboard.
 @MainActor
 private func checkPaperClicks() {
-    let owner = HistoryPanel(contentRect: NSRect(x: 100, y: 100, width: 300, height: 250),
+    let owner = HistoryPanel(contentRect: NSRect(x: 100, y: 100, width: 400, height: 300),
         styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     owner.isReleasedWhenClosed = false
     owner.configureTree()
     let paper = TreeInteractionPanel(owner: owner, role: .paper)
-    let surface = TreePaperSurface(frame: NSRect(x: 0, y: 0, width: 158, height: 112))
+    let compact = NSRect(x: 130, y: 150, width: 158, height: 112)
+    let surface = TreePaperSurface(frame: NSRect(origin: .zero, size: compact.size))
     surface.recordID = UUID()
     paper.contentView = surface
-    paper.setFrame(NSRect(x: 130, y: 150, width: 158, height: 112), display: false)
+    paper.setFrame(compact, display: false)
     owner.orderFrontRegardless()
-    defer { paper.detach(); owner.orderOut(nil) }
+    defer { paper.endPaperInteraction(); paper.detach(); owner.orderOut(nil) }
     var previews = 0, confirmations = 0
-    surface.onPreview = { previews += 1 }
+    surface.onPreview = {
+        previews += 1
+        paper.previewOwnsGeometry = true
+        paper.beginPaperInteraction()
+        paper.setFrame(NSRect(x: 115, y: 120, width: 300, height: 220), display: false)
+    }
     surface.onConfirm = { confirmations += 1 }
-    func waitForSingle() {
-        RunLoop.main.run(until: Date().addingTimeInterval(NSEvent.doubleClickInterval + 0.05))
+    let screenPoint = paper.convertPoint(toScreen: surface.convert(NSPoint(x: 40, y: 40), to: nil))
+    var timestamp = ProcessInfo.processInfo.systemUptime
+    func event(_ type: NSEvent.EventType, count: Int, offset: CGFloat = 0,
+               advance: Double = 0.001, window: NSWindow? = nil) -> NSEvent {
+        timestamp += advance
+        let target = window ?? paper
+        return NSEvent.mouseEvent(with: type,
+            location: target.convertPoint(fromScreen: NSPoint(x: screenPoint.x+offset, y: screenPoint.y)),
+            modifierFlags: [], timestamp: timestamp, windowNumber: target.windowNumber,
+            context: nil, eventNumber: 1, clickCount: count, pressure: 1)!
     }
-    func event(_ type: NSEvent.EventType, count: Int, x: CGFloat = 40) -> NSEvent {
-        NSEvent.mouseEvent(with: type, location: surface.convert(NSPoint(x: x, y: 40), to: nil),
-            modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-            windowNumber: paper.windowNumber, context: nil, eventNumber: 1,
-            clickCount: count, pressure: 1)!
+    func reset() {
+        paper.endPaperInteraction()
+        paper.previewOwnsGeometry = false
+        surface.cancelClick()
+        paper.setFrame(compact, display: false)
     }
-    func click(_ count: Int) {
-        surface.mouseDown(with: event(.leftMouseDown, count: count))
-        surface.mouseUp(with: event(.leftMouseUp, count: count))
+    func singleClick() {
+        surface.mouseDown(with: event(.leftMouseDown, count: 1))
+        surface.mouseUp(with: event(.leftMouseUp, count: 1))
     }
-    click(1)
-    precondition(previews == 0 && confirmations == 0,
-        "The first click must not move the card before double-click detection finishes")
-    click(2)
-    waitForSingle()
-    precondition(confirmations == 1 && previews == 0,
-        "A double click confirms once and cancels the pending single-click preview")
-    click(1); waitForSingle()
-    precondition(previews == 1 && confirmations == 1, "A single click only previews")
+    singleClick()
+    precondition(previews == 1 && confirmations == 0,
+        "Single click must start preview synchronously, without a double-click timeout")
+    owner.cancelPaperClicks(except: paper) // Main input monitor preserves this window's second click.
+    precondition(paper.routeOpeningDoubleClick(event(.leftMouseDown, count: 2)))
+    precondition(paper.routeOpeningDoubleClick(event(.leftMouseUp, count: 2)))
+    precondition(confirmations == 1 && previews == 1,
+        "The second click must confirm once at the original screen point after the window moves")
 
-    click(1); owner.suspendIslands(); owner.orderFrontRegardless(); waitForSingle()
-    precondition(previews == 1, "A hidden and reopened tree must not replay a stale click")
-    surface.mouseDown(with: event(.leftMouseDown, count: 2))
+    reset(); singleClick()
+    precondition(!paper.routeOpeningDoubleClick(event(.leftMouseDown, count: 2,
+        advance: NSEvent.doubleClickInterval + 0.01)), "Expired double clicks belong to native text selection")
+    reset(); singleClick()
+    precondition(!paper.routeOpeningDoubleClick(event(.leftMouseDown, count: 2, window: owner)),
+        "A click in another window must not be intercepted")
+    reset(); singleClick()
+    precondition(!paper.routeOpeningDoubleClick(event(.leftMouseDown, count: 2, offset: 20)),
+        "Double clicks elsewhere in the expanded document retain native behavior")
+    reset(); singleClick(); owner.cancelPaperClicks()
+    precondition(!paper.routeOpeningDoubleClick(event(.leftMouseDown, count: 2)),
+        "Keyboard input cancels the opening gesture")
+    reset(); singleClick(); surface.recordID = UUID()
+    precondition(!paper.routeOpeningDoubleClick(event(.leftMouseDown, count: 2)),
+        "A changed record must not inherit another record's confirmation")
+    reset(); singleClick()
+    precondition(paper.routeOpeningDoubleClick(event(.leftMouseDown, count: 2)))
     owner.suspendIslands(); owner.orderFrontRegardless()
-    surface.mouseUp(with: event(.leftMouseUp, count: 2))
-    precondition(confirmations == 1, "Reopening must also invalidate an unfinished double click")
-    click(1); owner.cancelPendingPaperClicks(); waitForSingle()
-    precondition(previews == 1, "Keyboard navigation cancels the pending mouse preview")
-    click(1); surface.recordID = UUID(); waitForSingle()
-    precondition(previews == 1, "A changed record must not inherit the old record's click")
-    surface.mouseDown(with: event(.leftMouseDown, count: 2))
-    surface.mouseDragged(with: event(.leftMouseDragged, count: 2, x: 55))
-    surface.mouseUp(with: event(.leftMouseUp, count: 2, x: 55))
-    waitForSingle()
-    precondition(previews == 1 && confirmations == 1, "Dragging must not preview or confirm")
-    print("PASS: single-click preview, double-click confirm, cancelled stale clicks and drag suppression")
+    precondition(!paper.routeOpeningDoubleClick(event(.leftMouseUp, count: 2)),
+        "Hide/reopen must invalidate an unfinished second click")
+    reset(); singleClick()
+    precondition(paper.routeOpeningDoubleClick(event(.leftMouseDown, count: 2)))
+    precondition(paper.routeOpeningDoubleClick(event(.leftMouseDragged, count: 2, offset: 20)))
+    precondition(paper.routeOpeningDoubleClick(event(.leftMouseUp, count: 2)))
+    precondition(confirmations == 1, "Dragging the second press must cancel confirmation")
+    reset()
+    let countBeforeDrag = previews
+    surface.mouseDown(with: event(.leftMouseDown, count: 1))
+    surface.mouseDragged(with: event(.leftMouseDragged, count: 1, offset: 20))
+    surface.mouseUp(with: event(.leftMouseUp, count: 1, offset: 20))
+    precondition(previews == countBeforeDrag && confirmations == 1,
+        "Dragging the compact card must not preview or confirm")
+    print("PASS: immediate preview, scoped opening double click, native selection and cancellation")
 }
