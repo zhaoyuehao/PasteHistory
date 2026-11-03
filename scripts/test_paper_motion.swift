@@ -1,10 +1,12 @@
 import AppKit
+import SwiftUI
 
 /// Rendering and native-window behavior. Numeric integration is checked separately
 /// by test_damped_motion.swift, without depending on the display refresh rate.
 @MainActor
 func checkPaperMotion() {
     checkPaperClicks()
+    checkSearchAnchoring()
     let image = NSImage(size: NSSize(width: 480, height: 297))
     image.lockFocus()
     IvoryPaperStyle.fill.setFill()
@@ -96,6 +98,44 @@ func checkPaperMotion() {
     panel.orderOut(nil)
 
     print("PASS: uniform face scaling, persistent window ownership, subpixel pin stability")
+}
+
+/// Native search positioning must not depend on a portal's intermediate frame.
+@MainActor
+private func checkSearchAnchoring() {
+    let owner = HistoryPanel(contentRect: NSRect(x: 100, y: 150, width: 800, height: 600),
+        styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    owner.isReleasedWhenClosed = false
+    owner.contentView = NSView(frame: NSRect(origin: .zero, size: owner.frame.size))
+    owner.configureTree()
+    let portal = TreeControlPortalView(role: .search, content: Text("Search"))
+    portal.frame = NSRect(x: 15, y: 320, width: 116, height: 92)
+    owner.contentView!.addSubview(portal)
+    owner.orderFrontRegardless()
+    defer { portal.detach(); owner.orderOut(nil) }
+    let search = owner.islands.first { $0.role == .search }!
+    func assertAnchor() {
+        precondition(search.isVisible && search.frame.size == NSSize(width: 116, height: 92))
+        precondition(abs(search.frame.midX-owner.frame.midX) < 0.01
+            && abs(search.frame.minY-owner.frame.minY-8) < 0.01,
+            "Search must remain bottom-centered in the owner window")
+    }
+    assertAnchor()
+    let original = search.frame
+    portal.frame = NSRect(x: 600, y: 450, width: 180, height: 130)
+    portal.host.rootView = Text("Different search result count")
+    portal.synchronize()
+    precondition(search.frame == original,
+        "Temporary portal geometry and content updates must not relocate search")
+    owner.setFrame(NSRect(x: -900, y: 200, width: 700, height: 820), display: false)
+    assertAnchor()
+    owner.orderOut(nil)
+    owner.setFrame(NSRect(x: 200, y: 120, width: 900, height: 700), display: false)
+    owner.orderFrontRegardless()
+    assertAnchor()
+    precondition(owner.islands.filter { $0.role == .search }.count == 1,
+        "Reopening must reuse the one search window")
+    print("PASS: fixed search anchor through portal updates, window resize and reopening")
 }
 
 /// Click handling uses isolated windows and callbacks, never the clipboard.

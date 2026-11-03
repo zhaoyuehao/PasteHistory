@@ -7,6 +7,7 @@ The tree presents eight history cards per group and one permanent Phone Sync car
 ## Interaction contracts
 
 - Opening centers the whole tree on the screen under the pointer. Layout mode can move it temporarily and save a size preset; the next opening centers it again.
+- Search has a fixed 116×92 pt frame, centered horizontally with an 8 pt bottom inset in the owner window. Native window geometry is authoritative; SceneKit projections and intermediate SwiftUI portal frames never position search.
 - Single-clicking a card selects and previews it immediately on mouse-up. The opening gesture can still confirm on a second click in the same window, near the original screen position and within the system double-click interval. It uses the Return/Enter route; the Phone Sync card opens pairing instead of pasting history.
 - Foreign-window clicks pass through. A distant or expired second click belongs to native reading input. Keyboard input, scrolling, pinching, hiding, detachment, record changes and dragging cancel opening confirmation. Clicking the expanded paper closes it, while native text selection (including double-click word selection), scrolling, pinching and pairing buttons remain usable.
 - History previews unfold from the card's hanging hole, hide the original card during expansion, avoid screen edges and return to the card on close. Their base size stays stable across history navigation; the phone preview uses a separate 340×390 reading layout.
@@ -47,6 +48,7 @@ mkdir -p .build
 swiftc -swift-version 5 Sources/PasteHistory/Presentation/Tree/IvoryTreeScene.swift \
   Sources/PasteHistory/Presentation/Tree/IvoryTreePaperView.swift \
   Sources/PasteHistory/Presentation/Windows/HistoryPanel.swift \
+  Sources/PasteHistory/Presentation/Tree/TreeSearchLayout.swift \
   Sources/PasteHistory/Presentation/Tree/TreeInteraction.swift \
   Sources/PasteHistory/Presentation/Style/IvoryPaperStyle.swift \
   Sources/PasteHistory/Presentation/Animation/TreeMotion.swift \

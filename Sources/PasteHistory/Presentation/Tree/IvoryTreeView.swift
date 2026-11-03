@@ -5,7 +5,6 @@ struct IvoryTreeView: View {
     @ObservedObject var presentation: HistoryPresentationState
     var onPreview: () -> Void
     var layoutEditing: Bool
-    var onRootPosition: (CGPoint) -> Void = { _ in }
     @State private var resetToken = 0
     @State private var unavailable = false
     private var pageStart: Int { model.safeSelection / IvoryTreeLayout.pageSize * IvoryTreeLayout.pageSize }
@@ -21,7 +20,7 @@ struct IvoryTreeView: View {
     var body: some View {
         IvoryTreeCanvas(
             entries: entries, selectedID: presentation.phoneSyncSelected ? IvoryTreeEntry.phoneSyncID : model.current?.id, resetToken: resetToken,
-            presentationToken: model.presentationTick, onRootPosition: onRootPosition,
+            presentationToken: model.presentationTick,
             unavailable: $unavailable, onSelect: select, onPreview: preview, layoutEditing: layoutEditing
         )
         .accessibilityLabel(L10n.wishTree)
@@ -53,7 +52,6 @@ private struct IvoryTreeCanvas: NSViewRepresentable {
     let selectedID: UUID?
     let resetToken: Int
     let presentationToken: Int
-    let onRootPosition: (CGPoint) -> Void
     @Binding var unavailable: Bool
     let onSelect: (UUID) -> Void
     let onPreview: (UUID) -> Void
@@ -61,7 +59,6 @@ private struct IvoryTreeCanvas: NSViewRepresentable {
     final class Coordinator {
         var resetToken = 0
         var presentationToken = -1
-        var root = CGPoint.zero
     }
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeNSView(context: Context) -> IvoryTreeSceneView {
@@ -80,12 +77,6 @@ private struct IvoryTreeCanvas: NSViewRepresentable {
         return view
     }
     func updateNSView(_ view: IvoryTreeSceneView, context: Context) {
-        view.onRootPosition = { point in
-            guard abs(point.x - context.coordinator.root.x) + abs(point.y - context.coordinator.root.y) > 0.5
-            else { return }
-            context.coordinator.root = point
-            DispatchQueue.main.async { onRootPosition(point) }
-        }
         view.onSelect = onSelect
         view.onPreview = onPreview
         view.layoutEditing = layoutEditing
