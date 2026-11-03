@@ -49,6 +49,7 @@ final class HistoryPanel: NSPanel {
     func showIslandIfNeeded(_ island: TreeInteractionPanel) {
         guard isVisible, presentsIslands else { return }
         island.alphaValue = treeOpacity
+        positionSearch(island)
         if island.parent == nil { addChildWindow(island, ordered: .above) }
         // Apply after attachment: the owner may have changed level since the
         // portal was created, and an expanded paper sits one level above it.
@@ -57,6 +58,16 @@ final class HistoryPanel: NSPanel {
             if island.level != searchLevel { island.level = searchLevel }
         }
         if !island.isVisible { island.orderFrontRegardless() }
+    }
+    private func positionSearch(_ island: TreeInteractionPanel) {
+        guard island.role == .search else { return }
+        let target = TreeSearchLayout.frame(in: frame)
+        if island.frame != target { island.setFrame(target, display: false) }
+    }
+    override func setFrame(_ frameRect: NSRect, display flag: Bool) {
+        super.setFrame(frameRect, display: flag)
+        // Resize/move callbacks need not cause a SwiftUI portal layout pass.
+        for island in islands { positionSearch(island) }
     }
     func focusSearch() {
         guard isVisible, presentsIslands, !layoutEditing,

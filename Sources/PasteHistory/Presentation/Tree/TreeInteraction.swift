@@ -76,7 +76,7 @@ final class TreeControlPortalView<Content: View>: NSView {
         host = NSHostingView(rootView: content)
         super.init(frame: .zero)
         host.safeAreaRegions = []
-        // The portal owns the window frame. Content-derived window constraints
+        // Presentation owns the window frame. Content-derived window constraints
         // can otherwise resize it again after synchronize() has positioned it.
         host.sizingOptions = []
     }
@@ -105,7 +105,9 @@ final class TreeControlPortalView<Content: View>: NSView {
             island = panel
         }
         guard let island else { return }
-        if island.frame != rect { island.setFrame(rect, display: true) }
+        // Search geometry belongs to the owner window. SwiftUI can update this
+        // portal while an ancestor still has a transient layout transform.
+        if role != .search, island.frame != rect { island.setFrame(rect, display: true) }
         owner.showIslandIfNeeded(island)
         if role == .search, owner.isVisible, NSApp.keyWindow === owner {
             DispatchQueue.main.async { [weak self, weak island, weak owner] in

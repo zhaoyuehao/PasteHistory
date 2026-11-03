@@ -50,7 +50,6 @@ final class IvoryTreeSceneView: SCNView {
     var onSelect: ((UUID) -> Void)?
     var onPreview: ((UUID) -> Void)?
     var layoutEditing = false { didSet { paper.layoutEditing = layoutEditing; startSettling() } }
-    var onRootPosition: ((CGPoint) -> Void)?
     private(set) var loadError: Error?
     var cardFrames: [UUID: NSRect] { paper.cardFrames }
     var isTurningPage: Bool { paper.isTurningPage }
@@ -195,8 +194,6 @@ final class IvoryTreeSceneView: SCNView {
             return .init(point: NSPoint(x: p.x, y: bounds.height - p.y), height: world.y, depth: world.z)
         }
         paper.advance(attachments: attachments, sway: sway, dt: dt)
-        let root = projectPoint(sculpture.convertPosition(SCNVector3(0, 0.25, 0), to: nil))
-        onRootPosition?(CGPoint(x: root.x, y: bounds.height - root.y))
     }
     // Display-only. Pointer gestures belong to paper windows or the layout handle.
     override func mouseDown(with event: NSEvent) {}

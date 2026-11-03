@@ -8,7 +8,6 @@ struct HistoryView: View {
     @ObservedObject private var model: HistoryViewModel
     @ObservedObject private var presentationState: HistoryPresentationState
     @FocusState private var searchFocused: Bool
-    @State private var treeRoot = CGPoint.zero
     private var layoutEditing: Bool { presentationState.treeLayoutEditing }
 
     var onPaste: (ClipItem) -> Void
@@ -98,17 +97,16 @@ struct HistoryView: View {
 
     private var treeContent: some View {
         GeometryReader { geometry in
+            let searchFrame = TreeSearchLayout.frame(in: CGRect(origin: .zero, size: geometry.size))
             ZStack(alignment: .topLeading) {
-                IvoryTreeView(model: model, presentation: presentationState, onPreview: onPreview, layoutEditing: layoutEditing, onRootPosition: { treeRoot = $0 })
+                IvoryTreeView(model: model, presentation: presentationState, onPreview: onPreview, layoutEditing: layoutEditing)
                 if !layoutEditing {
                     Rectangle().fill(Color(red: 0.76, green: 0.72, blue: 0.62))
                         .frame(width: 1, height: 14)
-                        .position(x: treeRoot == .zero ? geometry.size.width/2 : treeRoot.x,
-                                  y: (treeRoot == .zero ? geometry.size.height-112 : treeRoot.y)+7)
+                        .position(x: searchFrame.midX, y: geometry.size.height - searchFrame.maxY - 7)
                     TreeControlPortal(role: .search) { desktopSearch }
-                    .frame(width: 116, height: 92)
-                    .position(x: treeRoot == .zero ? geometry.size.width/2 : treeRoot.x,
-                              y: min(geometry.size.height-46, (treeRoot == .zero ? geometry.size.height-112 : treeRoot.y)+64))
+                    .frame(width: searchFrame.width, height: searchFrame.height)
+                    .position(x: searchFrame.midX, y: geometry.size.height - searchFrame.midY)
                 } else {
                     TreeControlPortal(role: .layout) { layoutControls }
                         .frame(width: 310, height: 42)
