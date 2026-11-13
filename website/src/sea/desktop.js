@@ -7,7 +7,7 @@ export const markup = `<main id="desk" tabindex="-1" aria-label="海的桌面模
         ><button id="files" aria-haspopup="true">文件</button
         ><button id="view" aria-haspopup="true">显示</button>
         <button id="clipboard" title="打开许愿树剪贴板">PasteHistory</button><div class="space"></div>
-        <button id="skies" aria-haspopup="true" title="天气与昼夜">
+        <select id="sea-language" aria-label="语言"></select><button id="skies" aria-haspopup="true" title="天气与昼夜">
           ☼ <span id="condition">天气</span></button
         ><time id="clock"></time>
       </header>

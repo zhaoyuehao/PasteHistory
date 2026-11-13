@@ -1495,4 +1495,41 @@ kbd {
 #app .desktop {min-height:100%}
 #app #desktop-main {box-shadow:none;border:none}
 
-#app .menubar {background:rgba(22,49,54,.89)}
+#app > .menubar {
+  position: sticky;
+  inset: 0 0 auto;
+  height: 30px;
+  margin-bottom: -30px;
+  background: rgba(22,49,54,.94);
+  z-index: 100;
+}
+#app-menu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 5px;
+  min-width: 205px;
+  color: CanvasText;
+  background: color-mix(in srgb, Canvas 92%, transparent);
+  color-scheme: light dark;
+  backdrop-filter: blur(20px);
+  border: 1px solid #8885;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px #0003;
+}
+#app-menu button {
+  display:flex; align-items:center; justify-content:space-between; gap:18px;
+  width:100%; min-height:24px; padding:2px 9px;
+  color:inherit; background:none; border:0; border-radius:4px; font-size:13px;
+}
+#app-menu button:is(:hover,:focus-visible) { background:#0878ed; color:white; }
+#app-menu kbd { font:inherit; opacity:.7; }
+#app-menu hr { border:0; border-top:1px solid #8885; margin:4px 6px; }
+@media (max-width: 759px) {
+  #app > .menubar { padding: 0 8px; gap: 6px; }
+  #app > .menubar .system-status { display: none; }
+  #app > .menubar .brand svg { display: none; }
+}
+@media (max-width: 440px) {
+  #app > .menubar .system-status, #app > .menubar time { display: none; }
+}

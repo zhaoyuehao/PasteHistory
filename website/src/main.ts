@@ -10,10 +10,11 @@ import { loadStats, REPO, type Stats } from "./github";
 import {
   t,
   locale,
-  setLocale,
+  onLanguageChange,
+  bindLanguageSelect,
   locales,
   bindLabels,
-  refreshLabels,
+  type Locale,
 } from "./i18n";
 const $ = <T extends HTMLElement = HTMLElement>(selector: string) =>
   document.querySelector<T>(selector)!;
@@ -40,7 +41,7 @@ const lights = () =>
 $("#app").innerHTML = `
 <div class="desktop native-desktop exploring" data-mobile-view="tree">
 
- <header class="menubar"><button class="brand" id="menu-tree">${icon("tree")}<b>PasteHistory</b></button><button id="return-to-sea">返回海面</button><div class="menu-spacer"></div><label class="language-control"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><ellipse cx="10" cy="10" rx="3.2" ry="7.5"/><path d="M2.5 10h15"/></svg><span id="language-name" aria-hidden="true"></span><svg class="language-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3"/></svg><select id="site-language" aria-label="语言"></select></label><span class="system-status" aria-hidden="true">⌁ &nbsp; ▰</span><time id="clock"></time></header>
+ <header class="menubar"><button class="brand" id="menu-tree" popovertarget="app-menu" aria-haspopup="menu">${icon("tree")}<b>PasteHistory</b></button><div id="app-menu" popover role="menu" aria-label="PasteHistory"><button role="menuitem" id="show-clipboard">显示剪贴板</button><hr><button role="menuitem" id="quit-app">退出 PasteHistory<kbd aria-hidden="true">⌘Q</kbd></button></div><div class="menu-spacer"></div><label class="language-control"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><ellipse cx="10" cy="10" rx="3.2" ry="7.5"/><path d="M2.5 10h15"/></svg><span id="language-name" aria-hidden="true"></span><svg class="language-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3"/></svg><select id="site-language" aria-label="语言"></select></label><span class="system-status" aria-hidden="true">⌁ &nbsp; ▰</span><time id="clock"></time></header>
  <main id="desktop-main">
   <nav id="mobile-nav" aria-label="移动端操作">
    <button id="mobile-notes-drop" type="button" data-mobile-view="notes" aria-pressed="false">
@@ -72,7 +73,7 @@ const store = new HistoryStore(initialClips());
 // resize the tree or reveal a second layout.
 const screen = $("#desktop-main");
 
-screen.prepend($(".menubar"));
+$("#app").prepend($(".menubar"));
 const rootLinks = document.createElement("section");
 rootLinks.className = "root-links";
 rootLinks.setAttribute("aria-label", "下载与 GitHub");
@@ -159,13 +160,7 @@ function enterExperience() {
 }
 const sampleDrafts = new Map<string, string>();
 const languageSelect = $<HTMLSelectElement>("#site-language");
-for (const [code, label] of locales) {
-  const option = document.createElement("option");
-  option.value = code;
-  option.textContent = label;
-  languageSelect.append(option);
-}
-languageSelect.value = locale;
+bindLanguageSelect(languageSelect);
 function updateLanguageName() {
   $("#language-name").textContent = locales.find(
     ([code]) => code === locale,
@@ -173,14 +168,12 @@ function updateLanguageName() {
 }
 updateLanguageName();
 let lastStats: { stats: Stats | null; stale: boolean } | null = null;
-languageSelect.onchange = () => applyLanguage();
-function applyLanguage() {
+onLanguageChange(applyLanguage);
+function applyLanguage(previous: Locale) {
   const editor = $<HTMLTextAreaElement>("#sample-text");
-  if (editor) sampleDrafts.set(locale, editor.value);
-  setLocale(languageSelect.value);
-  refreshLabels();
+  if (editor) sampleDrafts.set(previous, editor.value);
   updateLanguageName();
-  document.title = "海的桌面 · PasteHistory";
+  document.title = t("海的桌面") + " · PasteHistory";
   document
     .querySelector('meta[name="description"]')
     ?.setAttribute("content", t("复制过的，随时找回。"));
@@ -505,8 +498,13 @@ mobileSearchAction.onclick = () => {
   focusSearch(true);
 };
 function presentTree() {
-  document.getElementById("sea-desktop")?.classList.add("clipboard-open");
-  $("#app").hidden=false;
+  if ($("#app").hidden && location.hash !== "#pastehistory") {
+    history.pushState({ seaClipboard: true }, "", "#pastehistory");
+  }
+  const sea = $("#sea-desktop");
+  sea.inert = true;
+  sea.classList.add("clipboard-open");
+  $("#app").hidden = false;
   captureInputTarget();
   if (store.visible) {
     focusSearch();
@@ -1005,7 +1003,32 @@ search.addEventListener("input", () => {
 });
 search.addEventListener("focus", () => (keyboardCards = false));
 search.addEventListener("pointerdown", () => (keyboardCards = false));
-$("#menu-tree").onclick = () => (store.visible ? closeTree() : presentTree());
+const appMenu = $("#app-menu");
+const appActions = [...appMenu.querySelectorAll("button")];
+appMenu.addEventListener("beforetoggle", (event) => {
+  if ((event as ToggleEvent).newState !== "open") return;
+  const trigger = $("#menu-tree").getBoundingClientRect();
+  appMenu.style.left = trigger.left + "px";
+  appMenu.style.top = trigger.bottom + 2 + "px";
+});
+appMenu.addEventListener("keydown", e => {
+  const index = appActions.indexOf(document.activeElement as HTMLButtonElement);
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    appActions[(index + (e.key === "ArrowDown" ? 1 : -1) + appActions.length) % appActions.length].focus();
+  }
+});
+$("#menu-tree").onkeydown = e => {
+  if (e.key !== "ArrowDown") return;
+  e.preventDefault();
+  appMenu.showPopover();
+  appActions[0].focus();
+};
+$("#show-clipboard").onclick = () => {
+  appMenu.hidePopover();
+  presentTree();
+};
+$("#quit-app").onclick = closeWorkspace;
 $("#clear-note").onclick = () => {
   clearNotes();
   updateNoteStatus("粘贴目标 · 保留光标位置");
@@ -1112,6 +1135,21 @@ document.addEventListener("keydown", (e) => {
     if (!e.repeat) $("#app").hidden ? presentTree() : closeWorkspace();
     return;
   }
+  if (commandOnly && e.code === "KeyQ" && !$("#app").hidden) {
+    e.preventDefault();
+    if (!e.repeat) closeWorkspace();
+    return;
+  }
+  if (appMenu.matches(":popover-open")) return;
+  if (e.key === "Escape" && !$("#app").hidden && !target.closest("select")) {
+    e.preventDefault();
+    if (e.repeat) return;
+    if (store.preview) {
+      store.preview = false;
+      render();
+    } else closeWorkspace();
+    return;
+  }
   if (editing || !store.visible || $("#app").hidden || target.closest("#sea-desktop")) return;
   if (
     target.closest(
@@ -1119,15 +1157,6 @@ document.addEventListener("keydown", (e) => {
     )
   )
     return;
-  if (e.key === "Escape") {
-    e.preventDefault();
-    if (e.repeat) return;
-    if (store.preview) {
-      store.preview = false;
-      render();
-    } else closeTree();
-    return;
-  }
   if (e.key === " " && e.shiftKey && !command && !e.ctrlKey && !e.altKey) {
     keyboardCards = false;
     if (target !== search) {
@@ -1275,20 +1304,37 @@ void loadStats(statsSnapshot).then((result) => {
 });
 bindLabels($("#app"));
 document.documentElement.lang = locale;
-document.title = "海的桌面 · PasteHistory";
+document.title = t("海的桌面") + " · PasteHistory";
 document
   .querySelector('meta[name="description"]')
   ?.setAttribute("content", t("复制过的，随时找回。"));
 displaySample();
 render();
-function closeWorkspace(){
-  closeTree();document.getElementById("sea-desktop")?.classList.remove("clipboard-open");$("#app").hidden=true;document.getElementById("sea-desktop")?.focus();
+function showSea() {
+  if ($("#app").hidden) return;
+  appMenu.hidePopover();
+  nativePreview.dismissImmediately();
+  closeTree();
+  $("#app").hidden = true;
+  const sea = $("#sea-desktop");
+  sea.classList.remove("clipboard-open");
+  sea.inert = false;
+  (sea.shadowRoot?.querySelector<HTMLElement>("#clipboard") ?? sea).focus({ preventScroll: true });
 }
-document.addEventListener("open-pastehistory",presentTree);
-$("#return-to-sea").onclick=closeWorkspace;
-store.visible=false;
-$("#app").hidden=true;
-const seaModule = document.createElement('script');
-seaModule.type = 'module';
-seaModule.src = import.meta.env.BASE_URL + 'sea/app.js';
-document.head.append(seaModule);
+function closeWorkspace() {
+  showSea();
+  if (location.hash !== "#pastehistory") return;
+  if (history.state?.seaClipboard) history.back();
+  else history.replaceState(history.state, "", location.pathname + location.search);
+}
+function syncWorkspace() {
+  if (location.hash === "#pastehistory") {
+    if ($("#app").hidden) presentTree();
+  } else showSea();
+}
+document.addEventListener("open-pastehistory", presentTree);
+window.addEventListener("hashchange", syncWorkspace);
+store.visible = false;
+$("#app").hidden = true;
+syncWorkspace();
+void import("./sea/app.js");
