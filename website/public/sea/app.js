@@ -1,3 +1,4 @@
+import { finderMenu } from "./menu.js";
 import { advance } from "./navigation.js";
 import { ocean, precipitation } from "./ocean.js";
 
@@ -18,6 +19,10 @@ const desk = $("desk"),
   menu = $("popup"),
   sheet = $("sheet"),
   body = $("contents");
+const { open: menuAt, close: closeMenu } = finderMenu(root, desk, menu);
+let copied = null,
+  editing = null;
+const trash = [];
 const boats = [],
   week = 7 * 86400000;
 const examples = ["赛博软装铺.zip", "海的桌面.jpg", "落叶信.txt", "竹叶河.wav"];
@@ -98,7 +103,7 @@ function place(b, index) {
   b.path = null;
 }
 function updateAppearance(b) {
-  b.kind = kind(b.name);
+  b.kind = b.folder ? "freighter" : kind(b.name);
   // The filename FNV seed, modulo four, as used by DesktopItem.
   b.variant = new TextEncoder()
     .encode(b.name)
@@ -107,7 +112,7 @@ function updateAppearance(b) {
   b.el.querySelector(".name").textContent = b.name;
   b.el.setAttribute("aria-label", b.name);
 }
-function add(name, file = null) {
+function add(name, file = null, folder = false) {
   const el = document.createElement("button");
   el.className = "boat";
   el.setAttribute("aria-pressed", "false");
@@ -116,6 +121,8 @@ function add(name, file = null) {
   const b = {
     name,
     file,
+    folder,
+    created: Date.now(),
     el,
     x: 0,
     y: 0,
@@ -141,7 +148,7 @@ function add(name, file = null) {
     dragged = false,
     held = false;
   el.onpointerdown = (e) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || e.ctrlKey || editing === b) return;
     select(b);
     closeMenu();
     b.hold = true;
@@ -175,7 +182,7 @@ function add(name, file = null) {
     if (dragged) b.path = null;
   };
   el.onclick = (e) => {
-    if (dragged || held) return;
+    if (dragged || held || editing === b || e.ctrlKey) return;
     select(b);
     b.clicks = b.clicks.filter((t) => t > Date.now() - week).slice(-30);
     b.clicks.push(Date.now());
@@ -188,7 +195,9 @@ function add(name, file = null) {
       } catch {}
     if (e.detail === 0 || matchMedia("(pointer: coarse)").matches) openFile(b);
   };
-  el.ondblclick = () => openFile(b);
+  el.ondblclick = () => {
+    if (editing !== b) openFile(b);
+  };
   el.oncontextmenu = (e) => {
     e.preventDefault();
     fileMenu(b, e.clientX, e.clientY);
@@ -209,40 +218,150 @@ function resize() {
     else b.path = null;
   });
 }
-function closeMenu() {
-  menu.hidden = true;
-}
-function menuAt(x, y, items) {
-  menu.replaceChildren();
-  for (const [label, action] of items) {
-    const el = document.createElement(action ? "button" : "small");
-    el.textContent = label;
-    if (action)
-      el.onclick = () => {
-        closeMenu();
-        action();
-      };
-    menu.append(el);
-  }
-  menu.hidden = false;
-  menu.style.left = Math.max(4, Math.min(x, W - menu.offsetWidth - 5)) + "px";
-  menu.style.top = Math.max(4, Math.min(y, H - menu.offsetHeight - 5)) + "px";
-  menu.querySelector("button")?.focus({ preventScroll: true });
-}
 function popup(id, items) {
-  const r = $(id).getBoundingClientRect();
-  menuAt(r.left, r.bottom + 4, items);
+  const button = $(id),
+    r = button.getBoundingClientRect();
+  menuAt(r.left, r.bottom + 3, items, button, button.textContent);
+}
+function unique(filename, folder = false, copy = false) {
+  const i = folder ? -1 : filename.lastIndexOf("."),
+    ext = i > 0 ? filename.slice(i) : "",
+    base = i > 0 ? filename.slice(0, i) : filename;
+  const stem = base + (copy ? " 副本" : "");
+  let n = 1,
+    name = stem + ext;
+  while (boats.some((b) => b.name === name)) name = stem + " " + ++n + ext;
+  return name;
+}
+function room() {
+  if (boats.length < 40) return true;
+  tell("此海面最多容纳 40 个项目");
+  return false;
+}
+function duplicate(b) {
+  if (!room()) return;
+  const name = unique(
+    b.name,
+    b.folder,
+    boats.some((item) => item.name === b.name),
+  );
+  const copy = add(name, b.file, b.folder);
+  copy.example = b.example;
+  select(copy);
+  copy.el.focus();
+}
+function info(b) {
+  dialog((b?.name ?? "桌面") + "简介");
+  line("名称：" + (b?.name ?? "桌面"));
+  line(
+    "种类：" +
+      (!b || b.folder
+        ? "文件夹"
+        : b.name.includes(".")
+          ? b.name.split(".").pop().toUpperCase() + " 文件"
+          : "文稿"),
+  );
+  if (!b || b.folder) line("包含：" + (b ? 0 : boats.length) + " 个项目");
+  if (b?.file) line("大小：" + b.file.size.toLocaleString() + " 字节");
+  if (b) line("位置：桌面");
 }
 function fileMenu(b, x, y) {
+  if (editing === b) return;
   select(b);
-  menuAt(x, y, [
-    [b.name],
-    ["打开", () => openFile(b)],
-    ["重命名", () => rename(b)],
-    ["从此海面移除", () => remove(b)],
-  ]);
+  menuAt(
+    x,
+    y,
+    [
+      ["打开", () => openFile(b)],
+      null,
+      ["移到废纸篓", () => remove(b)],
+      null,
+      ["显示简介", () => info(b)],
+      ["重新命名", () => rename(b)],
+      ["复制", () => duplicate(b)],
+      [`快速查看“${b.name}”`, () => openFile(b, true)],
+      null,
+      [`拷贝“${b.name}”`, () => (copied = b)],
+    ],
+    b.el,
+    "文件快捷菜单",
+  );
+}
+function arrange(key) {
+  const order = [...boats];
+  if (key === "名称")
+    order.sort((a, b) =>
+      a.name.localeCompare(b.name, "zh-CN", { numeric: true }),
+    );
+  if (key === "种类")
+    order.sort(
+      (a, b) =>
+        a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name, "zh-CN"),
+    );
+  if (key === "添加日期") order.sort((a, b) => b.created - a.created);
+  if (!key) order.sort((a, b) => b.x - a.x || a.y - b.y);
+  const slots = [];
+  for (let x = W - 75; x >= 45; x -= 142)
+    for (let y = 86; y < H - 63; y += 90) if (safe(x, y)) slots.push({ x, y });
+  order.forEach((b, i) => {
+    if (slots[i]) {
+      Object.assign(b, slots[i]);
+      b.path = null;
+      b.vx = b.vy = 0;
+    }
+  });
+}
+function viewOptions() {
+  dialog("桌面");
+  const label = document.createElement("label");
+  label.textContent = "文字大小　";
+  const sizes = document.createElement("select");
+  for (const n of [11, 12, 13, 14, 16, 18])
+    sizes.add(new Option(n + " 点", String(n)));
+  sizes.value = desk.dataset.textSize ?? "13";
+  sizes.onchange = () => {
+    desk.dataset.textSize = sizes.value;
+    desk.style.setProperty("--file-label-size", sizes.value + "px");
+  };
+  label.append(sizes);
+  body.append(label);
+}
+function desktopMenu(x, y) {
+  select(null);
+  menuAt(
+    x,
+    y,
+    [
+      [
+        "新建文件夹",
+        () => {
+          if (!room()) return;
+          const b = add(unique("未命名文件夹", true), null, true);
+          if (safe(x, y)) {
+            b.x = x;
+            b.y = y;
+          }
+          rename(b);
+        },
+      ],
+      ...(copied ? [["粘贴项目", () => duplicate(copied)]] : []),
+      null,
+      ["显示简介", () => info(null)],
+      null,
+      ["整理", () => arrange(null)],
+      [
+        "整理方式",
+        ["名称", "种类", "添加日期"].map((k) => [k, () => arrange(k)]),
+      ],
+      null,
+      ["查看显示选项", viewOptions],
+    ],
+    desk,
+    "桌面快捷菜单",
+  );
 }
 function dialog(title) {
+  sheet.removeAttribute("data-quick-look");
   previewId++;
   if (previewURL) {
     URL.revokeObjectURL(previewURL);
@@ -264,11 +383,14 @@ function action(label, run) {
   el.onclick = run;
   return el;
 }
-function openFile(b) {
+function openFile(b, quickLook = false) {
   select(b);
   dialog(b.name);
+  sheet.toggleAttribute("data-quick-look", quickLook);
   const token = previewId;
-  if (b.file) {
+  if (b.folder) {
+    line("0 个项目");
+  } else if (b.file) {
     const f = b.file;
     if (/^(image|audio|video)\//.test(f.type)) {
       const el = document.createElement(
@@ -302,52 +424,95 @@ function openFile(b) {
   else if (b.example === "赛博软装铺.zip")
     line("赛博软装铺.zip　/　落叶信.txt");
   else line("竹叶河 · WAV 音频示例");
-  action("重命名", () => rename(b));
+  if (!quickLook) action("重新命名", () => rename(b));
 }
 function rename(b) {
-  dialog("重命名");
-  const input = document.createElement("input");
-  input.value = b.name;
+  if (sheet.open) sheet.close();
+  select(b);
+  editing = b;
+  b.hold = true;
+  const input = document.createElement("input"),
+    label = b.el.querySelector(".name");
+  input.className = "rename-field";
   input.setAttribute("aria-label", "文件名");
-  body.append(input);
-  function save() {
+  input.value = b.name;
+  // Keep the editor outside the button so Return cannot also open the file.
+  modelPose(b, H, animationTime, 0, 1);
+  render(b);
+  const r = label.getBoundingClientRect();
+  desk.append(input);
+  const width = Math.min(W - 12, Math.max(160, r.width + 32));
+  input.style.width = width + "px";
+  input.style.left =
+    Math.max(6, Math.min(W - width - 6, r.x + (r.width - width) / 2)) + "px";
+  input.style.top = r.top + "px";
+  label.hidden = true;
+  function finish(save, explicit) {
+    if (editing !== b) return;
     const name = input.value.trim();
     if (
-      !name ||
-      name.includes("/") ||
-      boats.some((n) => n !== b && n.name === name)
+      save &&
+      (!name ||
+        name.includes("/") ||
+        boats.some((n) => n !== b && n.name === name))
     ) {
-      input.setCustomValidity("请输入一个不重复的有效文件名");
-      input.reportValidity();
-      return;
+      if (explicit) {
+        input.setCustomValidity("请输入未使用的有效文件名");
+        input.reportValidity();
+        return;
+      }
+      save = false;
     }
-    b.name = name;
-    updateAppearance(b);
-    sheet.close();
-    b.el.focus();
+    editing = null;
+    b.hold = false;
+    input.remove();
+    label.hidden = false;
+    if (save) {
+      b.name = name;
+      updateAppearance(b);
+    }
+    if (explicit) b.el.focus({ preventScroll: true });
   }
+  input.onblur = () => finish(true, false);
   input.oninput = () => input.setCustomValidity("");
   input.onkeydown = (e) => {
-    if (e.key === "Enter") save();
+    if (!e.isComposing && ["Enter", "Escape"].includes(e.key)) {
+      e.preventDefault();
+      e.stopPropagation();
+      finish(e.key === "Enter", true);
+    }
   };
-  action("保存", save);
   input.focus();
   input.setSelectionRange(
     0,
-    b.name.lastIndexOf(".") > 0 ? b.name.lastIndexOf(".") : b.name.length,
+    !b.folder && b.name.lastIndexOf(".") > 0
+      ? b.name.lastIndexOf(".")
+      : b.name.length,
   );
 }
 function remove(b) {
   select(null);
   b.el.remove();
   boats.splice(boats.indexOf(b), 1);
-  tell("已从此海面移除 " + b.name);
+  trash.push(b);
+  desk.focus();
+}
+function undoTrash() {
+  if (!trash.length || !room()) return;
+  const b = trash.pop();
+  b.name = unique(b.name, b.folder);
+  boats.push(b);
+  fleet.append(b.el);
+  updateAppearance(b);
+  b.path = null;
+  select(b);
+  b.el.focus();
 }
 function addFiles(files) {
   let count = 0;
   for (const f of files) {
     if (boats.length >= 40) break;
-    add(f.name, f);
+    add(unique(f.name), f);
     count++;
   }
   tell(count ? "已添加 " + count + " 个文件" : "此海面最多容纳 40 个文件");
@@ -356,14 +521,15 @@ $("input").onchange = (e) => {
   addFiles(e.target.files);
   e.target.value = "";
 };
-$("picker").onclick = () => $("input").click();
+
 $("files").onclick = () =>
   popup("files", [
+    ...(trash.length ? [["撤销移到废纸篓", undoTrash]] : []),
     ["添加本地文件…", () => $("input").click()],
     ...(selected
       ? [
           ["打开", () => openFile(selected)],
-          ["重命名", () => rename(selected)],
+          ["重新命名", () => rename(selected)],
         ]
       : []),
   ]);
@@ -372,14 +538,28 @@ $("view").onclick = () =>
     [paused ? "恢复漂流" : "暂停漂流", () => (paused = !paused)],
     ["天气与昼夜", () => $("skies").click()],
   ]);
-$("download").onclick = () => {
+$("product").onclick = () =>
+  popup("product", [
+    [
+      "关于海的桌面",
+      () => {
+        dialog("关于海的桌面");
+        line("海的桌面");
+        line("赛博软装铺");
+      },
+    ],
+    null,
+    ["下载 Mac 版 · 敬请期待", download],
+  ]);
+function download() {
   dialog("下载海的桌面");
   line("海的桌面 · macOS");
   line("Mac 版尚未开放下载，敬请期待。");
   action("下载 Mac 版 · 敬请期待", () => {}).disabled = true;
-};
+}
 $("close").onclick = () => sheet.close();
 sheet.onclose = () => {
+  sheet.removeAttribute("data-quick-look");
   previewId++;
   if (previewURL) {
     URL.revokeObjectURL(previewURL);
@@ -387,23 +567,70 @@ sheet.onclose = () => {
   }
 };
 root.addEventListener("pointerdown", (e) => {
-  if (!menu.contains(e.target)) closeMenu();
   if (e.target === desk) select(null);
 });
 desk.oncontextmenu = (e) => {
-  if (e.target.closest(".boat,dialog,#popup")) return;
+  if (e.target.closest(".panel")) {
+    e.preventDefault();
+    return;
+  }
+  if (e.target.closest(".boat,dialog,header,input")) return;
   e.preventDefault();
-  menuAt(e.clientX, e.clientY, [
-    ["添加本地文件…", () => $("input").click()],
-    ["天气与昼夜", () => $("skies").click()],
-  ]);
+  desktopMenu(e.clientX, e.clientY);
 };
 root.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     closeMenu();
     return;
   }
+  if (
+    sheet.open &&
+    sheet.hasAttribute("data-quick-look") &&
+    e.code === "Space" &&
+    !e.repeat &&
+    !e.target.closest("audio,video")
+  ) {
+    e.preventDefault();
+    sheet.close();
+    return;
+  }
   if (sheet.open || !menu.hidden || e.target.matches("input,textarea")) return;
+  if (e.isComposing || editing) return;
+  if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
+    e.preventDefault();
+    if (selected) {
+      const r = selected.el.getBoundingClientRect();
+      fileMenu(selected, r.left + r.width / 2, r.top + r.height / 2);
+    } else desktopMenu(W / 2, H / 2);
+    return;
+  }
+  if (e.metaKey) {
+    if (e.key === "Backspace" && selected) {
+      e.preventDefault();
+      remove(selected);
+    } else if (e.key === "z" && trash.length) {
+      e.preventDefault();
+      undoTrash();
+    } else if (e.key === "d" && selected) {
+      e.preventDefault();
+      duplicate(selected);
+    } else if (e.key === "i") {
+      e.preventDefault();
+      info(selected);
+    } else if (e.key === "c" && selected) {
+      e.preventDefault();
+      copied = selected;
+    } else if (e.key === "v" && copied) {
+      e.preventDefault();
+      duplicate(copied);
+    }
+    return;
+  }
+  if (e.code === "Space" && selected) {
+    e.preventDefault();
+    if (!e.repeat) openFile(selected, true);
+    return;
+  }
   if (
     selected &&
     e.key === "Enter" &&
@@ -593,9 +820,10 @@ function frame(now) {
       dt,
       animationTime,
       strength,
-      sheet.open ? selected : null,
+      sheet.open || !menu.hidden ? selected : null,
     );
   for (const b of boats) {
+    if (b === editing) continue;
     modelPose(b, H, animationTime, paused ? 0 : dt, strength);
     render(b);
   }
@@ -624,7 +852,6 @@ async function init() {
   setInterval(() => {
     if (!document.hidden && followCoords) sync(...followCoords);
   }, 30 * 60000);
-  setTimeout(() => ($("hint").hidden = true), 12000);
 }
 $("clipboard").onclick = () =>
   document.dispatchEvent(new Event("open-pastehistory"));

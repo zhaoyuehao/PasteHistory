@@ -3,7 +3,7 @@ export const markup = `<main id="desk" tabindex="-1" aria-label="海的桌面模
       <canvas id="water" aria-hidden="true"></canvas
       ><canvas id="rain" aria-hidden="true"></canvas>
       <header>
-        <strong>海的桌面</strong
+        <button id="product" aria-haspopup="menu"><strong>海的桌面</strong></button
         ><button id="files" aria-haspopup="true">文件</button
         ><button id="view" aria-haspopup="true">显示</button>
         <button id="clipboard" title="打开许愿树剪贴板">PasteHistory</button><div class="space"></div>
@@ -12,16 +12,6 @@ export const markup = `<main id="desk" tabindex="-1" aria-label="海的桌面模
         ><time id="clock"></time>
       </header>
       <div id="fleet" aria-label="桌面文件"></div>
-      <footer>
-        <div class="identity"><b>海的桌面</b><small>赛博软装铺</small></div>
-        <i></i
-        ><button id="picker" title="添加本地文件">
-          <span aria-hidden="true">＋</span> 添加文件</button
-        ><button id="download" aria-haspopup="dialog">
-          Mac 版 <span class="soon">敬请期待</span>
-        </button>
-      </footer>
-      <div id="hint">双击船只打开文件，或把文件拖到海面</div>
       <div id="popup" class="panel" hidden></div>
       <dialog id="sheet">
         <div class="titlebar">
