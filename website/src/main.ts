@@ -39,8 +39,8 @@ const lights = () =>
   `<div class="traffic" aria-hidden="true"><span class="red"></span><span class="yellow"></span><span class="green"></span></div>`;
 $("#app").innerHTML = `
 <div class="desktop native-desktop exploring" data-mobile-view="tree">
- <div class="wallpaper" aria-hidden="true"></div>
- <header class="menubar"><button class="brand" id="menu-tree">${icon("tree")}<b>PasteHistory</b></button><a class="sea-desktop-link" href="${import.meta.env.BASE_URL}sea/index.html">海的桌面 ↗</a><div class="menu-spacer"></div><label class="language-control"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><ellipse cx="10" cy="10" rx="3.2" ry="7.5"/><path d="M2.5 10h15"/></svg><span id="language-name" aria-hidden="true"></span><svg class="language-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3"/></svg><select id="site-language" aria-label="语言"></select></label><span class="system-status" aria-hidden="true">⌁ &nbsp; ▰</span><time id="clock"></time></header>
+
+ <header class="menubar"><button class="brand" id="menu-tree">${icon("tree")}<b>PasteHistory</b></button><button id="return-to-sea">返回海面</button><div class="menu-spacer"></div><label class="language-control"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><ellipse cx="10" cy="10" rx="3.2" ry="7.5"/><path d="M2.5 10h15"/></svg><span id="language-name" aria-hidden="true"></span><svg class="language-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3"/></svg><select id="site-language" aria-label="语言"></select></label><span class="system-status" aria-hidden="true">⌁ &nbsp; ▰</span><time id="clock"></time></header>
  <main id="desktop-main">
   <nav id="mobile-nav" aria-label="移动端操作">
    <button id="mobile-notes-drop" type="button" data-mobile-view="notes" aria-pressed="false">
@@ -71,7 +71,7 @@ const store = new HistoryStore(initialClips());
 // Site navigation stays outside the simulated screen. Product actions never
 // resize the tree or reveal a second layout.
 const screen = $("#desktop-main");
-$(".desktop").prepend($(".wallpaper"));
+
 screen.prepend($(".menubar"));
 const rootLinks = document.createElement("section");
 rootLinks.className = "root-links";
@@ -180,7 +180,7 @@ function applyLanguage() {
   setLocale(languageSelect.value);
   refreshLabels();
   updateLanguageName();
-  document.title = `PasteHistory — ${t("复制过的，随时找回。")}`;
+  document.title = "海的桌面 · PasteHistory";
   document
     .querySelector('meta[name="description"]')
     ?.setAttribute("content", t("复制过的，随时找回。"));
@@ -505,6 +505,8 @@ mobileSearchAction.onclick = () => {
   focusSearch(true);
 };
 function presentTree() {
+  document.getElementById("sea-desktop")?.classList.add("clipboard-open");
+  $("#app").hidden=false;
   captureInputTarget();
   if (store.visible) {
     focusSearch();
@@ -1096,7 +1098,7 @@ document.addEventListener("compositionend", () => {
 // PanelController + HistoryKeyboardState dispatch order. Browser/system shortcuts
 // can be intercepted before keydown; all actions also have explicit controls.
 document.addEventListener("keydown", (e) => {
-  if (draggingCard || composing || e.isComposing || e.keyCode === 229) return;
+  if (e.defaultPrevented || draggingCard || composing || e.isComposing || e.keyCode === 229) return;
   const target = e.target as HTMLElement;
   const editing =
     target.isContentEditable ||
@@ -1107,10 +1109,10 @@ document.addEventListener("keydown", (e) => {
   const noModifiers = !command && !e.shiftKey && !e.altKey && !e.ctrlKey;
   if (command && e.shiftKey && !e.ctrlKey && !e.altKey && e.code === "KeyV") {
     e.preventDefault();
-    if (!e.repeat) store.visible ? closeTree() : presentTree();
+    if (!e.repeat) $("#app").hidden ? presentTree() : closeWorkspace();
     return;
   }
-  if (editing || !store.visible) return;
+  if (editing || !store.visible || $("#app").hidden || target.closest("#sea-desktop")) return;
   if (
     target.closest(
       ".menubar,.download-area,.site-footer,#browser,#notes,#reopen-tree",
@@ -1273,10 +1275,20 @@ void loadStats(statsSnapshot).then((result) => {
 });
 bindLabels($("#app"));
 document.documentElement.lang = locale;
-document.title = `PasteHistory — ${t("复制过的，随时找回。")}`;
+document.title = "海的桌面 · PasteHistory";
 document
   .querySelector('meta[name="description"]')
   ?.setAttribute("content", t("复制过的，随时找回。"));
 displaySample();
 render();
-if (!isMobileLayout()) focusSearch();
+function closeWorkspace(){
+  closeTree();document.getElementById("sea-desktop")?.classList.remove("clipboard-open");$("#app").hidden=true;document.getElementById("sea-desktop")?.focus();
+}
+document.addEventListener("open-pastehistory",presentTree);
+$("#return-to-sea").onclick=closeWorkspace;
+store.visible=false;
+$("#app").hidden=true;
+const seaModule = document.createElement('script');
+seaModule.type = 'module';
+seaModule.src = import.meta.env.BASE_URL + 'sea/app.js';
+document.head.append(seaModule);

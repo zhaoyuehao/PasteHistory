@@ -1,6 +1,6 @@
 # PasteHistory desktop demo
 
-A static Vite + TypeScript + Three.js website, served at `/PasteHistory/` on GitHub Pages or `/` on Cloudflare Pages. The sculpture is rendered by SceneKit from the native `ivory_tree.scn`, with the camera, material, lighting, five birds and surface-snapped attachment points from native main `0765399`. Three.js projects the exported world-space anchors; accessible DOM papers remain interactive. There is no application backend, clipboard polling, or persistent demo history.
+A static Vite + TypeScript + Three.js website, served at `/PasteHistory/` on GitHub Pages or `/` on Cloudflare Pages. The root page mounts the Sea Desktop renderer and the PasteHistory overlay in one document. The former sea URL redirects to the root. The sculpture is rendered by SceneKit from the native `ivory_tree.scn`, with the camera, material, lighting, five birds and surface-snapped attachment points from native main `0765399`. Three.js projects the exported world-space anchors; accessible DOM papers remain interactive. There is no application backend, clipboard polling, or persistent demo history.
 
 ```sh
 cd website
@@ -73,9 +73,7 @@ Validation: TypeScript/Vite build, architecture and whitespace checks, plus focu
 
 ## Assets
 
-`public/wallpaper-slate.jpg` is the active original wallpaper, generated with the built-in imagegen tool and encoded as JPEG. Its low-detail center and dark slate palette give the ivory tree contrast; download metadata and GitHub links use light text. It is inspired by abstract desktop wallpapers and is not an Apple-provided asset.
-
-Final edit prompt: “Edit this wallpaper only: make it substantially darker, elegant medium-dark desaturated slate blue and charcoal gray, like a quiet macOS dark desktop wallpaper. Keep the original wide aspect ratio, gentle abstract satin dunes, smooth gradients, broad empty central field and exact basic composition. Center should be a uniform subdued slate blue, around #354858, so an ivory white tree and light paper tags placed on top stand out. Lower folds in charcoal blue-gray with a very subtle warm gray edge, never bright white. Preserve softly illuminated form and exquisite subtle texture; do not crush shadows to black. No saturated cyan, purple, neon, glare, objects, trees, text, UI or logos. Output the wallpaper alone.”
+Sea Desktop renders the native cove, distance mask and ripple textures through WebGL 2. Its eight wave bands drive both the water shader and hull excursions. Four vessel meshes in four paint variants come from the Swift generator, including normals, glass and sail geometry. To refresh the packed mesh buffer on macOS, run `python3 scripts/export-sea-models.py /path/to/TideDesk` from `website`. When WebGL 2 is unavailable the desktop uses the original static artwork and 2D boat icons.
 
 `public/sample-lake.jpg` is a real photograph by Luca Bravo, *Boathouse on a mountain lake*, taken at Lago di Braies. The 1280px JPEG comes from [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Boathouse_on_a_mountain_lake_(Unsplash).jpg), which records its pre-June-2017 Unsplash publication under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). The source photograph is unchanged. The copy sample, preview and Notes contain the complete image without cropping.
 

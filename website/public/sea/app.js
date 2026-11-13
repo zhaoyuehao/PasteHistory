@@ -1,6 +1,18 @@
+import { advance } from "./navigation.js";
 import { ocean, precipitation } from "./ocean.js";
 
-const $ = (id) => document.getElementById(id);
+import { modelPose } from "./waves.js";
+import { markup } from "./desktop.js";
+const root = document
+  .getElementById("sea-desktop")
+  .attachShadow({ mode: "open" });
+root.innerHTML = markup;
+const css = document.createElement("link");
+css.rel = "stylesheet";
+css.href = new URL("./sea.css", import.meta.url);
+root.prepend(css);
+const $ = (id) => root.getElementById(id);
+const asset = (path) => new URL(path, import.meta.url).href;
 const desk = $("desk"),
   fleet = $("fleet"),
   menu = $("popup"),
@@ -83,10 +95,15 @@ function place(b, index) {
   );
   b.x = p.x;
   b.y = p.y;
-  b.goal = choosePoint(b);
+  b.path = null;
 }
 function updateAppearance(b) {
-  b.el.querySelector("img").src = "assets/" + kind(b.name) + ".png";
+  b.kind = kind(b.name);
+  // The filename FNV seed, modulo four, as used by DesktopItem.
+  b.variant = new TextEncoder()
+    .encode(b.name)
+    .reduce((n, c) => ((n ^ c) * 3) & 3, 1);
+  b.el.querySelector("img").src = asset("assets/" + b.kind + ".png");
   b.el.querySelector(".name").textContent = b.name;
   b.el.setAttribute("aria-label", b.name);
 }
@@ -103,6 +120,8 @@ function add(name, file = null) {
     x: 0,
     y: 0,
     heading: Math.random() * 6.28,
+    phase: Math.random() * 2 * Math.PI,
+    cruise: 4.3 + Math.random() * 1.8,
     clicks: [],
     hold: false,
     example: file ? null : name,
@@ -153,6 +172,7 @@ function add(name, file = null) {
     clearTimeout(timer);
     down = null;
     b.hold = false;
+    if (dragged) b.path = null;
   };
   el.onclick = (e) => {
     if (dragged || held) return;
@@ -186,66 +206,8 @@ function resize() {
       if (safe(x, y)) points.push({ x, y });
   boats.forEach((b, i) => {
     if (!safe(b.x, b.y)) place(b, i);
-    else b.goal = choosePoint(b);
+    else b.path = null;
   });
-}
-function steer(b, dt) {
-  const g = b.goal;
-  if (!g || Math.hypot(g.x - b.x, g.y - b.y) < 24) b.goal = choosePoint(b);
-  let dx = b.goal.x - b.x,
-    dy = b.goal.y - b.y,
-    dist = Math.max(1, Math.hypot(dx, dy));
-  dx = dx / dist;
-  dy = dy / dist;
-  for (const n of boats) {
-    if (n === b) continue;
-    const x = b.x - n.x,
-      y = b.y - n.y,
-      d = Math.hypot(x, y);
-    if (d > 0 && d < 65) {
-      dx += (x / d) * (1 - d / 65) * 3;
-      dy += (y / d) * (1 - d / 65) * 3;
-    }
-  }
-  if (!safe(b.x + dx * 32, b.y + dy * 32)) {
-    const nearby = points.filter((p) => Math.hypot(b.x - p.x, b.y - p.y) < 100);
-    const best = nearby.reduce(
-      (a, p) => (!a || water?.depth(p.x, p.y) > water?.depth(a.x, a.y) ? p : a),
-      null,
-    );
-    if (best) {
-      dx = best.x - b.x;
-      dy = best.y - b.y;
-    }
-    b.goal = choosePoint(b);
-  }
-  const target =
-    Math.atan2(dy, dx) + 0.13 * Math.sin(animationTime * 0.47 + b.y * 0.015);
-  const turn = Math.atan2(
-    Math.sin(target - b.heading),
-    Math.cos(target - b.heading),
-  );
-  b.heading += Math.sign(turn) * Math.min(Math.abs(turn), dt * 1.5);
-  const speed =
-    (weather === "wind" ? 17 : 11) *
-    Math.min(
-      3,
-      1 + 0.35 * b.clicks.filter((t) => t > Date.now() - week).length,
-    );
-  const nx = b.x + Math.cos(b.heading) * dt * speed,
-    ny = b.y + Math.sin(b.heading) * dt * speed;
-  if (
-    safe(nx, ny) &&
-    boats.every(
-      (n) =>
-        n === b ||
-        Math.hypot(nx - n.x, ny - n.y) >= 40 ||
-        Math.hypot(nx - n.x, ny - n.y) > Math.hypot(b.x - n.x, b.y - n.y),
-    )
-  ) {
-    b.x = nx;
-    b.y = ny;
-  }
 }
 function closeMenu() {
   menu.hidden = true;
@@ -332,7 +294,7 @@ function openFile(b) {
     } else line("文件大小：" + Math.ceil(f.size / 1024) + " KB");
   } else if (b.example === "海的桌面.jpg") {
     const img = document.createElement("img");
-    img.src = "assets/cove.webp";
+    img.src = asset("assets/cove.webp");
     img.alt = "海湾航拍图";
     body.append(img);
   } else if (b.example === "落叶信.txt")
@@ -404,7 +366,6 @@ $("files").onclick = () =>
           ["重命名", () => rename(selected)],
         ]
       : []),
-    ["返回 PasteHistory", () => location.assign("../")],
   ]);
 $("view").onclick = () =>
   popup("view", [
@@ -425,7 +386,7 @@ sheet.onclose = () => {
     previewURL = null;
   }
 };
-document.addEventListener("pointerdown", (e) => {
+root.addEventListener("pointerdown", (e) => {
   if (!menu.contains(e.target)) closeMenu();
   if (e.target === desk) select(null);
 });
@@ -437,7 +398,7 @@ desk.oncontextmenu = (e) => {
     ["天气与昼夜", () => $("skies").click()],
   ]);
 };
-document.addEventListener("keydown", (e) => {
+root.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     closeMenu();
     return;
@@ -475,6 +436,7 @@ const names = {
   wind: "大风",
   cloud: "多云",
 };
+let climate = [1, 0, 0.08, 0];
 function updateSky() {
   const now = new Date();
   let day;
@@ -498,6 +460,12 @@ function updateSky() {
     "--saturation",
     weather === "rain" || night ? 0.75 : 1,
   );
+  climate = [
+    night ? 0 : 1,
+    0,
+    { rain: 0.98, snow: 0.87, cloud: 0.73 }[weather] ?? 0.08,
+    0,
+  ];
   $("clock").textContent = now.toLocaleTimeString("zh-CN", {
     hour: "2-digit",
     minute: "2-digit",
@@ -602,8 +570,12 @@ $("skies").onclick = () =>
   ]);
 function render(b) {
   b.el.style.transform =
-    "translate(" + Math.round(b.x - 69) + "px," + Math.round(b.y - 23) + "px)";
-  b.el.firstElementChild.style.transform = "rotate(" + b.heading + "rad)";
+    "translate(" +
+    Math.round(b.pose[0] - 69) +
+    "px," +
+    Math.round(H - b.pose[1] - 23) +
+    "px)";
+  b.el.firstElementChild.style.transform = "rotate(" + -b.pose[2] + "rad)";
 }
 let previous = 0;
 function frame(now) {
@@ -612,12 +584,22 @@ function frame(now) {
   const dt = Math.min(0.075, (now - previous) / 1000);
   previous = now;
   if (!paused) animationTime += dt;
-  water?.paint(animationTime, weather === "wind" ? 1.8 : 1);
+  const strength = weather === "wind" ? 1.63 : weather === "rain" ? 1.3 : 0.85;
   fx?.paint(paused ? 0 : dt, weather);
+  if (!paused)
+    advance(
+      boats,
+      { points, w: W, h: H, safe },
+      dt,
+      animationTime,
+      strength,
+      sheet.open ? selected : null,
+    );
   for (const b of boats) {
-    if (!paused && !b.hold && !(sheet.open && b === selected)) steer(b, dt);
+    modelPose(b, H, animationTime, paused ? 0 : dt, strength);
     render(b);
   }
+  water?.paint(animationTime, strength, climate, boats);
 }
 async function init() {
   try {
@@ -634,7 +616,7 @@ async function init() {
   setInterval(updateSky, 30000);
   try {
     const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const sites = await (await fetch("zones.json")).json();
+    const sites = await (await fetch(asset("zones.json"))).json();
     const p = sites[zone];
     if (p && !followCoords && !weatherRequest)
       sync(p[0], p[1], zone.split("/").pop() + "（按时区）");
@@ -644,4 +626,6 @@ async function init() {
   }, 30 * 60000);
   setTimeout(() => ($("hint").hidden = true), 12000);
 }
+$("clipboard").onclick = () =>
+  document.dispatchEvent(new Event("open-pastehistory"));
 init();
