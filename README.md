@@ -2,7 +2,7 @@
 
 [简体中文](README_ZH.md)
 
-[Try the desktop demo](https://zhaoyuehao.github.io/PasteHistory/) · [Download the macOS preview](https://github.com/zhaoyuehao/PasteHistory/releases)
+[Try the desktop demo](https://zhaoyuehao.github.io/PasteHistory/) · [Download the macOS preview](https://github.com/zhaoyuehao/PasteHistory/releases) · [Try Sea Desktop](https://zhaoyuehao.github.io/PasteHistory/sea/)
 
 The web demo follows the Swift tree layout and keyboard dispatch, with the full eight-record layout from the first visit. Browser-reserved shortcuts and system integrations remain subject to browser limits; see the [website notes](website/README.md#native-interaction-reference). The desktop emphasizes the tree with smaller golden-ratio side windows, proportional spacing and papers; text and image samples are visible together.
 
