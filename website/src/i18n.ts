@@ -35,8 +35,23 @@ export function preferredLocale(): Locale {
   return browserLocale();
 }
 export let locale: Locale = preferredLocale();
+const languageChanges = new EventTarget();
+export function onLanguageChange(listener: (previous: Locale) => void) {
+  languageChanges.addEventListener("change", (e) =>
+    listener((e as CustomEvent<Locale>).detail),
+  );
+}
+export function bindLanguageSelect(select: HTMLSelectElement) {
+  for (const [code, name] of locales) select.add(new Option(name, code));
+  select.value = locale;
+  select.onchange = () => setLocale(select.value);
+  onLanguageChange(() => {
+    select.value = locale;
+  });
+}
 export function setLocale(value: string) {
-  if (!isLocale(value)) return;
+  if (!isLocale(value) || locale === value) return;
+  const previous = locale;
   locale = value;
   document.documentElement.lang = locale;
   try {
@@ -44,9 +59,275 @@ export function setLocale(value: string) {
   } catch {
     // Keep the current page usable when persistence is denied.
   }
+  refreshLabels();
+  languageChanges.dispatchEvent(
+    new CustomEvent("change", { detail: previous }),
+  );
 }
 // Simplified Chinese keys, followed by English, Traditional Chinese, Japanese and Korean.
 const messages: Record<string, readonly [string, string, string, string]> = {
+  "今天风小，船慢慢经过灯塔。": [
+    "The wind is light today. A boat drifts past the lighthouse.",
+    "今天風小，船慢慢經過燈塔。",
+    "今日は風が弱く、船がゆっくりと灯台のそばを通ります。",
+    "오늘은 바람이 잔잔해 배가 등대를 천천히 지나갑니다.",
+  ],
+  "退出 PasteHistory": [
+    "Quit PasteHistory",
+    "結束 PasteHistory",
+    "PasteHistory を終了",
+    "PasteHistory 종료",
+  ],
+  显示剪贴板: [
+    "Show Clipboard",
+    "顯示剪貼簿",
+    "クリップボードを表示",
+    "클립보드 보기",
+  ],
+  海的桌面: ["Sea Desktop", "海的桌面", "海のデスクトップ", "바다 바탕화면"],
+  海的桌面模拟器: [
+    "Sea Desktop",
+    "海的桌面模擬器",
+    "海のデスクトップ",
+    "바다 바탕화면",
+  ],
+  显示: ["View", "顯示方式", "表示", "보기"],
+  打开许愿树剪贴板: [
+    "Open PasteHistory",
+    "開啟許願樹剪貼簿",
+    "PasteHistory を開く",
+    "PasteHistory 열기",
+  ],
+  天气与昼夜: [
+    "Weather and daylight",
+    "天氣與晝夜",
+    "天気と昼夜",
+    "날씨와 낮밤",
+  ],
+  天气: ["Weather", "天氣", "天気", "날씨"],
+  桌面文件: [
+    "Desktop files",
+    "桌面檔案",
+    "デスクトップのファイル",
+    "데스크탑 파일",
+  ],
+  关闭窗口: ["Close window", "關閉視窗", "ウインドウを閉じる", "윈도우 닫기"],
+  按本地时间: ["Local time", "依照當地時間", "現地時間", "현지 시간"],
+  "{n} 副本": ["{n} copy", "{n} 拷貝", "{n}のコピー", "{n} 복사본"],
+  "此海面最多容纳 40 个项目": [
+    "The desktop holds up to 40 items.",
+    "此海面最多容納 40 個項目",
+    "デスクトップには最大40項目を置けます。",
+    "바탕화면에는 최대 40개의 항목을 놓을 수 있습니다.",
+  ],
+  "{name}简介": ["{name} Info", "{name} 資訊", "{name} の情報", "{name} 정보"],
+  桌面: ["Desktop", "桌面", "デスクトップ", "데스크탑"],
+  "名称：{n}": ["Name: {n}", "名稱：{n}", "名前：{n}", "이름: {n}"],
+  "种类：{n}": ["Kind: {n}", "種類：{n}", "種類：{n}", "종류: {n}"],
+  文件夹: ["Folder", "檔案夾", "フォルダ", "폴더"],
+  "{n} 文件": ["{n} file", "{n} 檔案", "{n} ファイル", "{n} 파일"],
+  文稿: ["Document", "文件", "書類", "문서"],
+  "包含：{n}": ["Contains: {n}", "包含：{n}", "内容：{n}", "포함: {n}"],
+  "{n} 个项目": ["{n} items", "{n} 個項目", "{n} 項目", "항목 {n}개"],
+  "大小：{n} 字节": [
+    "Size: {n} bytes",
+    "大小：{n} 位元組",
+    "サイズ：{n} バイト",
+    "크기: {n}바이트",
+  ],
+  "位置：桌面": [
+    "Where: Desktop",
+    "位置：桌面",
+    "場所：デスクトップ",
+    "위치: 데스크탑",
+  ],
+  移到废纸篓: [
+    "Move to Trash",
+    "丟到垃圾桶",
+    "ゴミ箱に入れる",
+    "휴지통으로 이동",
+  ],
+  显示简介: ["Get Info", "取得資訊", "情報を見る", "정보 가져오기"],
+  重新命名: ["Rename", "重新命名", "名前を変更", "이름 변경"],
+  制作副本: ["Duplicate", "製作拷貝", "複製", "복제"],
+  "快速查看“{name}”": [
+    "Quick Look “{name}”",
+    "快速查看「{name}」",
+    "“{name}”をクイックルック",
+    "‘{name}’ 훑어보기",
+  ],
+  "拷贝“{name}”": [
+    "Copy “{name}”",
+    "拷貝「{name}」",
+    "“{name}”をコピー",
+    "‘{name}’ 복사",
+  ],
+  文件快捷菜单: [
+    "File shortcut menu",
+    "檔案快速鍵選單",
+    "ファイルのショートカットメニュー",
+    "파일 단축 메뉴",
+  ],
+  文字大小: ["Text size", "文字大小", "テキストサイズ", "텍스트 크기"],
+  "{n} 点": ["{n} pt", "{n} 點", "{n} ポイント", "{n}포인트"],
+  新建文件夹: ["New Folder", "新增檔案夾", "新規フォルダ", "새로운 폴더"],
+  未命名文件夹: [
+    "untitled folder",
+    "未命名檔案夾",
+    "名称未設定フォルダ",
+    "무제 폴더",
+  ],
+  粘贴项目: ["Paste Item", "貼上項目", "項目をペースト", "항목 붙여넣기"],
+  整理: ["Clean Up", "整理", "整頓", "정리"],
+  整理方式: ["Clean Up By", "整理方式", "整頓順序", "다음으로 정리"],
+  名称: ["Name", "名稱", "名前", "이름"],
+  种类: ["Kind", "種類", "種類", "종류"],
+  添加日期: ["Date Added", "加入日期", "追加日", "추가된 날짜"],
+  查看显示选项: [
+    "Show View Options",
+    "顯示顯示方式選項",
+    "表示オプションを表示",
+    "보기 옵션 표시",
+  ],
+  桌面快捷菜单: [
+    "Desktop shortcut menu",
+    "桌面快速鍵選單",
+    "デスクトップのショートカットメニュー",
+    "데스크탑 단축 메뉴",
+  ],
+  无法读取文件: [
+    "Unable to read this file.",
+    "無法讀取檔案",
+    "ファイルを読み込めません。",
+    "파일을 읽을 수 없습니다.",
+  ],
+  "文件大小：{n} KB": [
+    "File size: {n} KB",
+    "檔案大小：{n} KB",
+    "ファイルサイズ：{n} KB",
+    "파일 크기: {n} KB",
+  ],
+  海湾航拍图: [
+    "Aerial view of the cove",
+    "海灣空拍圖",
+    "入り江の空撮写真",
+    "하늘에서 본 만",
+  ],
+  "竹叶河 · WAV 音频示例": [
+    "竹叶河 · WAV audio sample",
+    "竹叶河 · WAV 音訊範例",
+    "竹叶河 · WAV 音声サンプル",
+    "竹叶河 · WAV 오디오 예제",
+  ],
+  文件名: ["Filename", "檔案名稱", "ファイル名", "파일 이름"],
+  请输入未使用的有效文件名: [
+    "Enter a valid, unused filename.",
+    "請輸入有效且未使用的檔案名稱",
+    "使われていない有効な名前を入力してください。",
+    "사용하지 않은 올바른 파일 이름을 입력하세요.",
+  ],
+  "已添加 {n} 个文件": [
+    "Files added: {n}",
+    "已加入 {n} 個檔案",
+    "{n} 個のファイルを追加しました",
+    "파일 {n}개를 추가했습니다",
+  ],
+  撤销移到废纸篓: [
+    "Undo Move to Trash",
+    "還原丟到垃圾桶",
+    "ゴミ箱に入れる操作を取り消す",
+    "휴지통으로 이동 실행 취소",
+  ],
+  "添加本地文件…": [
+    "Add Local Files…",
+    "加入本機檔案⋯",
+    "ローカルファイルを追加…",
+    "로컬 파일 추가…",
+  ],
+  恢复漂流: ["Resume drifting", "繼續漂流", "漂流を再開", "표류 재개"],
+  暂停漂流: ["Pause drifting", "暫停漂流", "漂流を一時停止", "표류 일시 정지"],
+  关于海的桌面: [
+    "About Sea Desktop",
+    "關於海的桌面",
+    "海のデスクトップについて",
+    "바다 바탕화면에 관하여",
+  ],
+  "下载 Mac 版 · 敬请期待": [
+    "Mac download · Coming soon",
+    "下載 Mac 版 · 敬請期待",
+    "Mac 版 · 近日公開",
+    "Mac 버전 · 출시 예정",
+  ],
+  下载海的桌面: [
+    "Download Sea Desktop",
+    "下載海的桌面",
+    "海のデスクトップをダウンロード",
+    "바다 바탕화면 다운로드",
+  ],
+  "Mac 版尚未开放下载，敬请期待。": [
+    "The Mac version is coming soon.",
+    "Mac 版即將開放下載，敬請期待。",
+    "Mac 版は近日公開予定です。",
+    "Mac 버전은 곧 출시됩니다.",
+  ],
+  晴天: ["Clear", "晴天", "晴れ", "맑음"],
+  下雨: ["Rain", "下雨", "雨", "비"],
+  下雪: ["Snow", "下雪", "雪", "눈"],
+  大风: ["Strong wind", "強風", "強風", "강풍"],
+  多云: ["Cloudy", "多雲", "曇り", "흐림"],
+  "天气暂不可用 · 按本地时间": [
+    "Weather unavailable · Local time",
+    "天氣暫時無法取得 · 依照當地時間",
+    "天気を取得できません · 現地時間",
+    "날씨를 가져올 수 없음 · 현지 시간",
+  ],
+  浏览器不支持定位: [
+    "This browser does not support location.",
+    "此瀏覽器不支援定位",
+    "このブラウザは位置情報に対応していません。",
+    "이 브라우저는 위치 확인을 지원하지 않습니다.",
+  ],
+  当前位置: ["Current location", "目前位置", "現在地", "현재 위치"],
+  "未取得位置，可在天气菜单手动体验": [
+    "Location unavailable. Choose a preview in the weather menu.",
+    "無法取得位置，可在天氣選單選擇預覽。",
+    "位置情報を取得できません。天気メニューでプレビューを選べます。",
+    "위치를 확인할 수 없습니다. 날씨 메뉴에서 미리보기를 선택하세요.",
+  ],
+  同步当地天气与昼夜: [
+    "Use local weather and daylight",
+    "同步當地天氣與晝夜",
+    "現地の天気と昼夜に合わせる",
+    "현지 날씨와 낮밤에 맞추기",
+  ],
+  "使用当前位置…": [
+    "Use Current Location…",
+    "使用目前位置⋯",
+    "現在地を使用…",
+    "현재 위치 사용…",
+  ],
+  天气预览: [
+    "Weather preview",
+    "天氣預覽",
+    "天気のプレビュー",
+    "날씨 미리보기",
+  ],
+  昼夜预览: [
+    "Daylight preview",
+    "晝夜預覽",
+    "昼夜のプレビュー",
+    "낮밤 미리보기",
+  ],
+  当地时间: ["Local time", "當地時間", "現地時間", "현지 시간"],
+  白天: ["Day", "白天", "昼", "낮"],
+  夜晚: ["Night", "夜晚", "夜", "밤"],
+  "{n}（按时区）": [
+    "{n} (from time zone)",
+    "{n}（依時區）",
+    "{n}（タイムゾーンから）",
+    "{n} (시간대 기준)",
+  ],
+  打开: ["Open", "打開", "開く", "열기"],
   复制: ["Copy", "複製", "コピー", "복사"],
   复制文字: ["Copy text", "複製文字", "テキストをコピー", "텍스트 복사"],
   复制图片: ["Copy image", "複製圖片", "画像をコピー", "이미지 복사"],
@@ -251,7 +532,7 @@ const messages: Record<string, readonly [string, string, string, string]> = {
     "メモに貼り付けました",
     "메모에 붙여넣었어요",
   ],
-  "拖到备忘录后松手": [
+  拖到备忘录后松手: [
     "Drag to Notes and release",
     "拖到備忘錄後放開",
     "メモまでドラッグして離します",

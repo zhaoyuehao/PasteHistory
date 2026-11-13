@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 // A single menu controller for the menu bar, secondary click and touch.
 export function finderMenu(root, desk, panel) {
   let source, sub, owner, timer;
@@ -35,14 +36,14 @@ export function finderMenu(root, desk, panel) {
       const [label, action, shortcut] = entry;
       if (entry.length === 1) {
         const caption = document.createElement("small");
-        caption.textContent = label;
+        caption.textContent = t(label);
         box.append(caption);
         continue;
       }
       const btn = document.createElement("button");
       btn.type = "button";
       btn.tabIndex = -1;
-      btn.textContent = label;
+      btn.textContent = t(label);
       btn.setAttribute("role", "menuitem");
       btn.disabled = action == null;
       if (shortcut || Array.isArray(action)) {
@@ -97,7 +98,7 @@ export function finderMenu(root, desk, panel) {
     collapse();
     source = from;
     fill(panel, items);
-    panel.setAttribute("aria-label", label || "菜单");
+    panel.setAttribute("aria-label", t(label));
     panel.hidden = false;
     position(panel, x, y);
     panel.focus({ preventScroll: true });

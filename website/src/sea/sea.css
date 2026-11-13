@@ -49,7 +49,7 @@ input:focus-visible {
   pointer-events: none;
 }
 #coast {
-  background: center/cover url(assets/cove.webp);
+  background: center/cover var(--coast-photo);
 }
 #water,
 #coast {
@@ -376,4 +376,27 @@ dialog::backdrop {
 
 :host(.clipboard-open) header {
   visibility: hidden;
+}
+
+#sea-language {
+  color: inherit;
+  font: inherit;
+  background: transparent;
+  border: 0;
+  max-width: 90px;
+}
+@media (max-width: 520px) {
+  header {
+    gap: 0;
+    padding: 0 3px;
+  }
+  header button {
+    padding: 3px 4px;
+  }
+  #sea-language {
+    max-width: 76px;
+  }
+  header time {
+    display: none;
+  }
 }

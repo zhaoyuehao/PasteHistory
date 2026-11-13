@@ -1,3 +1,12 @@
+import {
+  t,
+  locale,
+  bindLanguageSelect,
+  onLanguageChange,
+  bindLabels,
+} from "../i18n";
+import { asset } from "./assets.js";
+import seaStyles from "./sea.css?inline";
 import { finderMenu } from "./menu.js";
 import { advance } from "./navigation.js";
 import { ocean, precipitation } from "./ocean.js";
@@ -8,17 +17,29 @@ const root = document
   .getElementById("sea-desktop")
   .attachShadow({ mode: "open" });
 root.innerHTML = markup;
-const css = document.createElement("link");
-css.rel = "stylesheet";
-css.href = new URL("./sea.css", import.meta.url);
+const css = document.createElement("style");
+css.textContent = seaStyles;
 root.prepend(css);
 const $ = (id) => root.getElementById(id);
-const asset = (path) => new URL(path, import.meta.url).href;
+
 const desk = $("desk"),
   fleet = $("fleet"),
   menu = $("popup"),
   sheet = $("sheet"),
   body = $("contents");
+desk.style.setProperty(
+  "--coast-photo",
+  'url("' + asset("assets/cove.webp") + '")',
+);
+bindLabels(desk);
+bindLanguageSelect($("sea-language"));
+onLanguageChange(() => {
+  closeMenu();
+  updateSky();
+});
+function format(key, values) {
+  return t(key).replace(/\{(\w+)\}/g, (_, name) => values[name]);
+}
 const { open: menuAt, close: closeMenu } = finderMenu(root, desk, menu);
 let copied = null,
   editing = null;
@@ -227,7 +248,7 @@ function unique(filename, folder = false, copy = false) {
   const i = folder ? -1 : filename.lastIndexOf("."),
     ext = i > 0 ? filename.slice(i) : "",
     base = i > 0 ? filename.slice(0, i) : filename;
-  const stem = base + (copy ? " 副本" : "");
+  const stem = copy ? format("{n} 副本", { n: base }) : base;
   let n = 1,
     name = stem + ext;
   while (boats.some((b) => b.name === name)) name = stem + " " + ++n + ext;
@@ -235,7 +256,7 @@ function unique(filename, folder = false, copy = false) {
 }
 function room() {
   if (boats.length < 40) return true;
-  tell("此海面最多容纳 40 个项目");
+  tell(t("此海面最多容纳 40 个项目"));
   return false;
 }
 function duplicate(b) {
@@ -251,19 +272,25 @@ function duplicate(b) {
   copy.el.focus();
 }
 function info(b) {
-  dialog((b?.name ?? "桌面") + "简介");
-  line("名称：" + (b?.name ?? "桌面"));
-  line(
-    "种类：" +
-      (!b || b.folder
-        ? "文件夹"
-        : b.name.includes(".")
-          ? b.name.split(".").pop().toUpperCase() + " 文件"
-          : "文稿"),
-  );
-  if (!b || b.folder) line("包含：" + (b ? 0 : boats.length) + " 个项目");
-  if (b?.file) line("大小：" + b.file.size.toLocaleString() + " 字节");
-  if (b) line("位置：桌面");
+  const name = b?.name ?? t("桌面");
+  dialog(format("{name}简介", { name }));
+  line(format("名称：{n}", { n: name }));
+  const type =
+    !b || b.folder
+      ? t("文件夹")
+      : b.name.includes(".")
+        ? format("{n} 文件", { n: b.name.split(".").pop().toUpperCase() })
+        : t("文稿");
+  line(format("种类：{n}", { n: type }));
+  if (!b || b.folder)
+    line(
+      format("包含：{n}", {
+        n: format("{n} 个项目", { n: b ? 0 : boats.length }),
+      }),
+    );
+  if (b?.file)
+    line(format("大小：{n} 字节", { n: b.file.size.toLocaleString(locale) }));
+  if (b) line(t("位置：桌面"));
 }
 function fileMenu(b, x, y) {
   if (editing === b) return;
@@ -278,10 +305,10 @@ function fileMenu(b, x, y) {
       null,
       ["显示简介", () => info(b)],
       ["重新命名", () => rename(b)],
-      ["复制", () => duplicate(b)],
-      [`快速查看“${b.name}”`, () => openFile(b, true)],
+      [locale === "zh-Hans" ? "复制" : t("制作副本"), () => duplicate(b)],
+      [format("快速查看“{name}”", { name: b.name }), () => openFile(b, true)],
       null,
-      [`拷贝“${b.name}”`, () => (copied = b)],
+      [format("拷贝“{name}”", { name: b.name }), () => (copied = b)],
     ],
     b.el,
     "文件快捷菜单",
@@ -291,12 +318,12 @@ function arrange(key) {
   const order = [...boats];
   if (key === "名称")
     order.sort((a, b) =>
-      a.name.localeCompare(b.name, "zh-CN", { numeric: true }),
+      a.name.localeCompare(b.name, locale, { numeric: true }),
     );
   if (key === "种类")
     order.sort(
       (a, b) =>
-        a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name, "zh-CN"),
+        a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name, locale),
     );
   if (key === "添加日期") order.sort((a, b) => b.created - a.created);
   if (!key) order.sort((a, b) => b.x - a.x || a.y - b.y);
@@ -312,12 +339,12 @@ function arrange(key) {
   });
 }
 function viewOptions() {
-  dialog("桌面");
+  dialog(t("桌面"));
   const label = document.createElement("label");
-  label.textContent = "文字大小　";
+  label.textContent = t("文字大小") + "　";
   const sizes = document.createElement("select");
   for (const n of [11, 12, 13, 14, 16, 18])
-    sizes.add(new Option(n + " 点", String(n)));
+    sizes.add(new Option(format("{n} 点", { n }), String(n)));
   sizes.value = desk.dataset.textSize ?? "13";
   sizes.onchange = () => {
     desk.dataset.textSize = sizes.value;
@@ -336,7 +363,7 @@ function desktopMenu(x, y) {
         "新建文件夹",
         () => {
           if (!room()) return;
-          const b = add(unique("未命名文件夹", true), null, true);
+          const b = add(unique(t("未命名文件夹"), true), null, true);
           if (safe(x, y)) {
             b.x = x;
             b.y = y;
@@ -389,7 +416,7 @@ function openFile(b, quickLook = false) {
   sheet.toggleAttribute("data-quick-look", quickLook);
   const token = previewId;
   if (b.folder) {
-    line("0 个项目");
+    line(format("{n} 个项目", { n: 0 }));
   } else if (b.file) {
     const f = b.file;
     if (/^(image|audio|video)\//.test(f.type)) {
@@ -411,20 +438,20 @@ function openFile(b, quickLook = false) {
           if (previewId === token) line(t, "pre");
         })
         .catch(() => {
-          if (previewId === token) line("无法读取文件");
+          if (previewId === token) line(t("无法读取文件"));
         });
-    } else line("文件大小：" + Math.ceil(f.size / 1024) + " KB");
+    } else line(format("文件大小：{n} KB", { n: Math.ceil(f.size / 1024) }));
   } else if (b.example === "海的桌面.jpg") {
     const img = document.createElement("img");
     img.src = asset("assets/cove.webp");
-    img.alt = "海湾航拍图";
+    img.alt = t("海湾航拍图");
     body.append(img);
   } else if (b.example === "落叶信.txt")
-    line("落叶信\n\n今天风小，船慢慢经过灯塔。", "pre");
+    line("落叶信\n\n" + t("今天风小，船慢慢经过灯塔。"), "pre");
   else if (b.example === "赛博软装铺.zip")
     line("赛博软装铺.zip　/　落叶信.txt");
-  else line("竹叶河 · WAV 音频示例");
-  if (!quickLook) action("重新命名", () => rename(b));
+  else line(t("竹叶河 · WAV 音频示例"));
+  if (!quickLook) action(t("重新命名"), () => rename(b));
 }
 function rename(b) {
   if (sheet.open) sheet.close();
@@ -434,7 +461,7 @@ function rename(b) {
   const input = document.createElement("input"),
     label = b.el.querySelector(".name");
   input.className = "rename-field";
-  input.setAttribute("aria-label", "文件名");
+  input.setAttribute("aria-label", t("文件名"));
   input.value = b.name;
   // Keep the editor outside the button so Return cannot also open the file.
   modelPose(b, H, animationTime, 0, 1);
@@ -457,7 +484,7 @@ function rename(b) {
         boats.some((n) => n !== b && n.name === name))
     ) {
       if (explicit) {
-        input.setCustomValidity("请输入未使用的有效文件名");
+        input.setCustomValidity(t("请输入未使用的有效文件名"));
         input.reportValidity();
         return;
       }
@@ -515,7 +542,11 @@ function addFiles(files) {
     add(unique(f.name), f);
     count++;
   }
-  tell(count ? "已添加 " + count + " 个文件" : "此海面最多容纳 40 个文件");
+  tell(
+    count
+      ? format("已添加 {n} 个文件", { n: count })
+      : t("此海面最多容纳 40 个项目"),
+  );
 }
 $("input").onchange = (e) => {
   addFiles(e.target.files);
@@ -543,8 +574,8 @@ $("product").onclick = () =>
     [
       "关于海的桌面",
       () => {
-        dialog("关于海的桌面");
-        line("海的桌面");
+        dialog(t("关于海的桌面"));
+        line(t("海的桌面"));
         line("赛博软装铺");
       },
     ],
@@ -552,10 +583,10 @@ $("product").onclick = () =>
     ["下载 Mac 版 · 敬请期待", download],
   ]);
 function download() {
-  dialog("下载海的桌面");
-  line("海的桌面 · macOS");
-  line("Mac 版尚未开放下载，敬请期待。");
-  action("下载 Mac 版 · 敬请期待", () => {}).disabled = true;
+  dialog(t("下载海的桌面"));
+  line(t("海的桌面") + " · macOS");
+  line(t("Mac 版尚未开放下载，敬请期待。"));
+  action(t("下载 Mac 版 · 敬请期待"), () => {}).disabled = true;
 }
 $("close").onclick = () => sheet.close();
 sheet.onclose = () => {
@@ -693,13 +724,13 @@ function updateSky() {
     { rain: 0.98, snow: 0.87, cloud: 0.73 }[weather] ?? 0.08,
     0,
   ];
-  $("clock").textContent = now.toLocaleTimeString("zh-CN", {
+  $("clock").textContent = now.toLocaleTimeString(locale, {
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false,
   });
-  $("condition").textContent =
-    mode === "auto" && !sun ? "天气" : names[weather];
+  $("condition").textContent = t(
+    mode === "auto" && !sun ? "天气" : names[weather],
+  );
 }
 let followCoords = null,
   weatherRequest = 0;
@@ -739,7 +770,7 @@ async function sync(lat, lon, label) {
       rise: data.daily.sunrise[0] * 1000,
       set: data.daily.sunset[0] * 1000,
     };
-    status = label + " · " + names[natural] + " · Open-Meteo";
+    status = "loaded";
     followCoords = [lat, lon, label];
   } catch {
     if (request !== weatherRequest) return;
@@ -749,22 +780,32 @@ async function sync(lat, lon, label) {
 }
 function locate() {
   if (!navigator.geolocation) {
-    tell("浏览器不支持定位");
+    tell(t("浏览器不支持定位"));
     return;
   }
   navigator.geolocation.getCurrentPosition(
     (p) => {
       mode = "auto";
       sky = "auto";
-      sync(p.coords.latitude, p.coords.longitude, "当前位置");
+      sync(p.coords.latitude, p.coords.longitude, null);
     },
-    () => tell("未取得位置，可在天气菜单手动体验"),
+    () => tell(t("未取得位置，可在天气菜单手动体验")),
     { maximumAge: 600000, timeout: 10000 },
   );
 }
 $("skies").onclick = () =>
   popup("skies", [
-    [status],
+    [
+      status === "loaded"
+        ? [
+            followCoords[2]
+              ? format("{n}（按时区）", { n: followCoords[2] })
+              : t("当前位置"),
+            t(names[natural]),
+            "Open-Meteo",
+          ].join(" · ")
+        : t(status),
+    ],
     [
       "同步当地天气与昼夜",
       () => {
@@ -778,7 +819,7 @@ $("skies").onclick = () =>
     ["使用当前位置…", locate],
     ["天气预览"],
     ...Object.entries(names).map(([key, label]) => [
-      (mode === key ? "✓ " : "") + label,
+      (mode === key ? "✓ " : "") + t(label),
       () => {
         mode = key;
         updateSky();
@@ -787,7 +828,7 @@ $("skies").onclick = () =>
     ["昼夜预览"],
     ...Object.entries({ auto: "当地时间", day: "白天", night: "夜晚" }).map(
       ([key, label]) => [
-        (sky === key ? "✓ " : "") + label,
+        (sky === key ? "✓ " : "") + t(label),
         () => {
           sky = key;
           updateSky();
@@ -847,7 +888,7 @@ async function init() {
     const sites = await (await fetch(asset("zones.json"))).json();
     const p = sites[zone];
     if (p && !followCoords && !weatherRequest)
-      sync(p[0], p[1], zone.split("/").pop() + "（按时区）");
+      sync(p[0], p[1], zone.split("/").pop());
   } catch {}
   setInterval(() => {
     if (!document.hidden && followCoords) sync(...followCoords);

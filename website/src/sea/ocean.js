@@ -1,3 +1,4 @@
+import { asset } from "./assets.js";
 import { createRenderer } from "./renderer.js";
 // The shoreline distance map shares the photograph's cover transform with both the shader and navigation.
 export async function ocean(canvas) {
@@ -6,7 +7,7 @@ export async function ocean(canvas) {
       const img = new Image();
       img.onload = () => resolve(img);
       img.onerror = reject;
-      img.src = new URL("assets/" + path, import.meta.url);
+      img.src = asset("assets/" + path);
     });
   const [photo, shore, ripple] = await Promise.all(
     ["cove.webp", "shore.png", "ripples.png"].map(load),

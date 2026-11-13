@@ -1,5 +1,6 @@
+import { asset } from "./assets.js";
 import { parameters, updateBands } from "./waves.js";
-const resource = (path) => new URL(path, import.meta.url);
+
 const fullVertex = `out vec2 screenUV;
 void main(){
  vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);
@@ -73,7 +74,7 @@ void main(){
  colorOut=vec4(light*night,0.);
 }`;
 async function get(path, format) {
-  const r = await fetch(resource(path));
+  const r = await fetch(asset(path));
   if (!r.ok) throw Error(path + ": " + r.status);
   return r[format]();
 }
