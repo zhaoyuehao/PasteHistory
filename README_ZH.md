@@ -1,10 +1,10 @@
 # PasteHistory
 
-[体验网页许愿树](https://zhaoyuehao.github.io/PasteHistory/) · [下载 macOS 预览版](https://github.com/zhaoyuehao/PasteHistory/releases) · [体验海的桌面](https://zhaoyuehao.github.io/PasteHistory/sea/)
+[体验海的桌面与许愿树](https://zhaoyuehao.github.io/PasteHistory/) · [下载 macOS 预览版](https://github.com/zhaoyuehao/PasteHistory/releases)
 
 [English](README.md)
 
-网页体验按 Swift 的许愿树布局与按键分发实现，首屏即显示原生每组八条的完整布局。浏览器保留快捷键和系统集成受网页环境限制，详见[网页实现说明](website/README.md#native-interaction-reference)。 桌面放大许愿树、缩小两侧黄金矩形窗口，间距与纸签使用黄金比例；文字和图片样例同时展示，各自提供复制按钮。
+首页直接进入海的桌面。点菜单栏的 **PasteHistory** 可在这片海面上打开许愿树和备忘录。剪贴板按 Swift 的许愿树布局与按键分发实现，打开后显示原生每组八条的完整布局。浏览器保留快捷键和系统集成受网页环境限制，详见[网页实现说明](website/README.md#native-interaction-reference)。 桌面放大许愿树、缩小两侧黄金矩形窗口，间距与纸签使用黄金比例；文字和图片样例同时展示，各自提供复制按钮。
 
 两个窗口精简文案；顶部语言入口仅显示图标与当前语言，移除辅助操作菜单和整页重置功能。
 

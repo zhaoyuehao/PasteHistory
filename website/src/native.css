@@ -1487,10 +1487,12 @@ kbd {
   }
 }
 
-.menubar .sea-desktop-link {
-  color: inherit;
-  font-size: 12px;
-  text-decoration: none;
-  white-space: nowrap;
-}
-.menubar .sea-desktop-link:hover { text-decoration: underline; }
+
+#sea-desktop {position:fixed; inset:0; display:block; background:#184a50}
+#app {position:fixed; inset:0; z-index:1; pointer-events:none; overflow:auto}
+#app .desktop, #app #desktop-main {background:transparent;pointer-events:none}
+#app :is(.menubar,.root-links,.notes-rail,.samples-rail,#mobile-nav,#mobile-intro,#preview,#reopen-tree.visible,.tree-controls,.paper){pointer-events:auto}
+#app .desktop {min-height:100%}
+#app #desktop-main {box-shadow:none;border:none}
+
+#app .menubar {background:rgba(22,49,54,.89)}
