@@ -1,0 +1,376 @@
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+body {
+  font:
+    14px -apple-system,
+    BlinkMacSystemFont,
+    "PingFang SC",
+    sans-serif;
+  color: #17383a;
+}
+button,
+input {
+  font: inherit;
+}
+button {
+  cursor: pointer;
+  color: inherit;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible {
+  outline: 3px solid #009eaa;
+  outline-offset: 2px;
+}
+#desk {
+  height: 100dvh;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: #184a50;
+  --light: 1;
+  --saturation: 1;
+  outline: none;
+}
+#coast,
+#water,
+#rain,
+#fleet {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+#coast {
+  background: center/cover url(assets/cove.webp);
+}
+#water,
+#coast {
+  filter: brightness(var(--light)) saturate(var(--saturation));
+}
+#fleet {
+  z-index: 2;
+}
+#rain {
+  z-index: 3;
+}
+header,
+footer,
+.panel,
+.titlebar {
+  background: rgba(246, 249, 245, 0.91);
+  backdrop-filter: blur(24px) saturate(1.25);
+  -webkit-backdrop-filter: blur(24px) saturate(1.25);
+}
+header {
+  position: absolute;
+  inset: 0 0 auto;
+  display: flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 18px;
+  gap: 5px;
+  z-index: 5;
+  box-shadow: 0 1px 0 #17383a30;
+  font-size: 13px;
+}
+header strong {
+  margin-right: 13px;
+}
+header button,
+footer button {
+  border: 0;
+  background: none;
+  border-radius: 7px;
+  padding: 4px 9px;
+}
+header button:hover,
+footer button:hover {
+  background: #4679761a;
+}
+.space {
+  flex: 1;
+}
+time {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.boat {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  background: none;
+  border: 0;
+  color: white;
+  width: 138px;
+  height: 83px;
+  padding: 0;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  will-change: transform;
+}
+.hull {
+  display: block;
+  width: 83px;
+  height: 48px;
+  position: relative;
+}
+.hull img {
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  filter: brightness(calc(0.38 + var(--light) * 0.62));
+}
+.boat .lamp {
+  position: absolute;
+  top: 46%;
+  left: 49%;
+  width: 4px;
+  height: 4px;
+  background: #fff6cd;
+  box-shadow:
+    0 0 5px 2px #ffcf7b,
+    0 0 14px 6px #ffc47f66;
+  border-radius: 50%;
+  opacity: var(--lamp, 0);
+}
+.boat .name {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 1px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  font-weight: 600;
+  text-shadow:
+    0 1px 4px #001415,
+    0 1px 2px #001415;
+}
+.boat[aria-pressed="true"] .name {
+  background: #246aba;
+  text-shadow: none;
+}
+.boat:focus-visible {
+  outline-offset: -8px;
+  border-radius: 14px;
+}
+footer {
+  position: absolute;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px 8px 16px;
+  z-index: 4;
+  border: 1px solid #ffffffce;
+  border-radius: 17px;
+  box-shadow: 0 8px 25px #092c3540;
+  white-space: nowrap;
+}
+.identity {
+  display: grid;
+  gap: 1px;
+}
+.identity small {
+  font-size: 10px;
+  color: #517374;
+}
+footer i {
+  height: 24px;
+  border-left: 1px solid #78928f66;
+}
+footer button {
+  min-height: 35px;
+}
+.soon {
+  font-size: 11px;
+  color: #4f6966;
+}
+.panel {
+  position: absolute;
+  width: 215px;
+  padding: 6px;
+  z-index: 8;
+  box-shadow: 0 8px 35px #092d3855;
+  border: 1px solid #ffffffcb;
+  border-radius: 12px;
+  max-height: 75dvh;
+  overflow: auto;
+}
+.panel button,
+.panel a {
+  display: block;
+  width: 100%;
+  text-align: left;
+  text-decoration: none;
+  color: inherit;
+  border: 0;
+  background: none;
+  padding: 8px 10px;
+  border-radius: 6px;
+}
+.panel button:hover,
+.panel a:hover {
+  color: white;
+  background: #357a82;
+}
+.panel small {
+  display: block;
+  font-size: 11px;
+  color: #647675;
+  padding: 5px 10px;
+}
+.panel hr {
+  border: 0;
+  border-top: 1px solid #7b94903d;
+}
+dialog {
+  color: #17383a;
+  padding: 0;
+  width: min(440px, 90vw);
+  border: 1px solid #ffffffae;
+  background: #f8f9f4;
+  border-radius: 15px;
+  box-shadow: 0 15px 70px #06282a68;
+}
+dialog::backdrop {
+  background: #0a29373b;
+}
+.titlebar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 42px;
+  border-bottom: 1px solid #183f451a;
+}
+.titlebar b {
+  max-width: 78%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.titlebar button {
+  position: absolute;
+  left: 12px;
+  background: #ff8b7a;
+  border: 0;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  line-height: 15px;
+  padding: 0;
+}
+#contents {
+  padding: 23px;
+  max-height: 72dvh;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+#contents p:first-child {
+  margin-top: 0;
+}
+#contents pre {
+  white-space: pre-wrap;
+}
+#contents img,
+#contents video,
+#contents audio {
+  max-width: 100%;
+}
+#contents input {
+  width: 100%;
+  padding: 8px;
+}
+#contents button {
+  border: 0;
+  border-radius: 7px;
+  padding: 8px 18px;
+  background: #245e62;
+  color: white;
+  margin-top: 12px;
+}
+#contents button:disabled {
+  cursor: default;
+  background: #dfe7e3;
+  color: #536964;
+}
+#status,
+#hint {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  color: white;
+  text-shadow: 0 1px 4px #122a2b;
+  pointer-events: none;
+  white-space: nowrap;
+}
+#hint {
+  bottom: 80px;
+  font-size: 12px;
+}
+#status {
+  top: 49px;
+  background: #133f44dd;
+  border-radius: 9px;
+  padding: 6px 12px;
+}
+#status:empty {
+  display: none;
+}
+[hidden] {
+  display: none !important;
+}
+#desk.over {
+  outline: 4px solid #c9f0df;
+  outline-offset: -4px;
+}
+@media (max-width: 600px) {
+  header {
+    padding: 0 7px;
+    gap: 0;
+  }
+  header strong {
+    margin-right: 4px;
+  }
+  header time {
+    font-size: 12px;
+  }
+  footer {
+    gap: 2px;
+    padding: 6px 8px 6px 12px;
+  }
+  .hull {
+    width: 68px;
+    height: 39px;
+  }
+  .boat .name {
+    font-size: 12px;
+  }
+  #hint {
+    bottom: 76px;
+    font-size: 11px;
+  }
+  header button {
+    padding: 5px 6px;
+  }
+}

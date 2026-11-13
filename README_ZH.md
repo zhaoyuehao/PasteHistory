@@ -1,6 +1,6 @@
 # PasteHistory
 
-[体验网页许愿树](https://zhaoyuehao.github.io/PasteHistory/) · [下载 macOS 预览版](https://github.com/zhaoyuehao/PasteHistory/releases)
+[体验网页许愿树](https://zhaoyuehao.github.io/PasteHistory/) · [下载 macOS 预览版](https://github.com/zhaoyuehao/PasteHistory/releases) · [体验海的桌面](https://zhaoyuehao.github.io/PasteHistory/sea/)
 
 [English](README.md)
 

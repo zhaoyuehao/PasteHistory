@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#153e45" />
+    <title>海的桌面 · 赛博软装铺</title>
+    <meta
+      name="description"
+      content="在浏览器里体验海的桌面：文件变成船，随着海浪漂流。"
+    />
+    <link rel="icon" href="assets/sloop.png" />
+    <link rel="stylesheet" href="sea.css" />
+  </head>
+  <body>
+    <main id="desk" tabindex="-1" aria-label="海的桌面模拟器">
+      <div id="coast"></div>
+      <canvas id="water" aria-hidden="true"></canvas
+      ><canvas id="rain" aria-hidden="true"></canvas>
+      <header>
+        <strong>海的桌面</strong
+        ><button id="files" aria-haspopup="true">文件</button
+        ><button id="view" aria-haspopup="true">显示</button>
+        <div class="space"></div>
+        <button id="skies" aria-haspopup="true" title="天气与昼夜">
+          ☼ <span id="condition">天气</span></button
+        ><time id="clock"></time>
+      </header>
+      <div id="fleet" aria-label="桌面文件"></div>
+      <footer>
+        <div class="identity"><b>海的桌面</b><small>赛博软装铺</small></div>
+        <i></i
+        ><button id="picker" title="添加本地文件">
+          <span aria-hidden="true">＋</span> 添加文件</button
+        ><button id="download" aria-haspopup="dialog">
+          Mac 版 <span class="soon">敬请期待</span>
+        </button>
+      </footer>
+      <div id="hint">双击船只打开文件，或把文件拖到海面</div>
+      <div id="popup" class="panel" hidden></div>
+      <dialog id="sheet">
+        <div class="titlebar">
+          <button id="close" aria-label="关闭窗口">×</button
+          ><b id="heading"></b>
+        </div>
+        <div id="contents"></div>
+      </dialog>
+      <input type="file" id="input" multiple hidden /><span
+        id="status"
+        role="status"
+        aria-live="polite"
+      ></span>
+    </main>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
