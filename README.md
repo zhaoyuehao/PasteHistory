@@ -4,7 +4,7 @@
 
 [Try the desktop demo](https://zhaoyuehao.github.io/PasteHistory/) · [Download the macOS preview](https://github.com/zhaoyuehao/PasteHistory/releases)
 
-The homepage is Sea Desktop. Open **PasteHistory** in its menu bar to use the clipboard and Notes over the same live water. The clipboard follows the Swift tree layout and keyboard dispatch, with the full eight-record layout when opened. Browser-reserved shortcuts and system integrations remain subject to browser limits; see the [website notes](website/README.md#native-interaction-reference). The desktop emphasizes the tree with smaller golden-ratio side windows, proportional spacing and papers; text and image samples are visible together.
+On the first visit, water rolls down the desktop and carries the files a short distance before they turn into boats. Later visits open directly on the sea. Open **PasteHistory** in its menu bar to use the clipboard and Notes over the same live water. The clipboard follows the Swift tree layout and keyboard dispatch, with the full eight-record layout when opened. Browser-reserved shortcuts and system integrations remain subject to browser limits; see the [website notes](website/README.md#native-interaction-reference). The desktop emphasizes the tree with smaller golden-ratio side windows, proportional spacing and papers; text and image samples are visible together.
 
 Copy Samples and Notes use concise copy; the top bar only retains a compact language picker and no auxiliary Actions or Reset controls.
 

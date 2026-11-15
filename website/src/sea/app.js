@@ -8,6 +8,7 @@ import {
 import { asset } from "./assets.js";
 import seaStyles from "./sea.css?inline";
 import { finderMenu } from "./menu.js";
+import { firstTide } from "./opening.js";
 import { advance } from "./navigation.js";
 import { ocean, precipitation } from "./ocean.js";
 
@@ -845,6 +846,7 @@ function render(b) {
     "px)";
   b.el.firstElementChild.style.transform = "rotate(" + -b.pose[2] + "rad)";
 }
+let opening = null;
 let previous = 0;
 function frame(now) {
   requestAnimationFrame(frame);
@@ -864,13 +866,19 @@ function frame(now) {
       sheet.open || !menu.hidden ? selected : null,
     );
   for (const b of boats) {
-    if (b === editing) continue;
-    modelPose(b, H, animationTime, paused ? 0 : dt, strength);
-    render(b);
+    if (b !== editing) modelPose(b, H, animationTime, paused ? 0 : dt, strength);
   }
+  if (opening && !opening.paint(now, W, H)) opening = null;
+  for (const b of boats) if (b !== editing) render(b);
   water?.paint(animationTime, strength, climate, boats);
 }
 async function init() {
+  W = desk.clientWidth;
+  H = desk.clientHeight;
+  const examplesOnDesktop = examples.map((name) => add(name));
+  for (const b of examplesOnDesktop) modelPose(b, H, 0, 0, 1);
+  opening = firstTide(desk, fleet, examplesOnDesktop);
+  for (const b of examplesOnDesktop) render(b);
   try {
     water = await ocean($("water"));
   } catch {
@@ -878,7 +886,7 @@ async function init() {
   }
   fx = precipitation($("rain"), (x, y) => water?.depth(x, y) ?? 100);
   resize();
-  examples.forEach((n) => add(n));
+
   window.addEventListener("resize", resize);
   updateSky();
   requestAnimationFrame(frame);

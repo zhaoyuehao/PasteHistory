@@ -2,8 +2,14 @@ in vec3 normal,pigment,modelPosition;
 in float windowGlow;
 uniform vec4 climate;
 uniform vec3 lamp;
+uniform float introOpacity;
 out vec4 colorOut;
 void main(){
+    // Apply the same coverage to every face at a pixel, keeping the solid mesh's depth ordering.
+    if (introOpacity < 1.) {
+        float coverage = fract(52.9829189 * fract(dot(floor(gl_FragCoord.xy),vec2(.06711056,.00583715))));
+        if (coverage >= introOpacity) discard;
+    }
     vec3 view = vec3(0,-0.61,0.79);
     vec3 n = normalize(normal);
     if (dot(n,view) < 0.) n = -n;

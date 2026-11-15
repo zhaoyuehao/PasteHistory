@@ -34,7 +34,7 @@ void main(){
  gl_Position=vec4((pose.xy+rotated*vec2(1,.79)*modelScale)/viewport*2.-1.,.88,1.);
 }`;
 const wakeFragment = `
-in vec2 local;uniform float speed,time;uniform vec4 climate;uniform sampler2D ripples;out vec4 colorOut;
+in vec2 local;uniform float speed,time,introOpacity;uniform vec4 climate;uniform sampler2D ripples;out vec4 colorOut;
 void main(){
  float grain=(texture(ripples,gl_FragCoord.xy/640.+time*vec2(.013,-.009)).r-.5)*.25;
  float contact=.43*(1.-smoothstep(.58,1.,length((local-vec2(1,-1))/vec2(49,16))));
@@ -43,7 +43,7 @@ void main(){
  float edge=abs(local.y)-(8.+.14*run+24.*grain);
  float foam=fade*exp(-edge*edge/5.)*smoothstep(-.032,.032,grain)*(.09+.40*throttle)*smoothstep(0.,3.,speed);
  float alpha=contact*(1.-foam)+foam;
- colorOut=vec4((vec3(.024,.086,.10)*contact*(1.-foam)+ambientLight(vec3(.74,.85,.81),climate)*foam)/max(.0001,alpha),alpha);
+ colorOut=vec4((vec3(.024,.086,.10)*contact*(1.-foam)+ambientLight(vec3(.74,.85,.81),climate)*foam)/max(.0001,alpha),alpha*introOpacity);
 }`;
 const lamps = {
   sloop: [5, 0, 51.5],
@@ -64,14 +64,14 @@ void main(){
  gl_Position=vec4((pose.xy+offset*modelScale)/viewport*2.-1.,depth*2.-1.,1.);
 }`;
 const lanternFragment = `
-in vec2 local;flat in int reflected;uniform vec4 climate;uniform sampler2D ripples;uniform float time;out vec4 colorOut;
+in vec2 local;flat in int reflected;uniform vec4 climate;uniform sampler2D ripples;uniform float time,introOpacity;out vec4 colorOut;
 void main(){
  float r2=dot(local,local);vec3 tint=vec3(1.,.73,.37);
  float night=1.-smoothstep(.12,.90,climate.x);
  vec3 light=1.20*exp(-r2*35.)*mix(tint,vec3(1),.4)+exp(-r2*5.)*(1.-smoothstep(.65,1.,r2))*.47*tint;
  if(reflected!=0){float g=(texture(ripples,gl_FragCoord.xy/640.+time*vec2(.013,-.009)).r-.5)*.25;
  light=.39*exp(-3.8*r2)*(.09+.91*smoothstep(-.006,.028,g))*tint;}
- colorOut=vec4(light*night,0.);
+ colorOut=vec4(light*night*introOpacity,0.);
 }`;
 async function get(path, format) {
   const r = await fetch(asset(path));
@@ -114,7 +114,7 @@ export async function createRenderer(gl, images) {
     model = program(meshVertex, climate + hull),
     shadow = program(
       meshVertex,
-      "uniform vec4 climate;out vec4 colorOut;void main(){colorOut=vec4(.014,.080,.10,.27*climate.x*(1.-climate.z)*(1.-.85*climate.z));}",
+      "uniform vec4 climate;uniform float introOpacity;out vec4 colorOut;void main(){colorOut=vec4(.014,.080,.10,introOpacity*.27*climate.x*(1.-climate.z)*(1.-.85*climate.z));}",
     ),
     wake = program(wakeVertex, climate + wakeFragment),
     lantern = program(lanternVertex, lanternFragment);
@@ -199,6 +199,12 @@ export async function createRenderer(gl, images) {
       if (u.time) gl.uniform1f(u.time, t);
       if (u.shadow) gl.uniform1i(u.shadow, pass === shadow ? 1 : 0);
       for (const b of boats) {
+        const opacity = b.introOpacity ?? 1;
+        if (opacity <= 0) continue;
+        if (opacity !== pass.lastOpacity) {
+          gl.uniform1f(u.introOpacity, opacity);
+          pass.lastOpacity = opacity;
+        }
         gl.uniform4fv(u.pose, b.pose);
         if (u.lamp) gl.uniform3fv(u.lamp, lamps[b.kind]);
         if (pass === wake) {
